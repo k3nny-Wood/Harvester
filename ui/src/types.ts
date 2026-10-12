@@ -139,3 +139,64 @@ export interface ScannerConfig {
   universe: number;
   params: SignalParams;
 }
+
+export interface TradingStatus {
+  env: Env;
+  hasCredentials: boolean;
+  maxOrderNotional: number;
+  message: string;
+}
+
+export interface Position {
+  symbol: string;
+  amount: number;
+  entryPrice: number;
+  markPrice: number;
+  unrealizedPnl: number;
+  liquidationPrice: number;
+  leverage: number;
+  isolated: boolean;
+}
+
+export interface Account {
+  walletBalance: number;
+  availableBalance: number;
+  unrealizedPnl: number;
+  positions: Position[];
+}
+
+export interface OpenOrder {
+  orderId: number;
+  symbol: string;
+  side: Side;
+  type: string;
+  price: number;
+  stopPrice: number;
+  origQty: number;
+  executedQty: number;
+  status: string;
+  reduceOnly: boolean;
+  clientId: string;
+  time: number;
+}
+
+export interface OrderRequest {
+  symbol: string;
+  side: Side;
+  type: 'LIMIT' | 'MARKET';
+  quantity: number;
+  price?: number;
+  postOnly?: boolean;
+  reduceOnly?: boolean;
+  clientId?: string;
+}
+
+export interface OrderAck {
+  orderId: number;
+  symbol: string;
+  status: string;
+  clientId: string;
+  /** the rounded quantity and price that were actually sent */
+  quantity: number;
+  price: number | null;
+}

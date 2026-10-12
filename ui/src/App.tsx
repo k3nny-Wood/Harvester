@@ -6,12 +6,15 @@ import { ChartPanel } from './chart/ChartPanel';
 import { newChartId, openChart, setDock } from './dock';
 import { TIMEFRAMES } from './intervals';
 import { LadderPanel } from './panels/LadderPanel';
+import { OrdersPanel } from './panels/OrdersPanel';
 import { PlaceholderPanel } from './panels/PlaceholderPanel';
+import { PortfolioPanel } from './panels/PortfolioPanel';
 import { SignalsPanel } from './panels/SignalsPanel';
 import { SymbolsPanel } from './panels/SymbolsPanel';
 import { useApp } from './store';
+import { startTradingPoll } from './trade';
 
-const LAYOUT_KEY = 'harvester.layout.v2';
+const LAYOUT_KEY = 'harvester.layout.v3';
 
 interface PanelDef {
   id: string;
@@ -25,8 +28,8 @@ const PANELS: PanelDef[] = [
   { id: 'symbols', title: 'Symbols', component: 'symbols' },
   { id: 'signals', title: 'Signals', component: 'signals' },
   { id: 'ladder', title: 'Ladder', component: 'ladder' },
-  { id: 'orders', title: 'Orders', component: 'placeholder', note: 'Order entry and open orders arrive with the trading milestone.' },
-  { id: 'portfolio', title: 'Portfolio', component: 'placeholder', note: 'Positions, balances and trade history appear here once trading is connected.' },
+  { id: 'orders', title: 'Orders', component: 'orders' },
+  { id: 'portfolio', title: 'Portfolio', component: 'portfolio' },
 ];
 
 const components = {
@@ -34,6 +37,8 @@ const components = {
   symbols: () => <SymbolsPanel />,
   signals: () => <SignalsPanel />,
   ladder: () => <LadderPanel />,
+  orders: () => <OrdersPanel />,
+  portfolio: () => <PortfolioPanel />,
   placeholder: (p: IDockviewPanelProps<{ note: string }>) => <PlaceholderPanel {...p} />,
 };
 
@@ -110,6 +115,7 @@ export function App() {
   const dismiss = useApp((s) => s.dismissToast);
 
   useScannerEvents();
+  useEffect(() => startTradingPoll(), []);
 
   useEffect(() => {
     if (inTauri) void api.environment().then(setEnv);

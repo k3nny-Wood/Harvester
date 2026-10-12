@@ -47,13 +47,15 @@ Placing the orders needs the signed trading API and comes with the trading miles
 | # | Milestone | Status |
 |---|---|---|
 | 1 | Core: decimals, filters, ladder builder (ported from CryptoTrader with parity tests) | done |
-| 2 | Tauri shell, dockview layout, Vela chart on Rust-fed data, symbol list, ladder tool preview | done |
-| 3 | Pine Script workspace (PineTS + the 146-script library), indicator panel | next |
-| 4 | Signed trading (Rust): place / cancel / amend, positions, balances, user-data stream, safety limits; ladder placement; order lines on the chart | |
-| 5 | Scanner and signals: QFL base detector (port of the MarketScanner Rust detector), drop scanner with structure scoring, signal panel, alerts | |
-| 6 | Lab panel: the backtest workbench (shared-account simulator, luck test, start-date test, stressed costs) | |
-| 7 | ML trade finder (ONNX via `ort`), clearly marked experimental | |
-| 8 | Installer (NSIS), settings, documentation, CI | |
+| 2 | Tauri shell, dockview layout (drag / re-arrange / float / tab / persist), Vela chart on Rust-fed data, symbol list | done |
+| 3 | Tabbed multi-chart: every chart tab has its own symbol, timeframe, ladder draft | done |
+| 4 | Signals: Pine-exact QFL detector (port), signal engine (crack / watch / drop, 0-100 score with reasons), live scanner over one combined websocket, Signals section with thumbnails that open charts | done (QFL + drop); alerts, sound, saved history next |
+| 5 | Signed trading (Rust): account, positions, open orders, place / cancel / close, batch ladder placement, safety cap; Orders panel (manual entry), Portfolio panel, order lines on the chart, right-click ordering | done (limit / market); stop & take-profit, drag-to-edit orders, user-data stream next |
+| 6 | The ladder tool places real orders (draw start/end, slider, preview, place) | done |
+| 7 | Pine Script workspace (PineTS + the 146-script library), indicator panel | next |
+| 8 | Lab panel: the backtest workbench (shared-account simulator, luck test, start-date test, stressed costs) | |
+| 9 | ML trade finder (ONNX via `ort`), clearly marked experimental | |
+| 10 | Installer (NSIS), settings, documentation, CI | |
 
 ## Principles
 

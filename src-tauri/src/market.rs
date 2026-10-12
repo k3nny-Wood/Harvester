@@ -156,6 +156,17 @@ impl Market {
         Ok(out)
     }
 
+    /// Current mark price of a perpetual.
+    pub async fn mark_price(&self, symbol: &str) -> Result<f64, String> {
+        let v = self.get("/fapi/v1/premiumIndex", &[("symbol", symbol.to_string())]).await?;
+        let p = f(&v["markPrice"]);
+        if p > 0.0 { Ok(p) } else { Err(format!("no mark price for {symbol}")) }
+    }
+
+    pub fn http(&self) -> &reqwest::Client {
+        &self.http
+    }
+
     pub async fn klines(&self, symbol: &str, interval: &str, limit: u32, start: Option<u64>, end: Option<u64>) -> Result<Vec<Kline>, String> {
         let mut q = vec![("symbol", symbol.to_string()), ("interval", interval.to_string()), ("limit", limit.clamp(1, 1500).to_string())];
         if let Some(s) = start {

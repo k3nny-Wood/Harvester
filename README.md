@@ -3,8 +3,9 @@
 A manual trading terminal with signals for Binance USDⓈ-M futures. Rust core, Tauri window, Vela charts,
 draggable and re-arrangeable panels. Open source (AGPL-3.0-or-later). Windows. Testnet by default.
 
-> Status: early. The chart, symbol list, panel layout and the **ladder drawing tool (preview)** work.
-> Order placement, Pine Script, the scanner / QFL signals and the ML finder are on the roadmap (`docs/DESIGN.md`).
+> Status: early but usable on the testnet. Working: tabbed charts, draggable panels, live QFL / drop **signals with thumbnails**,
+> manual order entry, right-click orders on the chart, and the **ladder tool** (draw a range, set the number of orders, place them).
+> Pine Script, the Lab and the ML finder are on the roadmap (`docs/DESIGN.md`).
 
 ## Run
 
@@ -16,7 +17,9 @@ pnpm dev          # opens the Harvester window
 pnpm test         # cargo tests + UI tests
 ```
 
-`HARVESTER_ENV=live` selects the live exchange (default: testnet). Market data needs no API key.
+`HARVESTER_ENV=live` selects the live exchange (default: testnet). Market data needs no API key. To trade, copy `.env.example` to `.env`
+and fill in the testnet keys (`BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`). Live trading needs separate `BINANCE_LIVE_*` keys.
+A server-side cap (`MAX_ORDER_NOTIONAL`, default 5000 USDT) limits any single order.
 
 ## The ladder tool
 

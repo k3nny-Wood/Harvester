@@ -1,7 +1,20 @@
 import { create } from 'zustand';
-import type { Env, ScannerConfig, ScannerStatus, Signal, SymbolQuote } from './types';
+import type { Account, Env, OpenOrder, ScannerConfig, ScannerStatus, Side, Signal, SymbolQuote, TradingStatus } from './types';
 
 /** App-wide state. Everything that belongs to one chart tab lives in `chartStore.ts` instead. */
+/** The order-entry form. Shared so the Orders panel, the chart's right-click menu and the ladder card agree. */
+export interface OrderForm {
+  side: Side;
+  type: 'LIMIT' | 'MARKET';
+  /** empty = follow the last price */
+  price: string;
+  sizeMode: 'usdt' | 'qty' | 'pct';
+  size: string;
+  reduceOnly: boolean;
+  postOnly: boolean;
+  leverage: string;
+}
+
 interface AppState {
   env: Env;
   symbols: SymbolQuote[];
@@ -10,7 +23,15 @@ interface AppState {
   signals: Signal[];
   scanner: ScannerStatus | null;
   scannerConfig: ScannerConfig | null;
+  trading: TradingStatus | null;
+  account: Account | null;
+  orders: OpenOrder[];
+  orderForm: OrderForm;
   toasts: Array<{ id: number; text: string; tone: 'info' | 'signal' | 'warn' }>;
+  setTrading: (t: TradingStatus) => void;
+  setAccount: (a: Account | null) => void;
+  setOrders: (o: OpenOrder[]) => void;
+  patchOrderForm: (p: Partial<OrderForm>) => void;
   setEnv: (e: Env) => void;
   setSymbols: (s: SymbolQuote[]) => void;
   setActiveChart: (id: string) => void;
@@ -30,7 +51,15 @@ export const useApp = create<AppState>((set) => ({
   signals: [],
   scanner: null,
   scannerConfig: null,
+  trading: null,
+  account: null,
+  orders: [],
+  orderForm: { side: 'BUY', type: 'LIMIT', price: '', sizeMode: 'usdt', size: '100', reduceOnly: false, postOnly: false, leverage: '' },
   toasts: [],
+  setTrading: (trading) => set({ trading }),
+  setAccount: (account) => set({ account }),
+  setOrders: (orders) => set({ orders }),
+  patchOrderForm: (p) => set((s) => ({ orderForm: { ...s.orderForm, ...p } })),
   setEnv: (env) => set({ env }),
   setSymbols: (symbols) => set({ symbols }),
   setActiveChart: (activeChartId) => set({ activeChartId }),

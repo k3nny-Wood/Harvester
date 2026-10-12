@@ -3,6 +3,7 @@
 mod market;
 mod scanner;
 mod stream;
+mod trading;
 
 use harvester_core::filters::SymbolFilters;
 use harvester_core::ladder::{build_ladder, LadderPreview, LadderSpec};
@@ -11,12 +12,14 @@ use market::{Env, Kline, Market, SymbolQuote};
 use scanner::{Scanner, ScannerConfig, ScannerStatus};
 use std::sync::Arc;
 use stream::Streams;
+use trading::{Account, OpenOrder, OrderAck, OrderRequest, Trading, TradingStatus};
 use tauri::{AppHandle, Manager, State};
 
 struct AppState {
     market: Arc<Market>,
     streams: Streams,
     scanner: Scanner,
+    trading: Trading,
 }
 
 #[tauri::command]
@@ -62,6 +65,52 @@ async fn preview_ladder(state: State<'_, AppState>, spec: LadderSpec, reference_
 }
 
 #[tauri::command]
+fn trading_status(state: State<'_, AppState>) -> TradingStatus {
+    state.trading.status()
+}
+
+#[tauri::command]
+async fn account_overview(state: State<'_, AppState>) -> Result<Account, String> {
+    state.trading.account().await
+}
+
+#[tauri::command]
+async fn open_orders(state: State<'_, AppState>, symbol: Option<String>) -> Result<Vec<OpenOrder>, String> {
+    state.trading.open_orders(symbol.as_deref()).await
+}
+
+#[tauri::command]
+async fn place_order(state: State<'_, AppState>, order: OrderRequest) -> Result<OrderAck, String> {
+    state.trading.place(order).await
+}
+
+/// Several orders at once (a ladder); each rung reports its own success or error.
+#[tauri::command]
+async fn place_orders(state: State<'_, AppState>, orders: Vec<OrderRequest>) -> Result<Vec<Result<OrderAck, String>>, String> {
+    state.trading.place_many(orders).await
+}
+
+#[tauri::command]
+async fn cancel_order(state: State<'_, AppState>, symbol: String, order_id: i64) -> Result<(), String> {
+    state.trading.cancel(&symbol, order_id).await
+}
+
+#[tauri::command]
+async fn cancel_all_orders(state: State<'_, AppState>, symbol: String) -> Result<(), String> {
+    state.trading.cancel_all(&symbol).await
+}
+
+#[tauri::command]
+async fn close_position(state: State<'_, AppState>, symbol: String, fraction: Option<f64>) -> Result<OrderAck, String> {
+    state.trading.close_position(&symbol, fraction.unwrap_or(1.0)).await
+}
+
+#[tauri::command]
+async fn set_leverage(state: State<'_, AppState>, symbol: String, leverage: u32) -> Result<(), String> {
+    state.trading.set_leverage(&symbol, leverage).await
+}
+
+#[tauri::command]
 fn scanner_signals(state: State<'_, AppState>) -> Vec<Signal> {
     state.scanner.signals()
 }
@@ -83,9 +132,11 @@ fn scanner_configure(app: AppHandle, state: State<'_, AppState>, config: Scanner
 }
 
 fn main() {
+    let _ = dotenvy::dotenv(); // keys and limits from a .env file (searched upwards from the working directory)
     let env = Env::from_name(&std::env::var("HARVESTER_ENV").unwrap_or_default());
+    let market = Arc::new(Market::new(env));
     tauri::Builder::default()
-        .manage(AppState { market: Arc::new(Market::new(env)), streams: Streams::default(), scanner: Scanner::default() })
+        .manage(AppState { market: market.clone(), streams: Streams::default(), scanner: Scanner::default(), trading: Trading::new(market) })
         .setup(|app| {
             let state = app.state::<AppState>();
             state.scanner.start(app.handle().clone(), state.market.clone(), ScannerConfig::default());
@@ -93,7 +144,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
-            scanner_signals, scanner_status, scanner_config, scanner_configure
+            scanner_signals, scanner_status, scanner_config, scanner_configure,
+            trading_status, account_overview, open_orders, place_order, place_orders, cancel_order, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");

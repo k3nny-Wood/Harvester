@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import type { Vela } from '@luxalgo/vela';
 import { api } from '../api';
+import { refreshTrading } from '../trade';
 import { formatPrice, rawRungPrices, snapToTick } from '../ladderMath';
 import { ladderSide, useChart, useChartId, type LadderDraft } from '../chartStore';
 import { useApp } from '../store';
@@ -265,8 +266,33 @@ function LadderCard({ style, color, precision }: { style: React.CSSProperties; c
   const symbol = useChart((s) => s.symbol);
   const side = ladderSide(d);
   const qtyPrecision = useChart((s) => s.filters?.quantityPrecision ?? 3);
+  const trading = useApp((s) => s.trading);
+  const env = useApp((s) => s.env);
+  const toast = useApp((s) => s.toast);
+  const [busy, setBusy] = useState(false);
   const p = d.preview;
   const invalid = p ? p.rungs.filter((r) => !r.valid).length : 0;
+  const valid = p ? p.rungs.filter((r) => r.valid) : [];
+
+  const place = async () => {
+    if (!p || valid.length === 0) return;
+    const text = `${env === 'live' ? 'LIVE ORDERS - real money.\n\n' : ''}Place ${valid.length} ${side} limit orders on ${symbol}?\nTotal about ${p.totalNotional.toFixed(2)} USDT, average ${formatPrice(p.averageEntry, precision)}${invalid ? `\n(${invalid} rung(s) that break exchange limits are skipped)` : ''}`;
+    if (!window.confirm(text)) return;
+    setBusy(true);
+    const tag = `hv${Date.now().toString(36)}`;
+    try {
+      const results = await api.placeOrders(valid.map((r, i) => ({ symbol, side, type: 'LIMIT' as const, quantity: r.quantity, price: r.price, clientId: `${tag}-${i}` })));
+      const failed = results.filter((x) => 'Err' in x) as Array<{ Err: string }>;
+      const ok = results.length - failed.length;
+      toast(failed.length === 0 ? `Ladder placed: ${ok} ${side} orders on ${symbol}` : `Ladder: ${ok} placed, ${failed.length} failed - ${failed[0].Err}`, failed.length ? 'warn' : 'info');
+      void refreshTrading();
+      if (failed.length === 0) reset();
+    } catch (e) {
+      toast(`Ladder: ${e}`, 'warn');
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="ladder-card" style={style} onPointerDown={(e) => e.stopPropagation()}>
       <div className="ladder-card-head">
@@ -344,8 +370,8 @@ function LadderCard({ style, color, precision }: { style: React.CSSProperties; c
       </div>
 
       <div className="ladder-actions">
-        <button className="primary" disabled title="Order placement arrives with the trading milestone; this is a preview for now">
-          Place {d.count} orders
+        <button className="primary" disabled={busy || !trading?.hasCredentials || valid.length === 0} title={trading?.hasCredentials ? 'Place every valid rung as a limit order' : trading?.message} onClick={() => void place()}>
+          {busy ? 'Placing...' : `Place ${valid.length || d.count} orders`}
         </button>
         <button onClick={reset}>Cancel</button>
       </div>

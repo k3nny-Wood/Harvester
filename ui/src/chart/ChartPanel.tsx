@@ -7,6 +7,7 @@ import { getDock } from '../dock';
 import { intervalToVela } from '../intervals';
 import { useApp } from '../store';
 import { DRAWING_GROUPS } from './drawingTools';
+import { ChartTrading } from './ChartTrading';
 import { LadderOverlay } from './LadderOverlay';
 import { HarvesterProvider } from './provider';
 
@@ -121,6 +122,7 @@ function ChartBody() {
   return (
     <div className="chart-shell">
       <div ref={ref} className="chart-host" />
+      <ChartTrading chart={chart} host={ref} />
       <LadderOverlay chart={chart} host={ref} />
     </div>
   );

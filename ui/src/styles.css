@@ -630,3 +630,188 @@ table.rungs tr.bad td {
 .toast.warn {
   border-left-color: var(--warn);
 }
+
+/* trading on the chart */
+.trade-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.trade-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.trade-label {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: #0b0f15;
+  stroke-width: 3px;
+}
+.cancel-x {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.ctx-menu {
+  position: absolute;
+  min-width: 230px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: auto;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+  z-index: 40;
+}
+.ctx-menu button {
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 6px 8px;
+}
+.ctx-menu button:hover:not(:disabled) {
+  background: var(--panel-2);
+}
+.ctx-title {
+  font-weight: 700;
+  padding: 4px 8px;
+  color: var(--accent);
+}
+.ctx-note {
+  padding: 4px 8px 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* order entry + portfolio */
+.order-entry {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.of-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.of-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.of-sides button {
+  padding: 6px;
+  font-weight: 600;
+}
+.of-sides .buy.on {
+  background: var(--up);
+  border-color: var(--up);
+  color: #fff;
+}
+.of-sides .sell.on {
+  background: var(--down);
+  border-color: var(--down);
+  color: #fff;
+}
+.of-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.of-grid label,
+.of-flags label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.of-grid select,
+.of-grid input,
+.of-flags input[type='number'] {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 6px;
+  color: var(--text);
+}
+.of-grid a {
+  float: right;
+  color: var(--accent);
+  cursor: pointer;
+}
+.of-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.of-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+}
+.of-flags label {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+.of-flags .lev input {
+  width: 56px;
+}
+.of-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 14px;
+  font-variant-numeric: tabular-nums;
+}
+.of-summary > div {
+  display: flex;
+  justify-content: space-between;
+}
+.of-summary span {
+  color: var(--muted);
+}
+.place {
+  padding: 8px;
+  font-size: 14px;
+}
+.of-orders {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.portfolio {
+  padding: 8px;
+}
+.pf-balances {
+  display: flex;
+  gap: 24px;
+  padding: 4px 4px 10px;
+}
+.pf-balances span {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+.pf-table {
+  margin-bottom: 10px;
+}
+.pf-table td a {
+  color: var(--accent);
+  cursor: pointer;
+}
+.pf-actions button {
+  padding: 1px 6px;
+  font-size: 11px;
+  margin-left: 2px;
+}

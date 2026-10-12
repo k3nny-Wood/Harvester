@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Env, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
+import type { Account, Env, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
 
 /** True when running inside the Tauri shell (false in a plain browser, e.g. `vite` on its own). */
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -18,6 +18,15 @@ export const api = {
   scannerStatus: () => invoke<ScannerStatus>('scanner_status'),
   scannerConfig: () => invoke<ScannerConfig>('scanner_config'),
   scannerConfigure: (config: ScannerConfig) => invoke<void>('scanner_configure', { config }),
+  tradingStatus: () => invoke<TradingStatus>('trading_status'),
+  account: () => invoke<Account>('account_overview'),
+  openOrders: (symbol?: string) => invoke<OpenOrder[]>('open_orders', { symbol: symbol ?? null }),
+  placeOrder: (order: OrderRequest) => invoke<OrderAck>('place_order', { order }),
+  placeOrders: (orders: OrderRequest[]) => invoke<Array<{ Ok: OrderAck } | { Err: string }>>('place_orders', { orders }),
+  cancelOrder: (symbol: string, orderId: number) => invoke<void>('cancel_order', { symbol, orderId }),
+  cancelAll: (symbol: string) => invoke<void>('cancel_all_orders', { symbol }),
+  closePosition: (symbol: string, fraction = 1) => invoke<OrderAck>('close_position', { symbol, fraction }),
+  setLeverage: (symbol: string, leverage: number) => invoke<void>('set_leverage', { symbol, leverage }),
   previewLadder: (spec: LadderSpec, referencePrice: number) => invoke<LadderPreview>('preview_ladder', { spec, referencePrice }),
 };
 
