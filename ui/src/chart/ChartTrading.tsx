@@ -6,6 +6,7 @@ import { useChart, useChartId } from '../chartStore';
 import { formatPrice, snapToTick } from '../ladderMath';
 import { useApp } from '../store';
 import { priceBand } from '../priceBand';
+import { maxPct, notionalOfForm, pctFromNotional, sizeFromPct } from '../sizing';
 import { orderFromForm, refreshTrading, submitOrder } from '../trade';
 import { getProjector } from './projector';
 
@@ -277,6 +278,18 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
     return () => window.removeEventListener('keydown', esc);
   }, [drag]);
 
+  // order size as the right-click menu shows it, kept in the shared order form so the Orders panel agrees
+  const form = useApp((s) => s.orderForm);
+  const wallet = account?.walletBalance ?? 0;
+  const lev = Number(form.leverage) || 1;
+  const cap = trading?.maxOrderNotional ?? 0;
+  const notional = notionalOfForm(form.sizeMode, Number(form.size), menu?.price ?? mark, account?.availableBalance ?? 0, lev);
+  const sizePct = pctFromNotional(notional, wallet, lev);
+  const sliderMax = maxPct(wallet, lev, cap);
+  const margin = notional / Math.max(1, lev);
+  const overCap = cap > 0 && notional > cap;
+  const setSizeFromPct = (pct: number) => patchForm({ sizeMode: 'usdt', size: sizeFromPct(pct, wallet, lev).notional.toFixed(2) });
+
   const placeAt = async (side: 'BUY' | 'SELL', price: number) => {
     setMenu(null);
     const built = orderFromForm(price, side);
@@ -389,7 +402,23 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
           >
             ✎ Use this price in the order form
           </button>
-          <div className="ctx-note">Size comes from the Orders panel.</div>
+          <div className="ctx-size">
+            <div className="ctx-size-row">
+              <span>Size</span>
+              <b>{sizePct.toFixed(1)}% of account</b>
+            </div>
+            <input type="range" min={0} max={sliderMax} step={0.5} value={Math.min(sizePct, sliderMax)} disabled={!(wallet > 0)} title={wallet > 0 ? 'Share of the account used as margin' : 'No account balance yet'} onChange={(e) => setSizeFromPct(Number(e.target.value))} />
+            <div className="ctx-size-row muted">
+              <span>
+                margin {margin.toFixed(2)} · {lev}x
+              </span>
+              <label className="ctx-dollar">
+                position $
+                <input type="number" min={0} step={10} value={Number(notional.toFixed(2))} onChange={(e) => patchForm({ sizeMode: 'usdt', size: String(Math.max(0, Number(e.target.value) || 0)) })} />
+              </label>
+            </div>
+            {overCap && <div className="warn">Above the safety cap of {cap.toFixed(0)} USDT per order.</div>}
+          </div>
         </div>
       )}
       <span hidden>{chartId}</span>

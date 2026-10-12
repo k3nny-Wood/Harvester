@@ -43,6 +43,12 @@ Every chart tab has a **Pine** button (top left of the chart) and a `/` quick pi
 8 built-in indicators and 138 community scripts from everget's public TradingView collection, ported to Pine v6; each one is run by
 `pnpm --dir ui test` so nothing in the list is a placeholder. Write or paste your own in the editor. Scripts are remembered per chart tab.
 
+## Right-click menu
+
+Right-click on a chart for: buy / sell limit at that price, start a ladder from there, or put the price in the order form. The menu also has a **size slider**: the share of
+the account (wallet balance) used as margin, with the margin and the position value in USDT beside it (position = margin x the form's leverage), and a box where you can type the
+position value instead. The slider and the Orders panel share one size, so what you set in one shows in the other; it stops at the safety cap on one order (`MAX_ORDER_NOTIONAL`).
+
 ## Held orders: limit orders outside Binance's price band
 
 Binance refuses a LIMIT order whose price is too far from the market (the percent-price filter, about 5% either way for most coins). Harvester no longer

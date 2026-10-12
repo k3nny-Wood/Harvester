@@ -1528,3 +1528,37 @@ button.mini {
   opacity: 0.85;
   font-style: italic;
 }
+
+.ctx-size {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px 4px;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  min-width: 230px;
+}
+.ctx-size-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.ctx-size input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.ctx-dollar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ctx-dollar input {
+  width: 78px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 4px;
+  color: inherit;
+}
