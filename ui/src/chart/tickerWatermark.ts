@@ -43,7 +43,7 @@ export function registerTickerWatermarkLayer(): void {
           let size = Math.max(24, Math.min(height * 0.45, (width * 0.8) / (symbol.length * 0.72)));
           const font = (px: number) => `700 ${px}px ${args.theme.fontFamily || 'system-ui, sans-serif'}`;
           ctx.save();
-          ctx.globalAlpha = 0.07;
+          ctx.globalAlpha = 0.035;
           ctx.fillStyle = args.theme.textColor;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
