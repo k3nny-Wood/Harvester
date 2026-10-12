@@ -108,7 +108,7 @@ export function ChartSmc({ chart }: { chart: Vela | null }) {
         text: { value: s.label, color: `rgb(${s.rgb})`, size: 'tiny', hAlign: 'left', vAlign: 'top' },
       });
       if (d) {
-        chart.drawings.setLocked(d.id, true); // an overlay of the app, not something to drag around
+        chart.drawings.update(d.id, { locked: true }); // an overlay of the app, not something to drag around
         ids.current.set(s.key, d.id);
       }
     }

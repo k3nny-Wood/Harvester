@@ -81,7 +81,7 @@ export function ChartFills({ chart }: { chart: Vela | null }) {
         style: { lineColor: m.side === 'BUY' ? GREEN : RED, lineWidth: 2, lineStyle: 'solid' },
       });
       if (d) {
-        chart.drawings.setLocked(d.id, true); // an overlay of the app, not something to drag around
+        chart.drawings.update(d.id, { locked: true }); // an overlay of the app, not something to drag around
         ids.current.set(m.key, d.id);
       }
     }

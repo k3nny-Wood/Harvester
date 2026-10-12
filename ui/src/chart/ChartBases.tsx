@@ -126,7 +126,7 @@ export function ChartBases({ chart }: { chart: Vela | null }) {
               text: s.label ? { value: s.label, color: '#cfe3ff', size: 'tiny', hAlign: 'left', vAlign: 'top' } : undefined,
             });
       if (d) {
-        chart.drawings.setLocked(d.id, true); // an overlay of the app, not something to drag around
+        chart.drawings.update(d.id, { locked: true }); // an overlay of the app, not something to drag around
         ids.current.set(s.key, d.id);
       }
     }
