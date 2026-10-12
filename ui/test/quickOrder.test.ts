@@ -57,3 +57,28 @@ describe('percentage shown on the take-profit and stop-loss', () => {
     expect(signed(20, 1)).toBe('+20.0%');
   });
 });
+
+import { defaultLadderEnd } from '../src/chart/QuickOrder';
+
+describe('exits of a ladder', () => {
+  it('must be beyond every rung: above the highest for a long take-profit, below the lowest for its stop', () => {
+    // a long ladder from 100 down to 97
+    expect(bracketProblems({ side: 'BUY', entry: 100, tp: 103, sl: 95 }, 97)).toEqual([]);
+    expect(bracketProblems({ side: 'BUY', entry: 100, tp: 103, sl: 98 }, 97).length).toBeGreaterThan(0);
+    expect(bracketProblems({ side: 'BUY', entry: 100, tp: 99, sl: 95 }, 97).length).toBeGreaterThan(0);
+  });
+
+  it('a short ladder is the mirror', () => {
+    expect(bracketProblems({ side: 'SELL', entry: 100, tp: 96, sl: 106 }, 103)).toEqual([]);
+    expect(bracketProblems({ side: 'SELL', entry: 100, tp: 96, sl: 102 }, 103).length).toBeGreaterThan(0);
+  });
+
+  it('a ladder end equal to the entry is flagged', () => {
+    expect(bracketProblems({ side: 'BUY', entry: 100, tp: 103, sl: 95 }, 100).length).toBeGreaterThan(0);
+  });
+
+  it('a new ladder ends against the trade', () => {
+    expect(defaultLadderEnd('BUY', 100, 0.01)).toBeLessThan(100);
+    expect(defaultLadderEnd('SELL', 100, 0.01)).toBeGreaterThan(100);
+  });
+});

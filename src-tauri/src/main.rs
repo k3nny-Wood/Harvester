@@ -123,8 +123,8 @@ async fn move_to_held(state: State<'_, AppState>, symbol: String, order_id: i64,
 
 /// Exits (take-profit / stop-loss) that wait for an entry order to fill, then are placed on Binance.
 #[tauri::command]
-fn bracket_add(state: State<'_, AppState>, symbol: String, long: bool, take_profit: f64, stop_loss: f64, entry_order_id: i64, entry_conditional: bool) -> Result<Bracket, String> {
-    state.brackets.add(state.trading.env(), symbol, long, take_profit, stop_loss, entry_order_id, entry_conditional)
+fn bracket_add(state: State<'_, AppState>, symbol: String, long: bool, take_profit: f64, stop_loss: f64, entry_order_id: i64, entry_conditional: bool, quantity: Option<f64>) -> Result<Bracket, String> {
+    state.brackets.add(state.trading.env(), symbol, long, take_profit, stop_loss, entry_order_id, entry_conditional, quantity.unwrap_or(0.0))
 }
 
 #[tauri::command]

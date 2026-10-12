@@ -9,10 +9,11 @@ import { useApp } from '../store';
 import { refreshTrading } from '../trade';
 import type { LeverageBracket, OrderAck, OrderRequest, Side } from '../types';
 import { getProjector } from './projector';
+import { averagePrice, ladderRungs, MAX_RUNGS, MIN_RUNGS, type RungWeights } from './quickLadder';
 
 const TAG_W = 156;
 
-type Which = 'entry' | 'tp' | 'sl';
+type Which = 'entry' | 'tp' | 'sl' | 'end';
 
 interface Quick {
   side: Side;
@@ -48,13 +49,25 @@ export function defaultBracket(side: Side, entry: number, tick: number): { tp: n
 }
 
 /** Mistakes in the levels themselves (wrong side of the entry); an empty list means the bracket makes sense. */
-export function bracketProblems(q: Quick): string[] {
+export function bracketProblems(q: Quick, ladderEnd?: number): string[] {
   const out: string[] = [];
   const long = q.side === 'BUY';
   if (!(q.entry > 0) || !(q.tp > 0) || !(q.sl > 0)) return ['Enter all three prices.'];
-  if (long ? !(q.tp > q.entry) : !(q.tp < q.entry)) out.push(`The take-profit must be ${long ? 'above' : 'below'} the entry.`);
-  if (long ? !(q.sl < q.entry) : !(q.sl > q.entry)) out.push(`The stop-loss must be ${long ? 'below' : 'above'} the entry.`);
+  // with a ladder the exits must be beyond every rung: above the highest for a take-profit, below the lowest for a stop-loss (long)
+  const prices = ladderEnd != null && ladderEnd > 0 ? [q.entry, ladderEnd] : [q.entry];
+  const high = Math.max(...prices);
+  const low = Math.min(...prices);
+  const what = prices.length > 1 ? 'every rung of the ladder' : 'the entry';
+  if (long ? !(q.tp > high) : !(q.tp < low)) out.push(`The take-profit must be ${long ? 'above' : 'below'} ${what}.`);
+  if (long ? !(q.sl < low) : !(q.sl > high)) out.push(`The stop-loss must be ${long ? 'below' : 'above'} ${what}.`);
+  if (ladderEnd != null && ladderEnd > 0 && ladderEnd === q.entry) out.push('The ladder end is the same price as the entry.');
   return out;
+}
+
+/** Where a new ladder ends by default: 1.5% beyond the entry, against the trade (a long scales in lower, a short higher). */
+export function defaultLadderEnd(side: Side, entry: number, tick: number): number {
+  const p = entry * (1 + (side === 'BUY' ? -1 : 1) * 0.015);
+  return tick > 0 ? Number((Math.round(p / tick) * tick).toPrecision(12)) : p;
 }
 
 /** True when an exit sits on the wrong side of the CURRENT price (Binance would refuse or fire it at once): it has to wait for the entry to fill. */
@@ -87,6 +100,8 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
   const [maxLev, setMaxLev] = useState(20);
   const [busy, setBusy] = useState(false);
   const [brackets, setBrackets] = useState<LeverageBracket[]>([]);
+  // a ladder: several entry orders spread from the entry to `end`; the take-profit and stop-loss cover all of them
+  const [lad, setLad] = useState<{ on: boolean; count: number; end: number; mode: RungWeights }>({ on: false, count: 5, end: 0, mode: 'equal' });
   const [, setTick] = useState(0);
   const tickSize = Number(filters?.tickSize) || 0;
   const precision = filters?.pricePrecision ?? 2;
@@ -128,6 +143,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
       const entry = raw ?? snapToTick(mark, filters?.tickSize);
       if (!(entry > 0)) return;
       setQ({ side, entry, ...defaultBracket(side, entry, tickSize) });
+      setLad((l) => ({ ...l, end: defaultLadderEnd(side, entry, tickSize) }));
     },
     [priceAt, mark, filters?.tickSize, tickSize],
   );
@@ -193,20 +209,29 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
 
   const long = q.side === 'BUY';
   const kind = entryKind(q.side, q.entry, mark);
-  const problems = bracketProblems(q);
+  const ladOn = lad.on && lad.end > 0 && lad.end !== q.entry;
+  const problems = bracketProblems(q, lad.on ? lad.end : undefined);
   const waits = exitsMustWait(q, mark);
   const size = sizeFromPct(pct, wallet, lev);
   const sliderMax = maxPct(wallet, lev, cap);
   const usedPct = Math.min(pct, sliderMax);
   const notional = sizeFromPct(usedPct, wallet, lev).notional;
-  const qty = q.entry > 0 ? notional / q.entry : 0;
-  const risk = qty * Math.abs(q.entry - q.sl);
-  const reward = qty * Math.abs(q.tp - q.entry);
+  const stepSize = Number(filters?.stepSize) || 0;
+  // the orders: one entry, or the rungs of the ladder. The total is sized at the (unrounded) average price, then split and rounded per rung
+  const shape = ladderRungs(q.entry, ladOn ? lad.end : q.entry, ladOn ? lad.count : 1, lad.mode, 1, tickSize, 0);
+  const shapeAvg = shape.reduce((a, x) => a + x.price * x.qty, 0) || q.entry;
+  const rungs = ladderRungs(q.entry, ladOn ? lad.end : q.entry, ladOn ? lad.count : 1, lad.mode, shapeAvg > 0 ? notional / shapeAvg : 0, tickSize, stepSize);
+  const qty = rungs.reduce((a, x) => a + x.qty, 0);
+  const avg = rungs.length > 1 ? averagePrice(rungs) : q.entry;
+  const minNotional = Number(filters?.minNotional) || 0;
+  const rungTooSmall = qty > 0 && rungs.some((x) => x.qty <= 0 || x.qty * x.price < minNotional);
+  const risk = qty * Math.abs(avg - q.sl);
+  const reward = qty * Math.abs(q.tp - avg);
   const side2: Side = long ? 'SELL' : 'BUY';
-  const liq = estimateLiquidation(q.side, q.entry, lev, notional, brackets);
+  const liq = estimateLiquidation(q.side, avg, lev, notional, brackets);
   // a stop-loss beyond the liquidation price is never reached: the position is liquidated first
   const slBeyondLiq = liq != null && (long ? q.sl <= liq : q.sl >= liq);
-  const gain = (p: number) => gainPct(q.side, q.entry, p);
+  const gain = (p: number) => gainPct(q.side, avg, p);
 
   const info = chart ? getProjector(chart) : null;
   const root = rootRef.current;
@@ -222,10 +247,11 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
   const yE = yOf(q.entry);
   const yT = yOf(q.tp);
   const yS = yOf(q.sl);
+  const yEnd = ladOn ? yOf(lad.end) : null;
   const yL = liq != null ? yOf(liq) : null;
   const clampY = (y: number | null) => (y == null ? null : Math.max(offY, Math.min(offY + plotH, y)));
 
-  const set = (which: Which, p: number) => setQ((cur) => (cur ? { ...cur, [which]: p } : cur));
+  const set = (which: Which, p: number) => (which === 'end' ? setLad((l) => ({ ...l, end: p })) : setQ((cur) => (cur ? { ...cur, [which]: p } : cur)));
   const startDrag = (e: React.PointerEvent, which: Which) => {
     e.preventDefault();
     e.stopPropagation();
@@ -246,30 +272,57 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
     setDrag(null);
   };
 
+  /** Take back entry orders that were placed (a rejected rung, or exits that could not be placed): nothing is left half-built. */
+  const rollback = async (acks: OrderAck[]): Promise<number> => {
+    let undone = 0;
+    for (const a of acks) {
+      try {
+        if (a.status === 'HELD') await api.heldCancel(a.clientId);
+        else await api.cancelOrder(symbol, a.orderId, a.conditional);
+        undone += 1;
+      } catch {
+        /* the caller says how many could not be taken back */
+      }
+    }
+    return undone;
+  };
+
   const place = async () => {
-    if (busy || problems.length || !(qty > 0)) return;
+    if (busy || problems.length || rungTooSmall || !(qty > 0)) return;
     setBusy(true);
     const app = useApp.getState();
+    const placed: OrderAck[] = [];
     try {
       if (lev !== initialLev.current) {
         await api.setLeverage(symbol, lev);
         initialLev.current = lev;
       }
       const limit = (p: number) => snapToTick(p * (long ? 1 + LIMIT_OFFSET : 1 - LIMIT_OFFSET), filters?.tickSize);
-      const entry: OrderRequest =
-        kind === 'STOP' ? { symbol, side: q.side, type: 'STOP', quantity: qty, stopPrice: q.entry, price: limit(q.entry) } : { symbol, side: q.side, type: 'LIMIT', quantity: qty, price: q.entry };
-      const ack: OrderAck = await api.placeOrder(entry);
-      // the protective orders are sized to what was actually sent, and reduce-only so they can never open a position
-      const exit = (type: 'TAKE_PROFIT_MARKET' | 'STOP_MARKET', stopPrice: number): OrderRequest => ({ symbol, side: side2, type, quantity: ack.quantity, stopPrice, reduceOnly: true });
+      for (const [i, rung] of rungs.entries()) {
+        const k = entryKind(q.side, rung.price, mark);
+        const req: OrderRequest =
+          k === 'STOP' ? { symbol, side: q.side, type: 'STOP', quantity: rung.qty, stopPrice: rung.price, price: limit(rung.price) } : { symbol, side: q.side, type: 'LIMIT', quantity: rung.qty, price: rung.price };
+        try {
+          placed.push(await api.placeOrder(req));
+        } catch (e) {
+          const undone = await rollback(placed);
+          throw new Error(`order ${i + 1} of ${rungs.length} @ ${formatPrice(rung.price, precision)} was refused (${e}). ${placed.length ? `${undone} of the ${placed.length} orders before it were cancelled.` : 'Nothing was placed.'}`);
+        }
+      }
+      // the protective orders cover the whole entry, and are reduce-only so they can never open a position
+      const total = placed.reduce((a, x) => a + x.quantity, 0);
+      const single = placed.length === 1 ? placed[0] : null;
+      const exit = (type: 'TAKE_PROFIT_MARKET' | 'STOP_MARKET', stopPrice: number): OrderRequest => ({ symbol, side: side2, type, quantity: total, stopPrice, reduceOnly: true });
+      const what = rungs.length > 1 ? `${rungs.length}-order ${long ? 'long' : 'short'} ladder ${formatPrice(q.entry, precision)} to ${formatPrice(rungs[rungs.length - 1].price, precision)}` : `${long ? 'long' : 'short'} ${kind === 'STOP' ? 'stop-limit' : 'limit'} entry @ ${formatPrice(q.entry, precision)}`;
       if (waits) {
         // the exits are on the wrong side of the market for now: Harvester sends them the moment the entry has filled
         try {
-          await api.bracketAdd({ symbol, long, takeProfit: q.tp, stopLoss: q.sl, entryOrderId: ack.status === 'HELD' ? 0 : ack.orderId, entryConditional: ack.conditional });
+          await api.bracketAdd({ symbol, long, takeProfit: q.tp, stopLoss: q.sl, entryOrderId: single && single.status !== 'HELD' ? single.orderId : 0, entryConditional: single ? single.conditional : false, quantity: total });
         } catch (e) {
-          if (ack.status !== 'HELD') await api.cancelOrder(symbol, ack.orderId, ack.conditional).catch(() => undefined);
-          throw new Error(`could not arm the take-profit / stop-loss (${e}); the entry was cancelled`);
+          await rollback(placed);
+          throw new Error(`could not arm the take-profit / stop-loss (${e}); the entry orders were cancelled`);
         }
-        app.toast(`Placed ${long ? 'long' : 'short'} ${symbol} ${kind === 'STOP' ? 'stop-limit' : 'limit'} entry @ ${formatPrice(q.entry, precision)}. TP ${formatPrice(q.tp, precision)} / SL ${formatPrice(q.sl, precision)} are armed: they go to Binance as soon as the entry fills (keep Harvester open).`, 'info');
+        app.toast(`Placed ${symbol} ${what}. TP ${formatPrice(q.tp, precision)} / SL ${formatPrice(q.sl, precision)} are armed: they go to Binance as soon as the entry fills (keep Harvester open).`, 'info');
         setQ(null);
         void refreshTrading();
         return;
@@ -283,19 +336,11 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
         }
       }
       if (failed.length) {
-        // never leave an entry without its protection: take the entry back if it is on the exchange
-        let undone = false;
-        if (ack.status !== 'HELD') {
-          try {
-            await api.cancelOrder(symbol, ack.orderId, ack.conditional);
-            undone = true;
-          } catch {
-            /* reported below */
-          }
-        }
-        app.toast(`Bracket not complete (${failed.join('; ')}). ${undone ? 'The entry was cancelled.' : 'Check the entry order: it is still open.'}`, 'warn');
+        // never leave an entry without its protection: take the entry orders back
+        const undone = await rollback(placed);
+        app.toast(`Bracket not complete (${failed.join('; ')}). ${undone === placed.length ? 'The entry orders were cancelled.' : 'Check the entry orders: some are still open.'}`, 'warn');
       } else {
-        app.toast(`Placed ${long ? 'long' : 'short'} ${symbol}: ${kind === 'STOP' ? 'stop-limit' : 'limit'} entry @ ${formatPrice(q.entry, precision)} with TP ${formatPrice(q.tp, precision)} and SL ${formatPrice(q.sl, precision)}`, 'info');
+        app.toast(`Placed ${symbol} ${what} with TP ${formatPrice(q.tp, precision)} and SL ${formatPrice(q.sl, precision)}`, 'info');
         setQ(null);
       }
       void refreshTrading();
@@ -333,13 +378,15 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
       <input
         type="number"
         step={tickSize || 'any'}
-        value={q[which]}
+        value={which === 'end' ? lad.end : q[which]}
         onChange={(e) => {
           const v = Number(e.target.value);
           if (Number.isFinite(v)) set(which, v);
         }}
       />
-      <em className={which === 'tp' ? 'up' : which === 'sl' ? 'down' : ''} title={which === 'entry' ? undefined : `${signed(gain(q[which]))} price move, multiplied by the ${lev}x leverage`}>{which === 'entry' ? (mark > 0 ? `${((q.entry / mark - 1) * 100).toFixed(2)}% vs last` : '') : signed(gain(q[which]) * lev)}</em>
+      <em className={which === 'tp' ? 'up' : which === 'sl' ? 'down' : ''} title={which === 'entry' || which === 'end' ? undefined : `${signed(gain(q[which]))} price move, multiplied by the ${lev}x leverage`}>
+        {which === 'entry' ? (mark > 0 ? `${((q.entry / mark - 1) * 100).toFixed(2)}% vs last` : '') : which === 'end' ? `${((lad.end / q.entry - 1) * 100).toFixed(2)}% vs entry` : signed(gain(q[which]) * lev)}
+      </em>
     </label>
   );
 
@@ -365,7 +412,14 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
             </text>
           </g>
         )}
-        {line('entry', yE, colorE, `${long ? 'LONG' : 'SHORT'} ${kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'} @ ${formatPrice(q.entry, precision)}`, `${long ? 'LONG' : 'SHORT'} ${kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'}`)}
+        {ladOn && yE != null && yEnd != null && <rect x={offX} width={plotW} y={Math.min(yE, yEnd)} height={Math.abs(yE - yEnd)} fill={long ? 'rgba(46, 155, 111, 0.07)' : 'rgba(208, 69, 75, 0.07)'} />}
+        {ladOn &&
+          rungs.slice(1, -1).map((x) => {
+            const y = yOf(x.price);
+            return y == null ? null : <line key={x.price} x1={offX} x2={offX + plotW} y1={y} y2={y} stroke={colorE} strokeWidth={1} strokeDasharray="1 5" opacity={0.8} />;
+          })}
+        {ladOn && line('end', yEnd, colorE, `LADDER END ${formatPrice(lad.end, precision)}  (${rungs.length} orders, avg ${formatPrice(avg, precision)})`, `LADDER END ×${rungs.length}`)}
+        {line('entry', yE, colorE, `${long ? 'LONG' : 'SHORT'} ${ladOn ? 'LADDER START' : kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'} @ ${formatPrice(q.entry, precision)}`, `${long ? 'LONG' : 'SHORT'} ${ladOn ? 'LADDER' : kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'}`)}
       </svg>
       {yE != null && (
         <div
@@ -376,7 +430,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
         >
           <input type="range" min={0} max={Math.max(1, sliderMax)} step={0.5} value={usedPct} disabled={!(wallet > 0)} title="Drag to change the amount (% of the account used as margin)" onChange={(e) => setPct(Number(e.target.value))} />
           <div>
-            {qty > 0 ? qty.toFixed(filters?.quantityPrecision ?? 3) : '0'} {symbol.replace('USDT', '')}
+            {qty > 0 ? qty.toFixed(filters?.quantityPrecision ?? 3) : '0'} {symbol.replace('USDT', '')}{ladOn ? ' (all rungs)' : ''}
           </div>
           <div className="muted">
             ≈ {notional.toFixed(2)} USDT · {usedPct.toFixed(1)}%
@@ -394,9 +448,40 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
           </button>
         </div>
         <div className="muted quick-note">
-          {kind === 'STOP' ? `Stop-limit: triggers at the entry price, limit ${(LIMIT_OFFSET * 100).toFixed(1)}% beyond it.` : `Limit order: the entry is on the near side of the market, so it waits as a normal limit order.`} Drag the boxes on the chart or type prices; double-click a box to place the order.
+          {kind === 'STOP' ? `Stop-limit: triggers at the entry price, limit ${(LIMIT_OFFSET * 100).toFixed(1)}% beyond it.` : `Limit order: the entry is on the near side of the market, so it waits as a normal limit order.`} Drag the boxes on the chart or type prices; double-click a box to place the order. Tick “Ladder” to spread the entry over several orders.
         </div>
-        {field('entry', 'Entry')}
+        {field('entry', ladOn ? 'Ladder start' : 'Entry')}
+        <label className="quick-check">
+          <input
+            type="checkbox"
+            checked={lad.on}
+            onChange={(e) => setLad((l) => ({ ...l, on: e.target.checked, end: l.end > 0 && l.end !== q.entry ? l.end : defaultLadderEnd(q.side, q.entry, tickSize) }))}
+          />{' '}
+          Ladder: spread the entry over several orders
+        </label>
+        {lad.on && (
+          <>
+            {field('end', 'Ladder end')}
+            <label className="quick-slider">
+              <span>
+                Orders <b>{rungs.length}</b>
+              </span>
+              <input type="range" min={MIN_RUNGS} max={MAX_RUNGS} step={1} value={lad.count} onChange={(e) => setLad((l) => ({ ...l, count: Number(e.target.value) }))} />
+            </label>
+            <label className="quick-row">
+              <span>Sizes</span>
+              <select value={lad.mode} onChange={(e) => setLad((l) => ({ ...l, mode: e.target.value as RungWeights }))}>
+                <option value="equal">Equal</option>
+                <option value="up">Bigger towards the end</option>
+                <option value="down">Smaller towards the end</option>
+              </select>
+              <em />
+            </label>
+            <div className="muted quick-note">
+              {rungs.map((x) => `${x.qty.toFixed(filters?.quantityPrecision ?? 3)} @ ${formatPrice(x.price, precision)}`).join(' · ')}
+            </div>
+          </>
+        )}
         {field('tp', 'Take-profit')}
         {field('sl', 'Stop-loss')}
         <label className="quick-slider">
@@ -413,6 +498,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
         </label>
         <div className="quick-sum">
           <span>Position {notional.toFixed(2)} USDT</span>
+          {ladOn && <span>Avg entry {formatPrice(avg, precision)}</span>}
           <span>Margin {(notional / Math.max(1, lev)).toFixed(2)}</span>
           <span className="down">Risk {risk.toFixed(2)}</span>
           <span className="up">Reward {reward.toFixed(2)}</span>
@@ -421,6 +507,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
         </div>
         {waits && problems.length === 0 && <div className="muted quick-note">The take-profit / stop-loss are on the far side of the current price, so Binance would reject them now. They are armed here and sent as soon as the entry fills (Harvester must stay open).</div>}
         {slBeyondLiq && <div className="warn quick-note">The stop-loss is beyond the estimated liquidation price {formatPrice(liq!, precision)}: the position would be liquidated before it triggers. Lower the leverage or move the stop closer.</div>}
+        {rungTooSmall && <div className="warn quick-note">An order of the ladder is below the exchange's minimum size ({minNotional} USDT): use fewer orders or a bigger amount.</div>}
         {problems.map((p) => (
           <div key={p} className="warn quick-note">
             {p}
@@ -430,7 +517,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
         {cap > 0 && size.notional > cap && <div className="muted quick-note">Limited to the safety cap of {cap} USDT per order.</div>}
         <div className="quick-actions">
           <button onClick={() => setQ(null)}>Cancel</button>
-          <button className={`primary ${long ? 'buy' : 'sell'}`} disabled={busy || !canTrade || problems.length > 0 || !(qty > 0)} onClick={() => void place()}>
+          <button className={`primary ${long ? 'buy' : 'sell'}`} disabled={busy || !canTrade || problems.length > 0 || rungTooSmall || !(qty > 0)} onClick={() => void place()}>
             {busy ? 'Placing…' : 'OK'}
           </button>
         </div>

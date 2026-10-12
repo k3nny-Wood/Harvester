@@ -1714,3 +1714,12 @@ button.mini {
   width: 100%;
   margin: 0;
 }
+
+.quick-check {
+  font-size: 11px;
+  display: block;
+}
+.quick-row select {
+  min-width: 0;
+  width: 100%;
+}

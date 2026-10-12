@@ -31,6 +31,9 @@ pub struct Bracket {
     /// the entry order on the exchange (0 when it is held on this computer and cannot be looked up)
     pub entry_order_id: i64,
     pub entry_conditional: bool,
+    /// the planned size of the whole entry (a ladder fills in pieces); the exits cover it. 0 = use the position when it appears
+    #[serde(default)]
+    pub quantity: f64,
     pub created_ms: u64,
 }
 
@@ -70,12 +73,12 @@ impl BracketStore {
         self.items.lock().unwrap().iter().filter(|b| b.env == env).cloned().collect()
     }
 
-    pub fn add(&self, env: Env, symbol: String, long: bool, take_profit: f64, stop_loss: f64, entry_order_id: i64, entry_conditional: bool) -> Result<Bracket, String> {
+    pub fn add(&self, env: Env, symbol: String, long: bool, take_profit: f64, stop_loss: f64, entry_order_id: i64, entry_conditional: bool, quantity: f64) -> Result<Bracket, String> {
         if !(take_profit > 0.0 && stop_loss > 0.0) {
             return Err("The take-profit and stop-loss must be greater than zero.".into());
         }
         let mut g = self.items.lock().unwrap();
-        let b = Bracket { id: format!("brk-{}-{}", now_ms(), g.len()), env, symbol, long, take_profit, stop_loss, entry_order_id, entry_conditional, created_ms: now_ms() };
+        let b = Bracket { id: format!("brk-{}-{}", now_ms(), g.len()), env, symbol, long, take_profit, stop_loss, entry_order_id, entry_conditional, quantity: quantity.max(0.0), created_ms: now_ms() };
         g.push(b.clone());
         self.save(&g);
         Ok(b)
@@ -152,7 +155,9 @@ pub fn start(app: AppHandle, trading: Arc<Trading>, store: Arc<BracketStore>) {
                         missing.remove(&b.id);
                         say(HeldStatus::Failed, format!("The armed take-profit / stop-loss for {} was dropped: {why}.", b.symbol));
                     }
-                    Action::Place(qty) => {
+                    Action::Place(position_qty) => {
+                        // a ladder fills in pieces: the exits cover the planned total, not just what has filled so far (reduce-only caps them at the position)
+                        let qty = if b.quantity > 0.0 { b.quantity.max(position_qty) } else { position_qty };
                         store.cancel(&b.id);
                         missing.remove(&b.id);
                         let mut failed = Vec::new();
@@ -178,7 +183,7 @@ mod tests {
     use super::*;
 
     fn bracket(long: bool, entry_id: i64) -> Bracket {
-        Bracket { id: "b".into(), env: Env::Testnet, symbol: "ETHUSDT".into(), long, take_profit: 110.0, stop_loss: 95.0, entry_order_id: entry_id, entry_conditional: true, created_ms: 1_000 }
+        Bracket { id: "b".into(), env: Env::Testnet, symbol: "ETHUSDT".into(), long, take_profit: 110.0, stop_loss: 95.0, entry_order_id: entry_id, entry_conditional: true, quantity: 0.0, created_ms: 1_000 }
     }
 
     #[test]
@@ -219,8 +224,9 @@ mod tests {
     fn the_store_keeps_brackets_per_environment_and_survives_a_restart() {
         let path = std::env::temp_dir().join(format!("harvester_brackets_test_{}.json", now_ms()));
         let s = BracketStore::open(path.clone());
-        let b = s.add(Env::Testnet, "ETHUSDT".into(), true, 110.0, 95.0, 7, true).unwrap();
-        assert!(s.add(Env::Testnet, "ETHUSDT".into(), true, 0.0, 95.0, 7, true).is_err());
+        let b = s.add(Env::Testnet, "ETHUSDT".into(), true, 110.0, 95.0, 7, true, 2.5).unwrap();
+        assert_eq!(b.quantity, 2.5);
+        assert!(s.add(Env::Testnet, "ETHUSDT".into(), true, 0.0, 95.0, 7, true, 0.0).is_err());
         assert_eq!(BracketStore::open(path.clone()).list(Env::Testnet).len(), 1);
         assert!(s.list(Env::Live).is_empty());
         assert!(s.cancel(&b.id) && !s.cancel(&b.id));
