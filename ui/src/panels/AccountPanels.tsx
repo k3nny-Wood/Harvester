@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import { useLiveMarks } from '../liveMarks';
 import { chartRegistry } from '../chartStore';
 import { confirmDialog } from '../confirm';
 import { openChart } from '../dock';
@@ -25,24 +26,6 @@ function NoKeys() {
 
 function SymbolLink({ symbol }: { symbol: string }) {
   return <a onClick={() => openChart(symbol)}>{symbol}</a>;
-}
-
-/** Mark prices of the given symbols from the live websocket (Binance's own mark price), refreshed four times a second (Binance sends a new mark price once a second). */
-function useLiveMarks(symbols: string[]): Record<string, number> {
-  const [marks, setMarks] = useState<Record<string, number>>({});
-  const key = symbols.join(',');
-  useEffect(() => {
-    if (!key) return;
-    let stop = false;
-    const load = () => void api.markPrices(key.split(',')).then((m) => !stop && setMarks(m)).catch(() => undefined);
-    load();
-    const t = window.setInterval(load, 250);
-    return () => {
-      stop = true;
-      window.clearInterval(t);
-    };
-  }, [key]);
-  return marks;
 }
 
 /** Open positions with unrealised P&L, return on margin, and close buttons. */
@@ -92,11 +75,10 @@ export function PositionsPanel() {
             <th>Size</th>
             <th>Entry</th>
             <th>Mark</th>
-            <th>Value</th>
-            <th>Margin</th>
-            <th>Unrealised P&amp;L</th>
-            <th>ROE</th>
             <th>Liq.</th>
+            <th>Margin</th>
+            <th>PNL (ROE %)</th>
+            <th>Value</th>
             <th>Lev</th>
             <th>
               {account.positions.length > 1 && (
@@ -131,11 +113,13 @@ export function PositionsPanel() {
                 <td>{Math.abs(p.amount)}</td>
                 <td>{p.entryPrice}</td>
                 <td>{p.markPrice}</td>
-                <td>{money(value)}</td>
-                <td>{margin ? money(margin) : '-'}</td>
-                <td className={p.unrealizedPnl >= 0 ? 'up' : 'down'}>{money(p.unrealizedPnl)}</td>
-                <td className={roe >= 0 ? 'up' : 'down'}>{initial ? `${roe.toFixed(1)}%` : '-'}</td>
                 <td>{p.liquidationPrice || '-'}</td>
+                <td>{margin ? money(margin) : '-'}</td>
+                <td className={p.unrealizedPnl >= 0 ? 'up' : 'down'}>
+                  {p.unrealizedPnl >= 0 ? '+' : ''}
+                  {money(p.unrealizedPnl)} USDT ({initial ? `${roe >= 0 ? '+' : ''}${roe.toFixed(2)}%` : '-'})
+                </td>
+                <td>{money(value)}</td>
                 <td>{lev ? `${lev}x` : '-'}</td>
                 <td className="pf-actions">
                   {[0.25, 0.5, 1].map((f) => (

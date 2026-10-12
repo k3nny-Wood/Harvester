@@ -8,6 +8,7 @@ import { useApp } from '../store';
 import { priceBand } from '../priceBand';
 import { fitMenu, type MenuPlacement } from '../menuFit';
 import { closeOrder, maxPct, notionalOfForm, pctFromNotional, sizeFromPct } from '../sizing';
+import { useLiveMarks } from '../liveMarks';
 import { orderFromForm, refreshTrading, submitOrder } from '../trade';
 import { getProjector } from './projector';
 
@@ -60,6 +61,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
   const orders = useApp((s) => s.orders);
   const held = useApp((s) => s.held);
   const account = useApp((s) => s.account);
+  const liveMark = useLiveMarks([symbol])[symbol];
   const trading = useApp((s) => s.trading);
   const patchForm = useApp((s) => s.patchOrderForm);
   const toast = useApp((s) => s.toast);
@@ -178,7 +180,12 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
     const pos = account?.positions.find((p) => p.symbol === symbol);
     if (pos) {
       const ye = yOf(pos.entryPrice);
-      if (ye != null) lines.push({ key: 'pos', y: ye, color: '#3b8fd6', label: `${pos.amount > 0 ? 'LONG' : 'SHORT'} ${pos.amount} @ ${formatPrice(pos.entryPrice, precision)}  P&L ${pos.unrealizedPnl.toFixed(2)}`, dashed: false });
+      // Binance's mark price and the profit it implies, with the return on the position's initial margin
+      const pnl = liveMark ? pos.amount * (liveMark - pos.entryPrice) : pos.unrealizedPnl;
+      const lv = pos.leverage || account?.leverages?.[symbol] || 0;
+      const initial = lv > 0 ? (Math.abs(pos.amount) * pos.entryPrice) / lv : 0;
+      const roe = initial > 0 ? `  ROE ${pnl >= 0 ? '+' : ''}${((pnl / initial) * 100).toFixed(2)}%` : '';
+      if (ye != null) lines.push({ key: 'pos', y: ye, color: '#3b8fd6', label: `${pos.amount > 0 ? 'LONG' : 'SHORT'} ${pos.amount} @ ${formatPrice(pos.entryPrice, precision)}  PNL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}${roe}`, dashed: false });
       const yl = pos.liquidationPrice > 0 ? yOf(pos.liquidationPrice) : null;
       if (yl != null) lines.push({ key: 'liq', y: yl, color: '#e0a33d', label: `LIQ ${formatPrice(pos.liquidationPrice, precision)}`, dashed: true });
     }
