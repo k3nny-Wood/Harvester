@@ -320,7 +320,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
           if (Number.isFinite(v)) set(which, v);
         }}
       />
-      <em className={which === 'tp' ? 'up' : which === 'sl' ? 'down' : ''}>{which === 'entry' ? (mark > 0 ? `${((q.entry / mark - 1) * 100).toFixed(2)}% vs last` : '') : signed(gain(q[which]))}</em>
+      <em className={which === 'tp' ? 'up' : which === 'sl' ? 'down' : ''} title={which === 'entry' ? undefined : `${signed(gain(q[which]))} price move, multiplied by the ${lev}x leverage`}>{which === 'entry' ? (mark > 0 ? `${((q.entry / mark - 1) * 100).toFixed(2)}% vs last` : '') : signed(gain(q[which]) * lev)}</em>
     </label>
   );
 
@@ -329,8 +329,8 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
       <svg className="trade-svg">
         {yE != null && yT != null && clampY(yE) != null && <rect x={offX} width={plotW} y={Math.min(clampY(yE)!, clampY(yT)!)} height={Math.abs(clampY(yE)! - clampY(yT)!)} fill="rgba(46, 155, 111, 0.10)" />}
         {yE != null && yS != null && <rect x={offX} width={plotW} y={Math.min(clampY(yE)!, clampY(yS)!)} height={Math.abs(clampY(yE)! - clampY(yS)!)} fill="rgba(208, 69, 75, 0.10)" />}
-        {line('tp', yT, '#2e9b6f', `TP ${formatPrice(q.tp, precision)}  ${signed(gain(q.tp))} from entry · ${signed(gain(q.tp) * lev, 1)} on margin at ${lev}x`, `TAKE PROFIT ${signed(gain(q.tp))}`)}
-        {line('sl', yS, '#d0454b', `SL ${formatPrice(q.sl, precision)}  ${signed(gain(q.sl))} from entry · ${signed(gain(q.sl) * lev, 1)} on margin at ${lev}x`, `STOP LOSS ${signed(gain(q.sl))}`)}
+        {line('tp', yT, '#2e9b6f', `TP ${formatPrice(q.tp, precision)}  ${signed(gain(q.tp) * lev)} on margin at ${lev}x · ${signed(gain(q.tp))} price move`, `TAKE PROFIT ${signed(gain(q.tp) * lev)}`)}
+        {line('sl', yS, '#d0454b', `SL ${formatPrice(q.sl, precision)}  ${signed(gain(q.sl) * lev)} on margin at ${lev}x · ${signed(gain(q.sl))} price move`, `STOP LOSS ${signed(gain(q.sl) * lev)}`)}
         {line('entry', yE, colorE, `${long ? 'LONG' : 'SHORT'} ${kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'} @ ${formatPrice(q.entry, precision)}`, `${long ? 'LONG' : 'SHORT'} ${kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'}`)}
       </svg>
       <div className="quick-panel" onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
