@@ -234,35 +234,108 @@ pub fn detect_filtered(candles: &[Candle], params: &QflParams, filter: Option<Ba
     QflResult { bases, tops, cracks, current_base }
 }
 
-/// A base as the chart draws it: where it formed, where price first broke through it (if it did) and the level that counts as a crack.
+/// A support ZONE as the chart draws it: one or more bases at nearly the same price that reinforce each other.
+///
+/// A base is a swing low price pumped away from. Several of them at the same price area are one level that has held more than
+/// once, so they are combined: the zone spans the lowest to the highest base price, starts at the oldest, and counts how many bases
+/// and how many *touches* (a candle that dipped into the zone without cracking it and closed back above it) it has.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BaseView {
-    pub price: f64,
-    /// open time of the base low candle
+pub struct BaseZone {
+    /// the lowest base price in the zone
+    pub low: f64,
+    /// the highest base price in the zone (equal to `low` for a single base)
+    pub high: f64,
+    /// open time of the oldest base low candle
     pub time: u64,
-    /// open time of the candle that confirmed it (the pump away)
+    /// open time of the candle that confirmed the oldest base
     pub confirm_time: u64,
-    /// open time of the first candle that cracked it; None while it still holds
+    /// open time of the first candle that cracked the zone; None while it still holds
     pub crack_time: Option<u64>,
-    /// `price x (1 - crack_pct)`
+    /// `low x (1 - crack_pct)`: trading below this breaks the zone
     pub crack_level: f64,
+    /// how many bases were combined (1 = a lone base)
+    pub bases: usize,
+    /// how many times price came back to the zone and held it
+    pub touches: usize,
 }
 
-/// The newest `max` confirmed bases of `candles`, oldest first, each with the candle that first cracked it.
-pub fn base_views(candles: &[Candle], params: &QflParams, max: usize) -> Vec<BaseView> {
+fn first_crack(candles: &[Candle], after: usize, level: f64) -> Option<u64> {
+    candles.iter().skip(after + 1).find(|c| c.low <= level).map(|c| c.open_time)
+}
+
+/// Retests of a zone: separate episodes of a candle reaching down into it (low <= `high`) without cracking it and closing back above it.
+fn count_touches(candles: &[Candle], after: usize, high: f64, crack_level: f64, until: Option<u64>) -> usize {
+    let (mut n, mut inside) = (0usize, false);
+    for c in candles.iter().skip(after) {
+        if until.map_or(false, |t| c.open_time >= t) {
+            break;
+        }
+        let touching = c.low <= high && c.low > crack_level && c.close > high;
+        if touching && !inside {
+            n += 1;
+        }
+        inside = touching;
+    }
+    n
+}
+
+/// The newest `max` support zones of `candles`, oldest first. Bases whose prices are within `merge_pct` percent of a zone are folded
+/// into it while that zone is still intact; once price has cracked a zone, a later base at the same price starts a new one. A zone
+/// never grows wider than twice the tolerance, so a slow staircase of bases cannot melt into one huge box.
+pub fn base_zones(candles: &[Candle], params: &QflParams, merge_pct: f64, max: usize) -> Vec<BaseZone> {
     let r = detect(candles, params);
-    let mut out: Vec<BaseView> = r
-        .bases
-        .iter()
-        .map(|b| {
-            // The detector only follows the newest base, so a base that was replaced before price fell through it has no crack record.
-            // Look at the candles themselves: the first one after the confirmation whose low is below the crack level.
-            let level = b.price * (1.0 - params.crack_pct);
-            let crack_time = candles.iter().skip(b.confirm_index + 1).find(|c| c.low <= level).map(|c| c.open_time);
-            BaseView { price: b.price, time: b.time, confirm_time: candles.get(b.confirm_index).map_or(b.time, |c| c.open_time), crack_time, crack_level: level }
+    let tol = merge_pct.max(0.0) / 100.0;
+    let crack_pct = params.crack_pct;
+    let confirm_idx: Vec<usize> = r.bases.iter().map(|b| b.confirm_index).collect();
+    // bases in the order they became known
+    let mut order: Vec<usize> = (0..r.bases.len()).collect();
+    order.sort_by_key(|&i| confirm_idx[i]);
+
+    struct Z {
+        low: f64,
+        high: f64,
+        time: u64,
+        first_confirm: usize,
+        bases: usize,
+    }
+    let mut zones: Vec<Z> = Vec::new();
+    for i in order {
+        let b = &r.bases[i];
+        let joined = zones.iter_mut().find(|z| {
+            let alive = first_crack(candles, z.first_confirm, z.low * (1.0 - crack_pct)).map_or(true, |t| candles.get(b.confirm_index).map_or(true, |c| t > c.open_time));
+            let (lo, hi) = (z.low.min(b.price), z.high.max(b.price));
+            alive && tol > 0.0 && hi <= lo * (1.0 + 2.0 * tol) && b.price >= z.low * (1.0 - tol) && b.price <= z.high * (1.0 + tol)
+        });
+        match joined {
+            Some(z) => {
+                z.low = z.low.min(b.price);
+                z.high = z.high.max(b.price);
+                z.time = z.time.min(b.time);
+                z.first_confirm = z.first_confirm.min(b.confirm_index);
+                z.bases += 1;
+            }
+            None => zones.push(Z { low: b.price, high: b.price, time: b.time, first_confirm: b.confirm_index, bases: 1 }),
+        }
+    }
+    let mut out: Vec<BaseZone> = zones
+        .into_iter()
+        .map(|z| {
+            let crack_level = z.low * (1.0 - crack_pct);
+            let crack_time = first_crack(candles, z.first_confirm, crack_level);
+            BaseZone {
+                low: z.low,
+                high: z.high,
+                time: z.time,
+                confirm_time: candles.get(z.first_confirm).map_or(z.time, |c| c.open_time),
+                crack_time,
+                crack_level,
+                bases: z.bases,
+                touches: count_touches(candles, z.first_confirm, z.high, crack_level, crack_time),
+            }
         })
         .collect();
+    out.sort_by_key(|z| z.time);
     if out.len() > max {
         out.drain(..out.len() - max);
     }
@@ -344,30 +417,116 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn base_views_carry_the_crack_and_the_level() {
+    fn a_zone_carries_its_crack_level_and_a_lone_base_has_equal_edges() {
         let c = series();
         let params = QflParams::default();
-        let v = base_views(&c, &params, 10);
-        assert!(!v.is_empty());
-        let last = v.last().unwrap();
-        assert!((last.crack_level - last.price * (1.0 - params.crack_pct)).abs() < 1e-12);
+        let z = base_zones(&c, &params, 0.5, 10);
+        assert!(!z.is_empty());
+        let last = z.last().unwrap();
+        assert!((last.crack_level - last.low * (1.0 - params.crack_pct)).abs() < 1e-12);
         assert!(last.crack_time.is_some(), "the series ends below the base, so it was cracked");
         assert!(last.confirm_time > last.time);
-        // the cap keeps the newest bases
-        assert!(base_views(&c, &params, 1).len() <= 1);
+        assert_eq!(last.bases, 1);
+        assert!((last.low - last.high).abs() < 1e-12);
+        assert!(base_zones(&c, &params, 0.5, 1).len() <= 1);
     }
 
     #[test]
-    fn a_base_that_was_replaced_before_price_fell_through_it_is_still_marked_cracked() {
+    fn every_zone_marks_a_crack_exactly_when_the_candles_traded_below_it() {
         let c = series();
-        let params = QflParams::default();
-        let v = base_views(&c, &params, 10);
-        // every base whose crack level the candles later traded below must carry a crack time, and none that held may
-        for b in &v {
-            let confirm = c.iter().position(|x| x.open_time == b.confirm_time).unwrap();
-            let broke = c.iter().skip(confirm + 1).any(|x| x.low <= b.crack_level);
-            assert_eq!(b.crack_time.is_some(), broke, "base {}", b.price);
+        for z in base_zones(&c, &QflParams::default(), 0.5, 20) {
+            let confirm = c.iter().position(|x| x.open_time == z.confirm_time).unwrap();
+            let broke = c.iter().skip(confirm + 1).any(|x| x.low <= z.crack_level);
+            assert_eq!(z.crack_time.is_some(), broke, "zone {}", z.low);
         }
+    }
+
+    #[test]
+    fn touches_count_separate_retests_that_held_and_ignore_crack_candles() {
+        // zone high 100, crack level 99.5: candle 1 dips to 99.8 and closes above (a touch), 2 stays inside (same episode, not counted
+        // twice) -> here only one candle per episode, candle 4 is a second touch, candle 6 cracks (stops the count)
+        let mk = |t: u64, low: f64, close: f64| Candle::new(t * 900_000, close, close.max(100.5), low, close, 1.0);
+        let c = vec![mk(0, 101.0, 101.5), mk(1, 99.8, 100.4), mk(2, 99.9, 100.3), mk(3, 101.0, 101.2), mk(4, 99.7, 100.6), mk(5, 101.0, 101.0), mk(6, 99.0, 99.4), mk(7, 99.8, 100.5)];
+        let crack = Some(6 * 900_000);
+        assert_eq!(count_touches(&c, 0, 100.0, 99.5, crack), 2);
+        // a candle that closes inside the zone is not a bounce
+        let inside = vec![mk(0, 99.8, 99.9)];
+        assert_eq!(count_touches(&inside, 0, 100.0, 99.5, None), 0);
+    }
+
+    /// A quiet stretch, then `reps` times: sell off 9.6, pump away 12.8, drift back to the start. Every sell-off ends at the same low.
+    fn waves(reps: usize) -> Vec<Candle> {
+        let mut out = Vec::new();
+        let mut t = 0u64;
+        let mut price = 100.0f64;
+        let mut push = |o: &mut Vec<Candle>, open: f64, close: f64| {
+            o.push(Candle::new(t, open, open.max(close) + 0.15, open.min(close) - 0.15, close, 1000.0));
+            t += 900_000;
+        };
+        for i in 0..220 {
+            let next = price + ((i as f64) * 0.7).sin() * 0.15;
+            push(&mut out, price, next);
+            price = next;
+        }
+        let start = price;
+        for _ in 0..reps {
+            for _ in 0..8 {
+                push(&mut out, price, price - 1.2);
+                price -= 1.2;
+            }
+            for _ in 0..8 {
+                push(&mut out, price, price + 1.6);
+                price += 1.6;
+            }
+            while price > start + 0.05 {
+                push(&mut out, price, price - 0.1);
+                price -= 0.1;
+            }
+            for _ in 0..30 {
+                push(&mut out, price, price); // calm before the next
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn bases_at_the_same_level_merge_into_one_zone_while_it_holds() {
+        let c = waves(2);
+        let params = QflParams::default();
+        let off = base_zones(&c, &params, 0.0, 20);
+        let on = base_zones(&c, &params, 0.5, 20);
+        assert!(off.len() >= 2, "two sell-offs to the same low make two bases: {}", off.len());
+        assert!(off.iter().all(|z| z.bases == 1));
+        assert!(on.len() < off.len(), "merging must combine them: {} vs {}", on.len(), off.len());
+        let merged = on.iter().max_by_key(|z| z.bases).unwrap();
+        assert!(merged.bases >= 2);
+        assert!(merged.high >= merged.low);
+        // the zone starts where the oldest base formed
+        assert_eq!(merged.time, off.iter().map(|z| z.time).min().unwrap());
+        assert_eq!(on.iter().map(|z| z.bases).sum::<usize>(), off.len());
+    }
+
+    #[test]
+    fn a_zone_that_price_cracked_is_not_extended_by_a_later_base() {
+        // two sell-offs to the same low (about 90.7), with a candle that trades far below the level right after the first one
+        let mut c = waves(2);
+        let params = QflParams::default();
+        let waves_only = |z: &Vec<BaseZone>| z.iter().filter(|x| x.low < 95.0).cloned().collect::<Vec<_>>();
+        let off = waves_only(&base_zones(&c, &params, 0.0, 30));
+        assert!(off.len() >= 2, "{off:?}");
+        let (w1, w2) = (off[0], off[1]);
+        assert!(w2.time > w1.confirm_time);
+        let idx = c.iter().position(|x| x.open_time == w1.confirm_time).unwrap() + 2;
+        c[idx] = Candle::new(c[idx].open_time, c[idx].open, c[idx].high, w1.low - 3.0, c[idx].close, 1000.0);
+        let merged = waves_only(&base_zones(&c, &params, 5.0, 30));
+        // the level was broken before the second base formed: the first zone stays a lone, cracked base even with a 5% tolerance
+        // (the crash candle itself became a new base further down, and that new zone may take the later base - that is fine)
+        let first = merged.iter().find(|z| z.time == w1.time).expect("the first zone");
+        assert_eq!(first.bases, 1, "{merged:?}");
+        assert!(first.crack_time.is_some(), "{merged:?}");
+        // and with no crack in between they do merge (the scenario above without the crash)
+        let clean = waves_only(&base_zones(&waves(2), &params, 5.0, 30));
+        assert!(clean.iter().any(|z| z.bases >= 2), "{clean:?}");
     }
 
     #[test]

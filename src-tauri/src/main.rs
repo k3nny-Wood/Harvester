@@ -9,7 +9,7 @@ mod trading;
 
 use harvester_core::filters::SymbolFilters;
 use harvester_core::ladder::{build_ladder, LadderPreview, LadderSpec};
-use harvester_core::qfl::{base_views, BaseView, QflParams};
+use harvester_core::qfl::{base_zones, BaseZone, QflParams};
 use harvester_core::signals::Signal;
 use harvester_core::lab::{LabConfig, LabReport};
 use lab::{Lab, LabRequest};
@@ -164,13 +164,14 @@ fn scanner_configure(app: AppHandle, state: State<'_, AppState>, config: Scanner
     state.scanner.start(app, state.market.clone(), config);
 }
 
-/// The QFL bases of a symbol / timeframe for the chart to draw (Pine-exact detector over the latest 1000 candles).
+/// The QFL support zones of a symbol / timeframe for the chart to draw: bases at nearly the same price combined (Pine-exact detector
+/// over the latest 1000 candles), each with how many bases and how many retests it has.
 #[tauri::command]
-async fn qfl_bases(state: State<'_, AppState>, symbol: String, interval: String, volatility_factor: Option<f64>, crack_pct: Option<f64>) -> Result<Vec<BaseView>, String> {
+async fn qfl_zones(state: State<'_, AppState>, symbol: String, interval: String, volatility_factor: Option<f64>, crack_pct: Option<f64>, merge_pct: Option<f64>) -> Result<Vec<BaseZone>, String> {
     let rows = state.market.klines(&symbol, &interval, 1000, None, None).await?;
     let candles: Vec<harvester_core::candle::Candle> = rows.iter().map(|k| harvester_core::candle::Candle::new(k.time, k.open, k.high, k.low, k.close, k.volume)).collect();
     let params = QflParams { volatility_factor: volatility_factor.unwrap_or(1.0).clamp(0.1, 20.0), crack_pct: crack_pct.unwrap_or(0.5).clamp(0.05, 20.0) / 100.0, ..QflParams::default() };
-    Ok(base_views(&candles, &params, 60))
+    Ok(base_zones(&candles, &params, merge_pct.unwrap_or(0.5).clamp(0.0, 5.0), 60))
 }
 
 /// The Lab's starting configuration (the V2 live setting).
@@ -204,7 +205,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
-            qfl_bases, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
+            qfl_zones, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
             trading_status, account_overview, open_orders, place_order, place_orders, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())

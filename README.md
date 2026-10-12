@@ -43,14 +43,19 @@ Every chart tab has a **Pine** button (top left of the chart) and a `/` quick pi
 8 built-in indicators and 138 community scripts from everget's public TradingView collection, ported to Pine v6; each one is run by
 `pnpm --dir ui test` so nothing in the list is a placeholder. Write or paste your own in the editor. Scripts are remembered per chart tab.
 
-## QFL bases on the chart
+## QFL support zones on the chart
 
-The **Bases** button (top left of every chart, next to Pine) draws the QFL bases of the symbol and timeframe: a bright line running right from
-the candle where a base formed, with its crack level dotted below it. The gear opens the settings: **volatility factor** (how big a pump must be
-to make a base; higher = fewer, bigger bases), crack %, only bases within N% of the price, at most N nearest bases, how many candles a line runs to the
-right (0 = a ray to the edge), **merging** (bases within N% of each other become one thicker line starting at the oldest), and whether broken bases stay on the chart (they do by default: dim, ending at the crack; the distance and count limits only thin out bases that still hold). The settings are shared by every chart. Resting the pointer on a **signal thumbnail** opens a larger chart with the bases
-(merged, nearest first) and the signal's own base highlighted. The defaults (factor 3.5,
-15% of price, 8 nearest, 30 candles) keep the chart readable; V2 itself trades with factor 1.
+The **Bases** button (top left of every chart, next to Pine) draws the QFL bases of the symbol and timeframe as **zones**. A base is a swing low that
+price pumped away from; several bases at nearly the same price are one level that has held more than once, so they are combined into ONE box that
+runs from the lowest to the highest of them and starts at the oldest. The box is darker the more bases and **retests** (a candle that dipped into the
+zone without cracking it and closed back above it) it has, is labelled like "x3 · 2 retests", and has its crack level dotted just below it. A level
+price already cracked starts over: a later base at the same price is a new zone. Zones price already broke stay on the chart as dim boxes that end at
+the crack.
+
+The gear opens the settings, shared by every chart: **volatility factor** (how big a pump must be to make a base; higher = fewer, bigger bases),
+crack %, **merge bases within N%**, only holding zones within N% of the price, at most N nearest, how many candles a box runs to the right (0 = to the
+edge) and whether broken zones stay. The defaults (factor 3.5, merge 0.5%, 15% of price, 8 nearest, 30 candles) keep the chart readable; V2 itself
+trades with factor 1. Resting the pointer on a **signal thumbnail** opens a larger chart with the zones and the signal's own base highlighted.
 
 ## Lab (backtest)
 

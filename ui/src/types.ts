@@ -311,14 +311,21 @@ export interface LabProgress {
 }
 
 
-/** A QFL base as the chart draws it. */
-export interface BaseView {
-  price: number;
+/** A QFL support zone as the chart draws it: one or more bases at nearly the same price. */
+export interface BaseZone {
+  /** the lowest base price in the zone */
+  low: number;
+  /** the highest base price in the zone (equal to `low` for a lone base) */
+  high: number;
+  /** open time of the oldest base low candle */
   time: number;
+  /** open time of the candle that confirmed the oldest base */
   confirmTime: number;
   /** the first candle that cracked it; null while it still holds */
   crackTime: number | null;
   crackLevel: number;
-  /** how many bases at nearly the same price were merged into this one (1 = just itself) */
-  count?: number;
+  /** how many bases were combined */
+  bases: number;
+  /** how many times price came back to the zone and held it */
+  touches: number;
 }

@@ -1,21 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../api';
-import { mergeBases, previewLines, type PreviewLine } from '../bases';
+import { previewBoxes, type PreviewBox } from '../bases';
 import { useBases } from '../basesConfig';
-import { visibleBases } from '../chart/ChartBases';
-import type { BaseView, Kline, Signal } from '../types';
+import { visibleZones } from '../chart/ChartBases';
+import type { BaseZone, Kline, Signal } from '../types';
 
 const W = 560;
 const H = 340;
 const CACHE_MS = 20_000;
-const cache = new Map<string, { at: number; candles: Kline[]; bases: BaseView[] }>();
+const cache = new Map<string, { at: number; candles: Kline[]; zones: BaseZone[] }>();
 
 function fmt(p: number): string {
   return p >= 100 ? p.toFixed(2) : p >= 1 ? p.toFixed(4) : p.toPrecision(4);
 }
 
-function paint(canvas: HTMLCanvasElement, candles: Kline[], lines: PreviewLine[], title: string) {
+function paint(canvas: HTMLCanvasElement, candles: Kline[], boxes: PreviewBox[], title: string) {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = W * dpr;
   canvas.height = H * dpr;
@@ -33,10 +33,10 @@ function paint(canvas: HTMLCanvasElement, candles: Kline[], lines: PreviewLine[]
   let hi = Math.max(...candles.map((c) => c.high));
   // lines far from the candles would squash them: keep only those inside a band around the visible range
   const band = (hi - lo) * 0.35;
-  const shown = lines.filter((l) => l.price >= lo - band && l.price <= hi + band);
-  for (const l of shown) {
-    lo = Math.min(lo, l.price);
-    hi = Math.max(hi, l.price);
+  const shown = boxes.filter((b) => b.top >= lo - band && b.bottom <= hi + band);
+  for (const b of shown) {
+    lo = Math.min(lo, b.bottom);
+    hi = Math.max(hi, b.top);
   }
   const pad = (hi - lo) * 0.05 || hi * 0.001;
   lo -= pad;
@@ -62,16 +62,32 @@ function paint(canvas: HTMLCanvasElement, candles: Kline[], lines: PreviewLine[]
   g.font = '11px sans-serif';
   g.fillText(title, left, 15);
 
-  // base lines under the candles
-  for (const l of shown) {
-    g.strokeStyle = l.color;
-    g.lineWidth = l.width;
-    g.setLineDash(l.dash);
-    g.beginPath();
-    g.moveTo(x(l.from), y(l.price));
-    g.lineTo(l.to != null ? x(l.to) : W - right, y(l.price));
-    g.stroke();
+  // zones under the candles: a shaded box with a border, and the crack level dotted below
+  for (const b of shown) {
+    const x0 = x(b.from);
+    const x1 = b.to != null ? x(b.to) : W - right;
+    const yt = y(b.top);
+    const yb = y(b.bottom);
+    const h = Math.max(2, yb - yt);
+    g.globalAlpha = b.fill;
+    g.fillStyle = '#4f8fdd';
+    g.fillRect(x0, yt, x1 - x0, h);
+    g.globalAlpha = 1;
+    g.strokeStyle = b.color;
+    g.lineWidth = b.width;
+    g.setLineDash(b.dash);
+    g.strokeRect(x0, yt, x1 - x0, h);
     g.setLineDash([]);
+    if (b.crackLine != null) {
+      g.strokeStyle = '#e0a33d';
+      g.lineWidth = 1;
+      g.setLineDash([2, 3]);
+      g.beginPath();
+      g.moveTo(x0, y(b.crackLine));
+      g.lineTo(x1, y(b.crackLine));
+      g.stroke();
+      g.setLineDash([]);
+    }
   }
 
   const body = Math.max(1, slot * 0.62);
@@ -89,10 +105,10 @@ function paint(canvas: HTMLCanvasElement, candles: Kline[], lines: PreviewLine[]
 
   // labels on the right edge, last price tag
   g.font = '10px sans-serif';
-  for (const l of shown) {
-    if (!l.label) continue;
-    g.fillStyle = l.color;
-    g.fillText(l.label, W - right + 6, y(l.price) - 3);
+  for (const b of shown) {
+    if (!b.label) continue;
+    g.fillStyle = b.color;
+    g.fillText(b.label, W - right + 6, y(b.bottom) - 3);
   }
   const last = candles[candles.length - 1].close;
   g.fillStyle = '#f0b90b';
@@ -104,21 +120,21 @@ function paint(canvas: HTMLCanvasElement, candles: Kline[], lines: PreviewLine[]
 /** The large view shown while the pointer rests on a signal's thumbnail: recent candles with the bases (merged) drawn on them. */
 function Popup({ signal, anchor }: { signal: Signal; anchor: DOMRect }) {
   const cfg = useBases((s) => s.cfg);
-  const [data, setData] = useState<{ candles: Kline[]; bases: BaseView[] } | null>(null);
+  const [data, setData] = useState<{ candles: Kline[]; zones: BaseZone[] } | null>(null);
   const [error, setError] = useState('');
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     let alive = true;
-    const key = `${signal.symbol}:${signal.timeframe}:${cfg.factor}:${cfg.crackPct}`;
+    const key = `${signal.symbol}:${signal.timeframe}:${cfg.factor}:${cfg.crackPct}:${cfg.mergePct}`;
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < CACHE_MS) {
       setData(hit);
       return;
     }
-    Promise.all([api.klines(signal.symbol, signal.timeframe, 240), api.qflBases(signal.symbol, signal.timeframe, cfg.factor, cfg.crackPct)])
-      .then(([candles, bases]) => {
-        const entry = { at: Date.now(), candles, bases };
+    Promise.all([api.klines(signal.symbol, signal.timeframe, 240), api.qflZones(signal.symbol, signal.timeframe, cfg.factor, cfg.crackPct, cfg.mergePct)])
+      .then(([candles, zones]) => {
+        const entry = { at: Date.now(), candles, zones };
         cache.set(key, entry);
         if (alive) setData(entry);
       })
@@ -126,20 +142,19 @@ function Popup({ signal, anchor }: { signal: Signal; anchor: DOMRect }) {
     return () => {
       alive = false;
     };
-  }, [signal.symbol, signal.timeframe, cfg.factor, cfg.crackPct]);
+  }, [signal.symbol, signal.timeframe, cfg.factor, cfg.crackPct, cfg.mergePct]);
 
   useEffect(() => {
     if (!data || !ref.current) return;
-    const merged = mergeBases(data.bases, cfg.mergePct);
-    // the preview shows more of the picture than the chart does: a wider distance and more bases
-    const drawn = visibleBases(merged, { showBroken: cfg.showBroken, maxDistancePct: Math.max(cfg.maxDistancePct, 30), maxCount: 12 }, data.candles[data.candles.length - 1]?.close ?? 0);
-    // a crack signal is about a base price has already broken: always include that one
-    const own = signal.base ? data.bases.find((b) => Math.abs(b.price / signal.base! - 1) < 0.003) : undefined;
-    const shown = own && !drawn.some((h) => Math.abs(h.price / own.price - 1) < 0.003) ? [...drawn, own] : drawn;
-    const holding = shown.filter((b) => b.crackTime == null);
-    const lines = previewLines(data.candles, shown, signal.base, fmt);
-    paint(ref.current, data.candles, lines, `${signal.symbol} ${signal.timeframe} · ${holding.length} holding bases (volatility factor ${cfg.factor})`);
-  }, [data, cfg.mergePct, cfg.maxDistancePct, cfg.factor, signal.base, signal.symbol, signal.timeframe]);
+    // the preview shows more of the picture than the chart does: a wider distance and more zones
+    const drawn = visibleZones(data.zones, { showBroken: cfg.showBroken, maxDistancePct: Math.max(cfg.maxDistancePct, 30), maxCount: 12 }, data.candles[data.candles.length - 1]?.close ?? 0);
+    // a crack signal is about a base price has already broken: always include the zone that holds it
+    const own = signal.base ? data.zones.find((z) => signal.base! >= z.low * 0.997 && signal.base! <= z.high * 1.003) : undefined;
+    const shown = own && !drawn.includes(own) ? [...drawn, own] : drawn;
+    const holding = shown.filter((z) => z.crackTime == null);
+    const boxes = previewBoxes(data.candles, shown, signal.base, fmt);
+    paint(ref.current, data.candles, boxes, `${signal.symbol} ${signal.timeframe} · ${holding.length} holding zones (volatility factor ${cfg.factor})`);
+  }, [data, cfg.showBroken, cfg.maxDistancePct, cfg.factor, signal.base, signal.symbol, signal.timeframe]);
 
   // beside the card: to its left (the Signals panel lives at the right of the window), or to its right if there is no room
   const left = anchor.left - W - 12 >= 8 ? anchor.left - W - 12 : Math.min(window.innerWidth - W - 8, anchor.right + 12);
