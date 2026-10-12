@@ -9,7 +9,7 @@ import { refreshTrading } from '../trade';
 import type { OrderAck, OrderRequest, Side } from '../types';
 import { getProjector } from './projector';
 
-const TAG_W = 104;
+const TAG_W = 156;
 
 type Which = 'entry' | 'tp' | 'sl';
 
@@ -24,6 +24,15 @@ interface Quick {
 const LIMIT_OFFSET = 0.001;
 const DEFAULT_SL_PCT = 1;
 const DEFAULT_TP_PCT = 2;
+
+/** The move from the entry to `p` in percent, positive when it is in the trade's favour (a long gains going up, a short going down). */
+export function gainPct(side: Side, entry: number, p: number): number {
+  return entry > 0 ? (side === 'BUY' ? 1 : -1) * (p / entry - 1) * 100 : 0;
+}
+
+export function signed(pct: number, digits = 2): string {
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(digits)}%`;
+}
 
 /** What `entry` becomes on the exchange: a stop-limit when the level is beyond the market (a breakout), a plain limit when it is on the near side (a pullback). */
 export function entryKind(side: Side, entry: number, mark: number): 'STOP' | 'LIMIT' {
@@ -179,7 +188,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
   const risk = qty * Math.abs(q.entry - q.sl);
   const reward = qty * Math.abs(q.tp - q.entry);
   const side2: Side = long ? 'SELL' : 'BUY';
-  const fromEntry = (p: number) => (q.entry > 0 ? ((p / q.entry - 1) * 100).toFixed(2) : '0');
+  const gain = (p: number) => gainPct(q.side, q.entry, p);
 
   const info = chart ? getProjector(chart) : null;
   const root = rootRef.current;
@@ -311,7 +320,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
           if (Number.isFinite(v)) set(which, v);
         }}
       />
-      <em className={which === 'tp' ? 'up' : which === 'sl' ? 'down' : ''}>{which === 'entry' ? (mark > 0 ? `${((q.entry / mark - 1) * 100).toFixed(2)}% vs last` : '') : `${fromEntry(q[which])}%`}</em>
+      <em className={which === 'tp' ? 'up' : which === 'sl' ? 'down' : ''}>{which === 'entry' ? (mark > 0 ? `${((q.entry / mark - 1) * 100).toFixed(2)}% vs last` : '') : signed(gain(q[which]))}</em>
     </label>
   );
 
@@ -320,8 +329,8 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
       <svg className="trade-svg">
         {yE != null && yT != null && clampY(yE) != null && <rect x={offX} width={plotW} y={Math.min(clampY(yE)!, clampY(yT)!)} height={Math.abs(clampY(yE)! - clampY(yT)!)} fill="rgba(46, 155, 111, 0.10)" />}
         {yE != null && yS != null && <rect x={offX} width={plotW} y={Math.min(clampY(yE)!, clampY(yS)!)} height={Math.abs(clampY(yE)! - clampY(yS)!)} fill="rgba(208, 69, 75, 0.10)" />}
-        {line('tp', yT, '#2e9b6f', `TP ${formatPrice(q.tp, precision)} (${fromEntry(q.tp)}%)`, 'TAKE PROFIT')}
-        {line('sl', yS, '#d0454b', `SL ${formatPrice(q.sl, precision)} (${fromEntry(q.sl)}%)`, 'STOP LOSS')}
+        {line('tp', yT, '#2e9b6f', `TP ${formatPrice(q.tp, precision)}  ${signed(gain(q.tp))} from entry · ${signed(gain(q.tp) * lev, 1)} on margin at ${lev}x`, `TAKE PROFIT ${signed(gain(q.tp))}`)}
+        {line('sl', yS, '#d0454b', `SL ${formatPrice(q.sl, precision)}  ${signed(gain(q.sl))} from entry · ${signed(gain(q.sl) * lev, 1)} on margin at ${lev}x`, `STOP LOSS ${signed(gain(q.sl))}`)}
         {line('entry', yE, colorE, `${long ? 'LONG' : 'SHORT'} ${kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'} @ ${formatPrice(q.entry, precision)}`, `${long ? 'LONG' : 'SHORT'} ${kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'}`)}
       </svg>
       <div className="quick-panel" onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>

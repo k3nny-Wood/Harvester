@@ -39,3 +39,21 @@ describe('quick bracket order', () => {
     expect(exitsMustWait({ side: 'BUY', entry: 105, tp: 110, sl: 102 }, 0)).toBe(false);
   });
 });
+
+import { gainPct, signed } from '../src/chart/QuickOrder';
+
+describe('percentage shown on the take-profit and stop-loss', () => {
+  it('a long gains going up and loses going down', () => {
+    expect(gainPct('BUY', 100, 102)).toBeCloseTo(2);
+    expect(gainPct('BUY', 100, 99)).toBeCloseTo(-1);
+  });
+  it('a short gains going down and loses going up', () => {
+    expect(gainPct('SELL', 100, 98)).toBeCloseTo(2);
+    expect(gainPct('SELL', 100, 101)).toBeCloseTo(-1);
+  });
+  it('is written with an explicit sign', () => {
+    expect(signed(2)).toBe('+2.00%');
+    expect(signed(-1.234)).toBe('-1.23%');
+    expect(signed(20, 1)).toBe('+20.0%');
+  });
+});
