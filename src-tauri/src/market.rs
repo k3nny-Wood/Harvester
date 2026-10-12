@@ -163,6 +163,44 @@ impl Market {
         if p > 0.0 { Ok(p) } else { Err(format!("no mark price for {symbol}")) }
     }
 
+    /// Public market data from the REAL exchange, whatever environment trading is on. Research (the Lab) needs real prices:
+    /// the testnet's candles differ from the live market and its server is slow.
+    async fn mainnet_get(&self, path: &str, query: &[(&str, String)]) -> Result<Value, String> {
+        let url = format!("{}{}", Env::Live.rest_base(), path);
+        let resp = self.http.get(&url).query(query).send().await.map_err(|e| format!("{path}: {e}"))?;
+        let status = resp.status();
+        let body: Value = resp.json().await.map_err(|e| format!("{path}: bad response: {e}"))?;
+        if !status.is_success() {
+            return Err(format!("{path}: HTTP {status}: {}", body.get("msg").and_then(|m| m.as_str()).unwrap_or("error")));
+        }
+        Ok(body)
+    }
+
+    pub async fn mainnet_klines(&self, symbol: &str, interval: &str, limit: u32, start: Option<u64>) -> Result<Vec<Kline>, String> {
+        let mut q = vec![("symbol", symbol.to_string()), ("interval", interval.to_string()), ("limit", limit.clamp(1, 1500).to_string())];
+        if let Some(s) = start {
+            q.push(("startTime", s.to_string()));
+        }
+        Ok(parse_klines(&self.mainnet_get("/fapi/v1/klines", &q).await?))
+    }
+
+    /// The `n` USDT perpetuals with the most 24 h volume on the real exchange.
+    pub async fn mainnet_top_symbols(&self, n: usize) -> Result<Vec<String>, String> {
+        let t = self.mainnet_get("/fapi/v1/ticker/24hr", &[]).await?;
+        let mut rows: Vec<(String, f64)> = t
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|x| {
+                let s = x["symbol"].as_str()?;
+                (s.ends_with("USDT") && s.is_ascii() && !s.contains('_')).then(|| (s.to_string(), f(&x["quoteVolume"])))
+            })
+            .collect();
+        rows.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        Ok(rows.into_iter().take(n).map(|r| r.0).collect())
+    }
+
     pub fn http(&self) -> &reqwest::Client {
         &self.http
     }

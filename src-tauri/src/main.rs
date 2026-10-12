@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod lab;
 mod userstream;
 mod market;
 mod scanner;
@@ -9,6 +10,9 @@ mod trading;
 use harvester_core::filters::SymbolFilters;
 use harvester_core::ladder::{build_ladder, LadderPreview, LadderSpec};
 use harvester_core::signals::Signal;
+use harvester_core::lab::{LabConfig, LabReport};
+use harvester_core::ml::forward::ForwardReport;
+use lab::{Lab, LabRequest, MlForwardRequest};
 use market::{Env, Kline, Market, SymbolQuote};
 use scanner::{Scanner, ScannerConfig, ScannerStatus, Sources};
 use std::sync::Arc;
@@ -17,6 +21,7 @@ use trading::{Account, BracketRequest, LeverageInfo, OpenOrder, OrderAck, OrderR
 use tauri::{AppHandle, Manager, State};
 
 struct AppState {
+    lab: Lab,
     market: Arc<Market>,
     streams: Streams,
     scanner: Scanner,
@@ -166,12 +171,35 @@ fn scanner_configure(app: AppHandle, state: State<'_, AppState>, config: Scanner
     state.scanner.start(app, state.market.clone(), config);
 }
 
+/// The Lab's starting configuration (the V2 live setting).
+#[tauri::command]
+fn lab_default_config() -> LabConfig {
+    LabConfig::default()
+}
+
+/// Backtest the QFL ladder as one shared account over recent history (public data; downloads and caches candles).
+#[tauri::command]
+async fn lab_run(app: AppHandle, state: State<'_, AppState>, request: LabRequest) -> Result<LabReport, String> {
+    state.lab.run(app, state.market.clone(), request).await
+}
+
+/// Replay the ML trade finder over recent candles and score every plan it would have shown, with fees.
+#[tauri::command]
+async fn lab_ml_forward(app: AppHandle, state: State<'_, AppState>, request: MlForwardRequest) -> Result<ForwardReport, String> {
+    state.lab.run_ml_forward(app, state.market.clone(), request).await
+}
+
+#[tauri::command]
+fn lab_cancel(state: State<'_, AppState>) {
+    state.lab.cancel();
+}
+
 fn main() {
     let _ = dotenvy::dotenv(); // keys and limits from a .env file (searched upwards from the working directory)
     let env = Env::from_name(&std::env::var("HARVESTER_ENV").unwrap_or_default());
     let market = Arc::new(Market::new(env));
     tauri::Builder::default()
-        .manage(AppState { market: market.clone(), streams: Streams::default(), scanner: Scanner::default(), trading: Arc::new(Trading::new(market)) })
+        .manage(AppState { lab: Lab::default(), market: market.clone(), streams: Streams::default(), scanner: Scanner::default(), trading: Arc::new(Trading::new(market)) })
         .setup(|app| {
             let state = app.state::<AppState>();
             state.scanner.start(app.handle().clone(), state.market.clone(), ScannerConfig::default());
@@ -180,7 +208,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
-            scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
+            lab_default_config, lab_run, lab_ml_forward, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
             trading_status, account_overview, open_orders, place_order, place_orders, cancel_order, modify_order, place_bracket, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())

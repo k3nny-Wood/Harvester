@@ -266,3 +266,88 @@ export interface TradeRecord {
   maker: boolean;
   time: number;
 }
+
+/** The Lab's strategy and account settings (the V2 live setting by default; mirrors `harvester_core::lab::LabConfig`). */
+export interface LabConfig {
+  leverage: number;
+  stopPct: number;
+  layers: number;
+  spacingPct: number;
+  weights: number[];
+  crackPct: number;
+  volatilityFactor: number;
+  sellLayers: number;
+  /** negative = the first sell sits ABOVE the base */
+  sellOffsetPct: number;
+  sellGapPct: number;
+  feePct: number;
+  fillThroughPct: number;
+  fundingPct8h: number;
+  mmrPct: number;
+  donchLen: number;
+  donchMaxPos: number;
+  gateOn: boolean;
+  gateDays: number;
+  gateMinPct: number;
+  startEquity: number;
+  maxLadders: number;
+  allocPct: number;
+  maxBudget: number;
+  marginCapPct: number;
+}
+
+export interface LabAccountResult {
+  returnPct: number;
+  maxDrawdownPct: number;
+  profitFactor: number | null;
+  ladders: number;
+  skipped: number;
+  closed: number;
+  wins: number;
+  stops: number;
+  equity: number[];
+}
+
+export interface LabReport {
+  symbols: number;
+  candles: number;
+  windowStartMs: number;
+  windowEndMs: number;
+  setups: number;
+  base: LabAccountResult;
+  luck: { runs: number; keptPct: number; medianReturnPct: number; p10ReturnPct: number; medianDrawdownPct: number };
+  starts: Array<{ startMs: number; returnPct: number; maxDrawdownPct: number }>;
+  worstStartReturnPct: number;
+  stressed: LabAccountResult;
+  notes: string[];
+}
+
+export interface LabProgress {
+  phase: string;
+  done: number;
+  total: number;
+}
+
+export interface MlForwardStats {
+  trades: number;
+  winRatePct: number;
+  avgGrossPct: number;
+  avgNetPct: number;
+  avgR: number;
+  profitFactor: number | null;
+}
+
+export interface MlForwardReport {
+  symbols: number;
+  candlesScanned: number;
+  windowStartMs: number;
+  windowEndMs: number;
+  all: MlForwardStats;
+  longs: MlForwardStats;
+  shorts: MlForwardStats;
+  targets: number;
+  stops: number;
+  timeouts: number;
+  weeks: Array<{ weekStartMs: number; trades: number; avgNetPct: number }>;
+  notes: string[];
+}

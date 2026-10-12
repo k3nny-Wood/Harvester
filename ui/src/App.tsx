@@ -7,6 +7,7 @@ import { activeChartStore, useActiveChart } from './chartStore';
 import { ChartPanel } from './chart/ChartPanel';
 import { newChartId, openChart, setDock } from './dock';
 import { TIMEFRAMES } from './intervals';
+import { LabPanel } from './panels/LabPanel';
 import { LadderPanel } from './panels/LadderPanel';
 import { OrdersPanel } from './panels/OrdersPanel';
 import { PlaceholderPanel } from './panels/PlaceholderPanel';
@@ -35,6 +36,7 @@ const PANELS: PanelDef[] = [
   { id: 'openorders', title: 'Open orders', component: 'openorders' },
   { id: 'orderhistory', title: 'Order history', component: 'orderhistory' },
   { id: 'tradehistory', title: 'Trade history', component: 'tradehistory' },
+  { id: 'lab', title: 'Lab', component: 'lab' },
 ];
 
 const components = {
@@ -47,6 +49,7 @@ const components = {
   openorders: () => <OpenOrdersPanel />,
   orderhistory: () => <OrderHistoryPanel />,
   tradehistory: () => <TradeHistoryPanel />,
+  lab: () => <LabPanel />,
   placeholder: (p: IDockviewPanelProps<{ note: string }>) => <PlaceholderPanel {...p} />,
 };
 
@@ -73,6 +76,7 @@ function buildDefaultLayout(dock: DockviewApi) {
   addPanel(dock, by('openorders'), { referencePanel: 'positions', direction: 'within' });
   addPanel(dock, by('orderhistory'), { referencePanel: 'positions', direction: 'within' });
   addPanel(dock, by('tradehistory'), { referencePanel: 'positions', direction: 'within' });
+  addPanel(dock, by('lab'), { referencePanel: 'positions', direction: 'within' });
   dock.getPanel('positions')?.api.setActive();
   dock.getPanel('orders')?.api.setActive(); // the order form is what the trader needs in view
   dock.getPanel(chartId)?.api.setActive();

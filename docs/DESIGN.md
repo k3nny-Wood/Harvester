@@ -56,6 +56,21 @@ and a watcher waits until the entry is no longer open, reads the position and pl
 size. Exits cannot be sent first because the exchange refuses reduce-only orders without a position. The outcome is reported as a `bracket`
 event. `harvester-core::filters::validate_order` applies the percent-price band to limit prices only, as Binance does.
 
+## Live account updates
+
+`userstream.rs` opens Binance's user-data stream (listen key, kept alive every 25 minutes) and emits `account-changed` for every order,
+algo-order or account event. The UI re-reads orders, positions and balances at once (coalesced 150 ms). The REST endpoints stay the
+source of truth: the stream only says that something changed. The UI polls every 20 s as a safety net while the stream is connected and
+every 3 s while it is not; the header shows "live" or "polling".
+
+## Lab
+
+`harvester-core::lab` (pure, tested): `find_setups` (Pine-exact QFL cracks + Donchian-low + pool gate, evaluated on the candle before the
+crack), `simulate_ladder` (buys, stop, isolated-margin liquidation, layered sells, fees, funding, "fill through" margin; a candle that buys never
+sells, because the order inside a candle is unknowable), `simulate_account` (cap, per-ladder budget, one ladder per symbol, mark-to-market
+drawdown), `luck_test`, `start_dates`, `run_lab`. `src-tauri/src/lab.rs` downloads 1000-candle pages at 4 requests a second, retries a refusal after a
+pause, caches per symbol for 6 hours and emits `lab-progress`. Differences from MarketScanner's Lab: long only, equal-share sells, no trailing last sell.
+
 ## Roadmap
 
 | # | Milestone | Status |
@@ -67,9 +82,10 @@ event. `harvester-core::filters::validate_order` applies the percent-price band 
 | 5 | Signed trading (Rust): account, positions, open orders, place / cancel / close, batch ladder placement, safety cap; Orders panel (manual entry), Portfolio panel, order lines on the chart, right-click ordering | done (limit / market); stop & take-profit, drag-to-edit orders, user-data stream next |
 | 6 | The ladder tool places real orders (draw start/end, slider, preview, place) | done |
 | 7 | Pine Script: per-chart workspace (PineTS in a web worker), 8 built-in + 138 community scripts (everget, MIT/GPL-3.0), `/` quick picker, editor, live plot values; every script is run by the test suite | done |
-| 8 | Lab panel: the backtest workbench (shared-account simulator, luck test, start-date test, stressed costs) | |
+| 8 | Lab panel: shared-account QFL ladder backtest (`harvester-core::lab`), luck test, eight start dates, stressed costs; candles downloaded politely and cached (`src-tauri/src/lab.rs`) | done (QFL ladder; no short side, no trailing sell) |
 | 9 | ML trade finder (ONNX via `ort`), clearly marked experimental: ML signals, trade-plan overlay (entry -> target arrow, stop), plan card, bracket placement (entry, then reduce-only stop-loss and take-profit) | done |
 | 10 | Installer (NSIS), settings, documentation, CI | |
+| 11 | Sound alerts, percent-price band on the chart, user-data websocket (`userstream.rs`) instead of 3 s polling | done |
 
 ## Principles
 

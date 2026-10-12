@@ -2,6 +2,7 @@
 
 pub mod decimal;
 pub mod filters;
+pub mod lab;
 pub mod ladder;
 pub mod candle;
 pub mod qfl;

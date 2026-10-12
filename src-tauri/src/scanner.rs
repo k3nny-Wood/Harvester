@@ -57,7 +57,7 @@ impl Default for ScannerConfig {
 }
 
 /// Where the ONNX models live: next to the app, or in the repository during development.
-fn find_models_dir() -> Option<std::path::PathBuf> {
+pub(crate) fn find_models_dir() -> Option<std::path::PathBuf> {
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(p) = std::env::var("HARVESTER_MODELS") {
         candidates.push(p.into());

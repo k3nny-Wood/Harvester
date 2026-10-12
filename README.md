@@ -5,7 +5,7 @@ draggable and re-arrangeable panels. Open source (AGPL-3.0-or-later). Windows. T
 
 > Status: early but usable on the testnet. Working: tabbed charts, draggable panels, live QFL / drop **signals with thumbnails**,
 > manual order entry, right-click orders on the chart, and the **ladder tool** (draw a range, set the number of orders, place them).
-> **Pine Script** works per chart tab (146 indicators, `/` quick picker, editor). The **ML trade finder** (experimental) turns a signal into a trade plan you can place with its stop-loss and take-profit. The Lab is on the roadmap (`docs/DESIGN.md`).
+> **Pine Script** works per chart tab (146 indicators, `/` quick picker, editor). The **ML trade finder** (experimental) turns a signal into a trade plan you can place with its stop-loss and take-profit. The **Lab** backtests the QFL ladder as one shared account with the luck test, start dates and stressed costs. Sound alerts, a live user-data stream and the price-band shading are in too.
 
 ## Run
 
@@ -32,6 +32,20 @@ exchange limits before anything is sent.
 Every chart tab has a **Pine** button (top left of the chart) and a `/` quick picker (hover the chart and press `/`). The library holds
 8 built-in indicators and 138 community scripts from everget's public TradingView collection, ported to Pine v6; each one is run by
 `pnpm --dir ui test` so nothing in the list is a placeholder. Write or paste your own in the editor. Scripts are remembered per chart tab.
+
+## Lab (backtest)
+
+View > Lab. It downloads recent public 15 m candles for the busiest perpetuals (rate limited, cached for 6 hours in the temp folder),
+finds every QFL crack that passes the entry filters (market gate, Donchian-low) and runs ONE shared account: a cap on open ladders, a
+budget per ladder, mark-to-market drawdown. Next to the headline it prints the numbers that keep it honest: a **luck test** (30 runs with a
+random 20% of the setups removed), **eight start dates**, and **stressed costs**. The default settings are the V2 live setting from
+MarketScanner. It places no orders. The tested coins are today's most liquid, a hindsight pool, so the result is an upper bound.
+
+## Alerts, price band, live updates
+
+- **Sound alerts** (Signals panel): a two-note chime for new signals, rising for a long, falling for a short; choose the kinds, a minimum score and the volume.
+- **Price band**: Binance refuses LIMIT orders more than a few percent from the market. The chart shades that zone and a dragged limit order stops at its edge. Stop and take-profit triggers are not limited.
+- **Live updates**: orders, fills and balances arrive through Binance's user-data websocket (header shows "live"); if it drops the app polls every 3 s and shows "polling".
 
 ## ML trade finder (experimental)
 

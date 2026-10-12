@@ -79,7 +79,10 @@ async fn run_once(app: &AppHandle, trading: &Arc<Trading>, env: Env) -> Result<(
                 _ => {}
             },
             _ = keepalive.tick() => { trading.listen_key_keepalive().await?; }
-            _ = env_check.tick() => { if trading.env() != env { return Ok(()); } }
+            _ = env_check.tick() => {
+                if trading.env() != env { return Ok(()); }
+                emit_status(app, true); // repeated, so a UI that loaded after the connection learns it too
+            }
         }
     }
 }

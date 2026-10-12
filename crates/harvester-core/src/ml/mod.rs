@@ -2,4 +2,5 @@
 
 pub mod batch_features;
 pub mod features;
+pub mod forward;
 pub mod plan;

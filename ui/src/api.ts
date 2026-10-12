@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Account, Side, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
+import type { Account, LabConfig, MlForwardReport, LabProgress, LabReport, Side, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
 
 /** True when running inside the Tauri shell (false in a plain browser, e.g. `vite` on its own). */
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -35,6 +35,11 @@ export const api = {
   cancelAll: (symbol: string) => invoke<void>('cancel_all_orders', { symbol }),
   closePosition: (symbol: string, fraction = 1) => invoke<OrderAck>('close_position', { symbol, fraction }),
   setLeverage: (symbol: string, leverage: number) => invoke<void>('set_leverage', { symbol, leverage }),
+  labDefaultConfig: () => invoke<LabConfig>('lab_default_config'),
+  labRun: (request: { config: LabConfig; days: number; universe: number; luckRuns: number }) => invoke<LabReport>('lab_run', { request }),
+  labMlForward: (request: { days: number; universe: number; minConfidence: number; reversalFilter: boolean; forward: { maxHold: number; cooldown: number; feePct: number; slippagePct: number } }) =>
+    invoke<MlForwardReport>('lab_ml_forward', { request }),
+  labCancel: () => invoke<void>('lab_cancel'),
   previewLadder: (spec: LadderSpec, referencePrice: number) => invoke<LadderPreview>('preview_ladder', { spec, referencePrice }),
 };
 
@@ -65,4 +70,8 @@ export function onAccountChanged(handler: () => void): Promise<UnlistenFn> {
 
 export function onUserStream(handler: (connected: boolean) => void): Promise<UnlistenFn> {
   return listen<{ connected: boolean }>('userstream', (ev) => handler(ev.payload.connected));
+}
+
+export function onLabProgress(handler: (p: LabProgress) => void): Promise<UnlistenFn> {
+  return listen<LabProgress>('lab-progress', (ev) => handler(ev.payload));
 }
