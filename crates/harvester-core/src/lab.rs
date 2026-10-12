@@ -14,10 +14,23 @@
 
 use crate::candle::Candle;
 use crate::qfl::{detect, QflParams};
+use crate::smc::{smc_zones, SmcKind, SmcParams};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
 pub const STEP_MS: u64 = 900_000; // 15 m candles
+
+/// Which Smart Money zone must be sitting under a crack for the ladder to trade it (Off = no such requirement).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum SmcFilter {
+    #[default]
+    Off,
+    /// any bullish fair value gap, order block or breaker block
+    Any,
+    OrderBlock,
+    Fvg,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
@@ -45,6 +58,12 @@ pub struct LabConfig {
     /// Donchian-low entry filter: 0 = off, else the base must sit in the lowest `donch_max_pos` of the last `donch_len` candles
     pub donch_len: usize,
     pub donch_max_pos: f64,
+    /// Smart Money confluence: only trade a crack whose ladder band has an unmitigated bullish zone under / around it
+    pub smc_filter: SmcFilter,
+    /// the band around the base the zone must overlap: from this % below the base to 0.5% above it
+    pub smc_band_pct: f64,
+    /// candles before the crack the zones are computed from
+    pub smc_window: usize,
     pub gate_on: bool,
     pub gate_days: usize,
     pub gate_min_pct: f64,
@@ -77,6 +96,9 @@ impl Default for LabConfig {
             mmr_pct: 0.5,
             donch_len: 288,
             donch_max_pos: 0.15,
+            smc_filter: SmcFilter::Off,
+            smc_band_pct: 3.0,
+            smc_window: 600,
             gate_on: true,
             gate_days: 30,
             gate_min_pct: 10.0,
@@ -256,6 +278,24 @@ pub fn pool_gate(all: &HashMap<String, Vec<Candle>>, days: usize) -> BTreeMap<u6
     sums.into_iter().filter(|(_, (_, n))| *n >= 5).map(|(t, (s, n))| (t, s / n as f64)).collect()
 }
 
+/// Is there an unmitigated bullish Smart Money zone around `base`? `before` are the candles up to (not including) the crack, so nothing
+/// that happens at or after the crack is used.
+pub fn smc_supports(before: &[Candle], base: f64, cfg: &LabConfig) -> bool {
+    if cfg.smc_filter == SmcFilter::Off {
+        return true;
+    }
+    let (lo, hi) = (base * (1.0 - cfg.smc_band_pct / 100.0), base * 1.005);
+    smc_zones(before, &SmcParams::default(), 60).iter().any(|z| {
+        let kind_ok = match cfg.smc_filter {
+            SmcFilter::Off => true,
+            SmcFilter::Any => true,
+            SmcFilter::OrderBlock => z.kind == SmcKind::OrderBlock,
+            SmcFilter::Fvg => z.kind == SmcKind::Fvg,
+        };
+        kind_ok && z.bullish && z.high >= lo && z.low <= hi
+    })
+}
+
 /// Every crack in the pool that passes the entry filters, from `from_ms` on.
 pub fn find_setups(all: &HashMap<String, Vec<Candle>>, cfg: &LabConfig, from_ms: u64) -> Vec<Setup> {
     let gate = if cfg.gate_on { Some(pool_gate(all, cfg.gate_days)) } else { None };
@@ -282,6 +322,12 @@ pub fn find_setups(all: &HashMap<String, Vec<Candle>>, cfg: &LabConfig, from_ms:
                 match donchian_position(candles, k.bar_index, cfg.donch_len) {
                     Some(p) if p <= cfg.donch_max_pos => {}
                     _ => continue,
+                }
+            }
+            if cfg.smc_filter != SmcFilter::Off {
+                let from = k.bar_index.saturating_sub(cfg.smc_window);
+                if !smc_supports(&candles[from..k.bar_index], k.base_price, cfg) {
+                    continue;
                 }
             }
             out.push(Setup { symbol: symbol.clone(), crack_idx: k.bar_index, base: k.base_price, gate: g });
@@ -616,6 +662,26 @@ mod tests {
         let b = luck_test(&paths, &k, 0, 100 * STEP_MS, 10, 0.8);
         assert_eq!(a, b);
         assert!(a.p10_return_pct <= a.median_return_pct);
+    }
+
+    #[test]
+    fn the_smc_filter_wants_an_unmitigated_bullish_zone_around_the_base() {
+        // quiet candles then a bullish fair value gap 100.4 .. 103.0 that nothing has filled
+        let mut v: Vec<Candle> = (0..5).map(|i| c(i, 100.0, 100.4, 99.6, 100.0)).collect();
+        v.push(c(5, 100.0, 100.4, 99.6, 100.0));
+        v.push(Candle::new(6 * STEP_MS, 100.0, 104.0, 100.0, 103.8, 5000.0));
+        v.push(Candle::new(7 * STEP_MS, 103.8, 105.0, 103.0, 104.5, 2000.0));
+        let on = LabConfig { smc_filter: SmcFilter::Any, smc_band_pct: 3.0, ..LabConfig::default() };
+        assert!(smc_supports(&v, 101.5, &on), "a base inside the gap is supported");
+        assert!(smc_supports(&v, 103.5, &on), "a base just above it is within the band");
+        assert!(!smc_supports(&v, 130.0, &on), "a base far from any zone is not");
+        let only_ob = LabConfig { smc_filter: SmcFilter::OrderBlock, ..on.clone() };
+        assert!(!smc_supports(&v, 101.5, &only_ob), "there is no order block here");
+        assert!(smc_supports(&v, 130.0, &LabConfig::default()), "with the filter off every base passes");
+        // once price has filled the gap it no longer supports anything
+        let mut filled = v.clone();
+        filled.push(c(8, 104.5, 104.6, 100.0, 101.0));
+        assert!(!smc_supports(&filled, 101.5, &on));
     }
 
     #[test]

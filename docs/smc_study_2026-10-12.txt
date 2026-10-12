@@ -1,0 +1,34 @@
+
+=== Feb 10 - Sep 30 2026: 60 coins, 232 days of trading ===
+setting                    setups ladders    return      dd     pf calmar     luck median (p10)  worst start  stressed  quarters
+factor 1  no SMC             3547     371     -0.2%   52.0%   1.05  -0.00       -2.1% (   -7.9%)       -10.6%    -23.3%  +4% -41% -10% +39%
+factor 1  any zone 1%         672     292    -20.7%   53.5%   0.78  -0.39      -19.1% (  -23.3%)       -26.4%    -27.7%  +0% -48% -3% +26%  | vs 60 random picks of the same size: median +1.4%, this beats 2% of them
+factor 1  any zone 3%        1110     328    -14.5%   54.3%   0.87  -0.27      -12.2% (  -15.9%)       -18.2%    -30.5%  +3% -44% -4% +27%  | vs 60 random picks of the same size: median +0.7%, this beats 2% of them
+factor 1  order block 1%      355     212    -27.6%   50.3%   0.62  -0.55      -23.8% (  -30.7%)       -27.9%    -36.2%  -3% -43% -5% +18%  | vs 60 random picks of the same size: median +3.7%, this beats 0% of them
+factor 1  order block 3%      691     255    -15.1%   51.0%   0.82  -0.30      -18.4% (  -24.4%)       -17.8%    -34.4%  -0% -40% -8% +23%  | vs 60 random picks of the same size: median -2.8%, this beats 17% of them
+factor 1  fair value gap 1%    330     200    +12.8%   30.9%   1.30   0.41      +10.2% (   +4.0%)        +4.4%     +3.4%  +5% -27% +3% +28%  | vs 60 random picks of the same size: median -2.0%, this beats 83% of them
+factor 1  fair value gap 3%    615     253     -6.4%   46.1%   0.94  -0.14       -3.5% (   -9.5%)       -12.0%    -21.7%  +4% -39% -1% +28%  | vs 60 random picks of the same size: median +1.2%, this beats 23% of them
+factor 3.5  no SMC           1087     327     -8.8%   56.8%   0.94  -0.15       -9.9% (  -15.1%)       -23.2%    -23.3%  +15% -46% -6% +31%
+factor 3.5  any zone 1%       211     175    +17.4%   26.4%   1.47   0.66      +14.0% (   +5.4%)        +4.2%     +3.3%  +12% -20% +1% +19%  | vs 60 random picks of the same size: median +2.1%, this beats 87% of them
+factor 3.5  any zone 3%       324     231     +6.8%   37.3%   1.12   0.18       +7.9% (   +0.9%)        -3.2%     -8.9%  +11% -28% -1% +22%  | vs 60 random picks of the same size: median -2.5%, this beats 73% of them
+factor 3.5  order block 1%    118     104     +5.1%   19.6%   1.23   0.26       +4.1% (   +0.3%)        -0.3%     -3.7%  +5% -14% -0% +10%  | vs 60 random picks of the same size: median +4.4%, this beats 57% of them
+factor 3.5  order block 3%    213     161     +4.2%   31.3%   1.12   0.13       +7.7% (   +1.7%)        -3.0%     -7.0%  +7% -25% -0% +20%  | vs 60 random picks of the same size: median +2.1%, this beats 60% of them
+factor 3.5  fair value gap 1%     96      82    +19.6%    8.7%   2.64   2.25      +16.6% (  +12.3%)       +11.2%    +14.6%  +7% -5% +2% +11%  | vs 60 random picks of the same size: median +5.2%, this beats 98% of them
+factor 3.5  fair value gap 3%    169     133    +11.9%   18.5%   1.40   0.65       +8.2% (   +3.2%)        +5.3%     +5.9%  +6% -13% +0% +14%  | vs 60 random picks of the same size: median +5.0%, this beats 73% of them
+
+=== Mar 1 - Dec 28 2025 (out of sample): 55 coins, 303 days of trading ===
+setting                    setups ladders    return      dd     pf calmar     luck median (p10)  worst start  stressed  quarters
+factor 1  no SMC             3673     243     +2.8%   48.9%   1.03   0.06       +6.6% (   +0.7%)        -7.1%     -5.3%  +32% -18% +22% -2%
+factor 1  any zone 1%         588     208     +4.7%   47.3%   1.07   0.10      +17.8% (   +9.0%)        -2.4%     -6.8%  +24% -20% +19% +0%  | vs 60 random picks of the same size: median +24.8%, this beats 8% of them
+factor 1  any zone 3%        1024     226     +3.1%   47.8%   1.04   0.06       +8.6% (   -0.9%)        -3.9%     -1.1%  +31% -29% +19% +1%  | vs 60 random picks of the same size: median +16.4%, this beats 7% of them
+factor 1  order block 1%      233     156    +37.9%   21.0%   2.60   1.80      +35.2% (  +30.1%)        +0.0%    +28.5%  +14% +2% +12% +0%  | vs 60 random picks of the same size: median +34.2%, this beats 68% of them
+factor 1  order block 3%      517     197    +24.9%   34.7%   1.46   0.72      +31.8% (  +26.4%)        -1.8%     +8.1%  +23% -11% +13% +1%  | vs 60 random picks of the same size: median +31.9%, this beats 35% of them
+factor 1  fair value gap 1%    360     186    +17.6%   38.7%   1.35   0.46      +23.3% (  +15.6%)        -2.5%     +7.5%  +18% -9% +10% +0%  | vs 60 random picks of the same size: median +33.2%, this beats 10% of them
+factor 1  fair value gap 3%    693     218     +7.6%   47.3%   1.11   0.16      +16.0% (   +7.3%)        -1.9%     -0.3%  +27% -25% +16% +0%  | vs 60 random picks of the same size: median +21.8%, this beats 13% of them
+factor 3.5  no SMC           1045     199     +5.3%   45.3%   1.08   0.12       +3.8% (   -0.3%)        -1.9%    -11.6%  +26% -21% +32% +0%
+factor 3.5  any zone 1%       190     149     +0.7%   31.3%   1.01   0.02       +2.1% (   -1.8%)        -3.8%     -6.5%  +10% -11% +10% +0%  | vs 60 random picks of the same size: median +25.7%, this beats 2% of them
+factor 3.5  any zone 3%       291     188     +4.2%   38.8%   1.07   0.11      +10.9% (   +5.6%)        -2.8%     -7.8%  +15% -17% +15% +0%  | vs 60 random picks of the same size: median +24.2%, this beats 5% of them
+factor 3.5  order block 1%     98      90    +17.0%   11.1%   2.20   1.53      +13.2% (  +11.4%)        +0.0%    +14.2%  +6% +2% +9% +0%  | vs 60 random picks of the same size: median +17.2%, this beats 48% of them
+factor 3.5  order block 3%    169     139    +15.9%   21.4%   1.53   0.74      +15.3% (   +8.6%)        +0.5%    +10.7%  +9% -3% +13% +0%  | vs 60 random picks of the same size: median +23.0%, this beats 15% of them
+factor 3.5  fair value gap 1%    100      81     -6.9%   20.6%   0.77  -0.33       -3.5% (   -8.3%)        -9.9%    -10.5%  +6% -10% +2% +0%  | vs 60 random picks of the same size: median +19.0%, this beats 0% of them
+factor 3.5  fair value gap 3%    189     147     -2.5%   35.1%   0.95  -0.07       +0.2% (   -6.3%)        -7.8%    -10.2%  +10% -21% +9% +0%  | vs 60 random picks of the same size: median +25.7%, this beats 2% of them
