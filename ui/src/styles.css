@@ -1416,3 +1416,59 @@ button.mini {
 .lab-form[hidden] {
   display: none;
 }
+
+.bases-bar {
+  position: absolute;
+  left: 126px;
+  top: 6px;
+  z-index: 30;
+  display: flex;
+  gap: 2px;
+}
+.bases-btn,
+.bases-gear {
+  padding: 2px 10px;
+  font-size: 12px;
+  background: rgba(17, 23, 34, 0.9);
+}
+.bases-gear {
+  padding: 2px 7px;
+}
+.bases-btn.on {
+  border-color: #4fa3ff;
+  color: #4fa3ff;
+}
+.bases-pop {
+  position: absolute;
+  left: 126px;
+  top: 34px;
+  z-index: 46;
+  width: 270px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  font-size: 12px;
+}
+.bases-pop label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.bases-pop label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.bases-pop input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.bases-pop small {
+  color: var(--muted);
+  font-size: 11px;
+}

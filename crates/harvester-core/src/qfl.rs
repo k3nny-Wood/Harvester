@@ -234,6 +234,44 @@ pub fn detect_filtered(candles: &[Candle], params: &QflParams, filter: Option<Ba
     QflResult { bases, tops, cracks, current_base }
 }
 
+/// A base as the chart draws it: where it formed, where price first broke through it (if it did) and the level that counts as a crack.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BaseView {
+    pub price: f64,
+    /// open time of the base low candle
+    pub time: u64,
+    /// open time of the candle that confirmed it (the pump away)
+    pub confirm_time: u64,
+    /// open time of the first candle that cracked it; None while it still holds
+    pub crack_time: Option<u64>,
+    /// `price x (1 - crack_pct)`
+    pub crack_level: f64,
+}
+
+/// The newest `max` confirmed bases of `candles`, oldest first, each with the candle that first cracked it.
+pub fn base_views(candles: &[Candle], params: &QflParams, max: usize) -> Vec<BaseView> {
+    let r = detect(candles, params);
+    let mut out: Vec<BaseView> = r
+        .bases
+        .iter()
+        .map(|b| {
+            let crack = r.cracks.iter().find(|k| (k.base_price - b.price).abs() < f64::EPSILON && k.bar_index > b.confirm_index);
+            BaseView {
+                price: b.price,
+                time: b.time,
+                confirm_time: candles.get(b.confirm_index).map_or(b.time, |c| c.open_time),
+                crack_time: crack.map(|k| k.time),
+                crack_level: b.price * (1.0 - params.crack_pct),
+            }
+        })
+        .collect();
+    if out.len() > max {
+        out.drain(..out.len() - max);
+    }
+    out
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -306,6 +344,20 @@ pub(crate) mod tests {
         let strict = detect_filtered(&c, &QflParams::default(), Some(BaseRangeFilter { lookback: 5, max_pos: 0.0 }));
         let loose = detect(&c, &QflParams::default());
         assert!(strict.bases.len() <= loose.bases.len());
+    }
+
+    #[test]
+    fn base_views_carry_the_crack_and_the_level() {
+        let c = series();
+        let params = QflParams::default();
+        let v = base_views(&c, &params, 10);
+        assert!(!v.is_empty());
+        let last = v.last().unwrap();
+        assert!((last.crack_level - last.price * (1.0 - params.crack_pct)).abs() < 1e-12);
+        assert!(last.crack_time.is_some(), "the series ends below the base, so it was cracked");
+        assert!(last.confirm_time > last.time);
+        // the cap keeps the newest bases
+        assert!(base_views(&c, &params, 1).len() <= 1);
     }
 
     #[test]

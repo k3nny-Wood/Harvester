@@ -310,3 +310,13 @@ export interface LabProgress {
   total: number;
 }
 
+
+/** A QFL base as the chart draws it. */
+export interface BaseView {
+  price: number;
+  time: number;
+  confirmTime: number;
+  /** the first candle that cracked it; null while it still holds */
+  crackTime: number | null;
+  crackLevel: number;
+}

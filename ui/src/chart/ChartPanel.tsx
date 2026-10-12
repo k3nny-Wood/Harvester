@@ -11,6 +11,7 @@ import { getDock } from '../dock';
 import { intervalToVela } from '../intervals';
 import { useApp } from '../store';
 import { DRAWING_GROUPS } from './drawingTools';
+import { ChartBases } from './ChartBases';
 import { ChartFills } from './ChartFills';
 import { ChartTrading } from './ChartTrading';
 import { LadderOverlay } from './LadderOverlay';
@@ -186,6 +187,7 @@ function ChartBody() {
       <PinePanel open={pineOpen} onClose={() => setPineOpen(false)} />
       <PinePicker open={pickerOpen} onClose={() => setPickerOpen(false)} />
       <ChartFills chart={chart} />
+      <ChartBases chart={chart} />
       <ChartTrading chart={chart} host={ref} />
       <LadderOverlay chart={chart} host={ref} />
     </div>

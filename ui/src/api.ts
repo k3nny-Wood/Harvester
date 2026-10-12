@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Account, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
+import type { Account, BaseView, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
 
 /** True when running inside the Tauri shell (false in a plain browser, e.g. `vite` on its own). */
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -33,6 +33,7 @@ export const api = {
   cancelAll: (symbol: string) => invoke<void>('cancel_all_orders', { symbol }),
   closePosition: (symbol: string, fraction = 1) => invoke<OrderAck>('close_position', { symbol, fraction }),
   setLeverage: (symbol: string, leverage: number) => invoke<void>('set_leverage', { symbol, leverage }),
+  qflBases: (symbol: string, interval: string, volatilityFactor: number, crackPct: number) => invoke<BaseView[]>('qfl_bases', { symbol, interval, volatilityFactor, crackPct }),
   labDefaultConfig: () => invoke<LabConfig>('lab_default_config'),
   labRun: (request: { config: LabConfig; days: number; universe: number; luckRuns: number }) => invoke<LabReport>('lab_run', { request }),
   labCancel: () => invoke<void>('lab_cancel'),
