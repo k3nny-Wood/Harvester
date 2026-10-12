@@ -227,6 +227,14 @@ export interface OpenOrder {
 
 export type OrderKind = 'LIMIT' | 'MARKET' | 'STOP_MARKET' | 'STOP' | 'TAKE_PROFIT_MARKET' | 'TAKE_PROFIT';
 
+export interface LeverageBracket {
+  notionalFloor: number;
+  notionalCap: number;
+  maintMarginRatio: number;
+  cum: number;
+  initialLeverage: number;
+}
+
 export interface LeverageInfo {
   leverage: number;
   maxLeverage: number;

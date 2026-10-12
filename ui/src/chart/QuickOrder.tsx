@@ -3,10 +3,11 @@ import type { Vela } from '@luxalgo/vela';
 import { api } from '../api';
 import { useChart, useChartId } from '../chartStore';
 import { formatPrice, snapToTick } from '../ladderMath';
+import { estimateLiquidation } from '../liquidation';
 import { maxPct, sizeFromPct } from '../sizing';
 import { useApp } from '../store';
 import { refreshTrading } from '../trade';
-import type { OrderAck, OrderRequest, Side } from '../types';
+import type { LeverageBracket, OrderAck, OrderRequest, Side } from '../types';
 import { getProjector } from './projector';
 
 const TAG_W = 156;
@@ -85,6 +86,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
   const [lev, setLev] = useState(1);
   const [maxLev, setMaxLev] = useState(20);
   const [busy, setBusy] = useState(false);
+  const [brackets, setBrackets] = useState<LeverageBracket[]>([]);
   const [, setTick] = useState(0);
   const tickSize = Number(filters?.tickSize) || 0;
   const precision = filters?.pricePrecision ?? 2;
@@ -161,6 +163,19 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
       .catch(() => undefined);
   }, [q, canTrade, symbol]);
 
+  // the maintenance-margin brackets of the symbol, for the estimated liquidation price
+  useEffect(() => {
+    if (!q || !canTrade) return;
+    let alive = true;
+    api
+      .leverageBrackets(symbol)
+      .then((b) => alive && setBrackets(b))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [q === null, canTrade, symbol]);
+
   // a different symbol on this chart closes the panel; the lines follow the viewport
   useEffect(() => setQ(null), [symbol]);
   useEffect(() => {
@@ -188,6 +203,9 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
   const risk = qty * Math.abs(q.entry - q.sl);
   const reward = qty * Math.abs(q.tp - q.entry);
   const side2: Side = long ? 'SELL' : 'BUY';
+  const liq = estimateLiquidation(q.side, q.entry, lev, notional, brackets);
+  // a stop-loss beyond the liquidation price is never reached: the position is liquidated first
+  const slBeyondLiq = liq != null && (long ? q.sl <= liq : q.sl >= liq);
   const gain = (p: number) => gainPct(q.side, q.entry, p);
 
   const info = chart ? getProjector(chart) : null;
@@ -204,6 +222,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
   const yE = yOf(q.entry);
   const yT = yOf(q.tp);
   const yS = yOf(q.sl);
+  const yL = liq != null ? yOf(liq) : null;
   const clampY = (y: number | null) => (y == null ? null : Math.max(offY, Math.min(offY + plotH, y)));
 
   const set = (which: Which, p: number) => setQ((cur) => (cur ? { ...cur, [which]: p } : cur));
@@ -331,6 +350,21 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
         {yE != null && yS != null && <rect x={offX} width={plotW} y={Math.min(clampY(yE)!, clampY(yS)!)} height={Math.abs(clampY(yE)! - clampY(yS)!)} fill="rgba(208, 69, 75, 0.10)" />}
         {line('tp', yT, '#2e9b6f', `TP ${formatPrice(q.tp, precision)}  ${signed(gain(q.tp) * lev)} on margin at ${lev}x · ${signed(gain(q.tp))} price move`, `TAKE PROFIT ${signed(gain(q.tp) * lev)}`)}
         {line('sl', yS, '#d0454b', `SL ${formatPrice(q.sl, precision)}  ${signed(gain(q.sl) * lev)} on margin at ${lev}x · ${signed(gain(q.sl))} price move`, `STOP LOSS ${signed(gain(q.sl) * lev)}`)}
+        {liq != null && yL != null && (
+          <g>
+            <line x1={offX} x2={offX + plotW} y1={yL} y2={yL} stroke="#e0a33d" strokeWidth={1.2} strokeDasharray="2 4" />
+            <g className="line-tag" transform={`translate(${offX + plotW - TAG_W - 2}, ${yL - 9})`}>
+              <rect width={TAG_W} height={18} rx={3} fill="#0f1620" stroke="#e0a33d" />
+              <text x={TAG_W / 2} y={12.5} textAnchor="middle" fill="#e0a33d">
+                {`LIQUIDATION ~${signed(gain(liq) * lev, 0)}`}
+              </text>
+              <title>Estimated liquidation price for this position size and leverage (isolated margin, fees ignored)</title>
+            </g>
+            <text x={offX + 8} y={yL - 4} className="trade-label" fill="#e0a33d">
+              {`Est. liquidation ${formatPrice(liq, precision)}  ${signed(gain(liq))} from entry`}
+            </text>
+          </g>
+        )}
         {line('entry', yE, colorE, `${long ? 'LONG' : 'SHORT'} ${kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'} @ ${formatPrice(q.entry, precision)}`, `${long ? 'LONG' : 'SHORT'} ${kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'}`)}
       </svg>
       <div className="quick-panel" onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
@@ -367,8 +401,10 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
           <span className="down">Risk {risk.toFixed(2)}</span>
           <span className="up">Reward {reward.toFixed(2)}</span>
           <span>R:R {risk > 0 ? (reward / risk).toFixed(2) : '-'}</span>
+          {liq != null && <span style={{ color: '#e0a33d' }}>Est. liquidation {formatPrice(liq, precision)} ({signed(gain(liq))})</span>}
         </div>
         {waits && problems.length === 0 && <div className="muted quick-note">The take-profit / stop-loss are on the far side of the current price, so Binance would reject them now. They are armed here and sent as soon as the entry fills (Harvester must stay open).</div>}
+        {slBeyondLiq && <div className="warn quick-note">The stop-loss is beyond the estimated liquidation price {formatPrice(liq!, precision)}: the position would be liquidated before it triggers. Lower the leverage or move the stop closer.</div>}
         {problems.map((p) => (
           <div key={p} className="warn quick-note">
             {p}

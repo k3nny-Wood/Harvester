@@ -172,6 +172,17 @@ pub struct LeverageInfo {
     pub max_leverage: u32,
 }
 
+/// One maintenance-margin bracket of a symbol (`leverageBracket`).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LeverageBracket {
+    pub notional_floor: f64,
+    pub notional_cap: f64,
+    pub maint_margin_ratio: f64,
+    pub cum: f64,
+    pub initial_leverage: u32,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Position {
@@ -423,6 +434,19 @@ pub fn parse_trade_history(v: &Value) -> Vec<TradeRecord> {
         .unwrap_or_default()
 }
 
+/// The brackets of a `leverageBracket` answer.
+pub fn parse_brackets(v: &Value) -> Vec<LeverageBracket> {
+    let first = if v.is_array() { v.get(0) } else { Some(v) };
+    first
+        .and_then(|f| f["brackets"].as_array())
+        .map(|a| {
+            a.iter()
+                .map(|b| LeverageBracket { notional_floor: num(&b["notionalFloor"]), notional_cap: num(&b["notionalCap"]), maint_margin_ratio: num(&b["maintMarginRatio"]), cum: num(&b["cum"]), initial_leverage: b["initialLeverage"].as_u64().unwrap_or(1) as u32 })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// The highest initial leverage in a `leverageBracket` answer.
 pub fn parse_max_leverage(v: &Value) -> Option<u32> {
     let first = if v.is_array() { v.get(0)? } else { v };
@@ -644,6 +668,12 @@ impl Trading {
         let mut out = parse_trade_history(&v);
         out.sort_by(|a, b| b.time.cmp(&a.time).then(b.id.cmp(&a.id)));
         Ok(out)
+    }
+
+    /// The maintenance-margin brackets of a symbol (for estimating a liquidation price).
+    pub async fn leverage_brackets(&self, symbol: &str) -> Result<Vec<LeverageBracket>, String> {
+        let v = self.signed(reqwest::Method::GET, "/fapi/v1/leverageBracket", vec![("symbol".to_string(), symbol.to_string())]).await?;
+        Ok(parse_brackets(&v))
     }
 
     /// Current and maximum leverage of a symbol.
@@ -945,6 +975,9 @@ mod tests {
         assert!(o[0].conditional && o[0].order_id == 99 && o[0].stop_price == 2900.0 && o[0].order_type == "STOP_MARKET");
         let m = parse_max_leverage(&json!([{"symbol": "ETHUSDT", "brackets": [{"bracket": 1, "initialLeverage": 100}, {"bracket": 2, "initialLeverage": 50}]}]));
         assert_eq!(m, Some(100));
+        let b = parse_brackets(&json!([{"symbol": "ETHUSDT", "brackets": [{"bracket": 1, "initialLeverage": 100, "notionalCap": 10000, "notionalFloor": 0, "maintMarginRatio": 0.005, "cum": 0}, {"bracket": 2, "initialLeverage": 50, "notionalCap": 50000, "notionalFloor": 10000, "maintMarginRatio": 0.01, "cum": 50}]}]));
+        assert_eq!(b.len(), 2);
+        assert_eq!(b[1], LeverageBracket { notional_floor: 10000.0, notional_cap: 50000.0, maint_margin_ratio: 0.01, cum: 50.0, initial_leverage: 50 });
     }
 
     #[test]

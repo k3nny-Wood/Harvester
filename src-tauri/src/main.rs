@@ -187,6 +187,11 @@ async fn trade_history(state: State<'_, AppState>, symbol: String, limit: Option
 }
 
 #[tauri::command]
+async fn leverage_brackets(state: State<'_, AppState>, symbol: String) -> Result<Vec<trading::LeverageBracket>, String> {
+    state.trading.leverage_brackets(&symbol).await
+}
+
+#[tauri::command]
 async fn symbol_leverage(state: State<'_, AppState>, symbol: String) -> Result<LeverageInfo, String> {
     state.trading.leverage(&symbol).await
 }
@@ -288,7 +293,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
             qfl_zones, smc_zones_cmd, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
-            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, bracket_add, bracket_list, bracket_cancel, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
+            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, bracket_add, bracket_list, bracket_cancel, cancel_order, modify_order, order_history, trade_history, symbol_leverage, leverage_brackets, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");
