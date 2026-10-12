@@ -426,7 +426,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
       {yE != null && (
         <div
           className="quick-amount"
-          style={{ left: offX + plotW - 2 * TAG_W - 8, top: yE + 12 + 64 > offY + plotH ? yE - 76 : yE + 12, width: TAG_W }}
+          style={{ left: offX + plotW - 2 * TAG_W - 8, top: yE + 12 + 80 > offY + plotH ? yE - 92 : yE + 12, width: TAG_W }}
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
@@ -436,6 +436,11 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
           </div>
           <div className="muted">
             ≈ {notional.toFixed(2)} USDT · {usedPct.toFixed(1)}%
+          </div>
+          <div className="quick-ladder-row">
+            <span>Lev</span>
+            <input type="range" min={1} max={maxLev} step={1} value={lev} title="Leverage (same setting as in the panel)" onChange={(e) => setLev(Number(e.target.value))} />
+            <b className="quick-lev">{lev}x</b>
           </div>
           <div className="quick-ladder-row">
             <label className="quick-ladder-check" title="Spread the entry over several orders (same switch as in the panel)">

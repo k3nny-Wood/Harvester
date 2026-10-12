@@ -1753,3 +1753,7 @@ button.mini {
   min-width: 12px;
   text-align: right;
 }
+
+.quick-ladder-row .quick-lev {
+  min-width: 26px;
+}
