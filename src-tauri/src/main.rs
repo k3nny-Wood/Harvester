@@ -9,7 +9,7 @@ use harvester_core::filters::SymbolFilters;
 use harvester_core::ladder::{build_ladder, LadderPreview, LadderSpec};
 use harvester_core::signals::Signal;
 use market::{Env, Kline, Market, SymbolQuote};
-use scanner::{Scanner, ScannerConfig, ScannerStatus};
+use scanner::{Scanner, ScannerConfig, ScannerStatus, Sources};
 use std::sync::Arc;
 use stream::Streams;
 use trading::{Account, LeverageInfo, OpenOrder, OrderAck, OrderRecord, OrderRequest, Trading, TradingStatus, TradeRecord};
@@ -146,6 +146,12 @@ fn scanner_config(state: State<'_, AppState>) -> ScannerConfig {
     state.scanner.config()
 }
 
+/// Switch the QFL / ML signal sources on or off (no restart).
+#[tauri::command]
+fn scanner_sources(app: AppHandle, state: State<'_, AppState>, sources: Sources) {
+    state.scanner.set_sources(&app, sources);
+}
+
 /// Restart the scanner with a new configuration (timeframe, universe size, thresholds).
 #[tauri::command]
 fn scanner_configure(app: AppHandle, state: State<'_, AppState>, config: ScannerConfig) {
@@ -165,7 +171,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
-            scanner_signals, scanner_status, scanner_config, scanner_configure,
+            scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
             trading_status, account_overview, open_orders, place_order, place_orders, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())
