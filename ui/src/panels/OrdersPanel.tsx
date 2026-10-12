@@ -81,6 +81,13 @@ export function OrdersPanel() {
       .catch(() => undefined);
   }, [symbol, trading?.hasCredentials, patch]);
 
+  // a leverage set elsewhere (the chart's right-click menu) shows here too
+  useEffect(() => {
+    const f = Number(form.leverage);
+    if (f >= 1 && f !== lev) setLev(f);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.leverage]);
+
   if (trading && !trading.hasCredentials) {
     return (
       <div className="panel pad">

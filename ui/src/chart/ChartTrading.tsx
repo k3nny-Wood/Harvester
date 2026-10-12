@@ -288,6 +288,30 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
   const sliderMax = maxPct(wallet, lev, cap);
   const margin = notional / Math.max(1, lev);
   const overCap = cap > 0 && notional > cap;
+  // leverage of this symbol: read when the menu first opens for it, set on the exchange when the slider is released (like the Orders panel)
+  const [maxLev, setMaxLev] = useState(20);
+  const levLoaded = useRef('');
+  useEffect(() => {
+    if (!menu || !canTrade || levLoaded.current === symbol) return;
+    levLoaded.current = symbol;
+    api
+      .symbolLeverage(symbol)
+      .then((l) => {
+        setMaxLev(Math.max(1, l.maxLeverage));
+        patchForm({ leverage: String(l.leverage) });
+      })
+      .catch(() => undefined);
+  }, [menu, canTrade, symbol, patchForm]);
+  const commitLeverage = async () => {
+    const want = Number(useApp.getState().orderForm.leverage);
+    if (!(want >= 1)) return;
+    try {
+      await api.setLeverage(symbol, want);
+      toast(`${symbol} leverage set to ${want}x`, 'info');
+    } catch (e) {
+      toast(`Leverage: ${e}`, 'warn');
+    }
+  };
   const setSizeFromPct = (pct: number) => patchForm({ sizeMode: 'usdt', size: sizeFromPct(pct, wallet, lev).notional.toFixed(2) });
 
   // holdings: close a share of the position with a reduce-only limit order at the clicked price (sell a long, buy back a short)
@@ -452,6 +476,22 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
                 <input type="number" min={0} step={10} value={Number(notional.toFixed(2))} onChange={(e) => patchForm({ sizeMode: 'usdt', size: String(Math.max(0, Number(e.target.value) || 0)) })} />
               </label>
             </div>
+            <div className="ctx-size-row">
+              <span>Leverage</span>
+              <b>{lev}x</b>
+            </div>
+            <input
+              type="range"
+              min={1}
+              max={maxLev}
+              step={1}
+              value={Math.min(lev, maxLev)}
+              disabled={!canTrade}
+              title={canTrade ? `Up to ${maxLev}x for ${symbol}; applied to the symbol when you release the slider` : 'No API keys'}
+              onChange={(e) => patchForm({ leverage: String(Math.round(Number(e.target.value))) })}
+              onPointerUp={() => void commitLeverage()}
+              onKeyUp={() => void commitLeverage()}
+            />
             {overCap && <div className="warn">Above the safety cap of {cap.toFixed(0)} USDT per order.</div>}
           </div>
         </div>

@@ -47,7 +47,7 @@ Every chart tab has a **Pine** button (top left of the chart) and a `/` quick pi
 
 Right-click on a chart for: buy / sell limit at that price, start a ladder from there, or put the price in the order form. The menu also has a **size slider**: the share of
 the account (wallet balance) used as margin, with the margin and the position value in USDT beside it (position = margin x the form's leverage), and a box where you can type the
-position value instead. The slider and the Orders panel share one size, so what you set in one shows in the other; it stops at the safety cap on one order (`MAX_ORDER_NOTIONAL`).
+position value instead, and a **leverage slider** (1x up to the symbol's maximum; it is applied to the symbol on the exchange when you release it, like the Orders panel's). The sliders and the Orders panel share one size and one leverage, so what you set in one shows in the other; it stops at the safety cap on one order (`MAX_ORDER_NOTIONAL`).
 
 ## Selling (or buying back) a share of your holdings
 
