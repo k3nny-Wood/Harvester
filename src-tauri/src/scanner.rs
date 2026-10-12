@@ -9,7 +9,6 @@ use crate::market::{Env, Market};
 use crate::stream::parse_kline_value;
 use futures_util::StreamExt;
 use harvester_core::candle::Candle;
-use harvester_core::ladder::Side;
 use harvester_core::ml::plan::{evaluate, MlParams};
 use harvester_core::signals::{analyse, ml_signal, Signal, SignalKind, SignalParams};
 use harvester_ml::Engine;

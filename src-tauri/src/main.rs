@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod userstream;
 mod market;
 mod scanner;
 mod stream;
@@ -174,6 +175,7 @@ fn main() {
         .setup(|app| {
             let state = app.state::<AppState>();
             state.scanner.start(app.handle().clone(), state.market.clone(), ScannerConfig::default());
+            userstream::start(app.handle().clone(), state.trading.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

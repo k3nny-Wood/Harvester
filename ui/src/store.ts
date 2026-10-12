@@ -39,12 +39,15 @@ interface AppState {
   scanner: ScannerStatus | null;
   scannerConfig: ScannerConfig | null;
   trading: TradingStatus | null;
+  /** the exchange's user-data stream is connected (changes arrive at once instead of by polling) */
+  streamConnected: boolean;
   account: Account | null;
   orders: OpenOrder[];
   orderForm: OrderForm;
   plans: Record<string, PlanState>;
   toasts: Array<{ id: number; text: string; tone: 'info' | 'signal' | 'warn' }>;
   setTrading: (t: TradingStatus) => void;
+  setStreamConnected: (c: boolean) => void;
   setAccount: (a: Account | null) => void;
   setOrders: (o: OpenOrder[]) => void;
   patchOrderForm: (p: Partial<OrderForm>) => void;
@@ -71,12 +74,14 @@ export const useApp = create<AppState>((set) => ({
   scanner: null,
   scannerConfig: null,
   trading: null,
+  streamConnected: false,
   account: null,
   orders: [],
   orderForm: { side: 'BUY', type: 'LIMIT', price: '', stopPrice: '', sizeMode: 'usdt', size: '100', reduceOnly: false, postOnly: false, leverage: '' },
   plans: {},
   toasts: [],
   setTrading: (trading) => set({ trading }),
+  setStreamConnected: (streamConnected) => set({ streamConnected }),
   setAccount: (account) => set({ account }),
   setOrders: (orders) => set({ orders }),
   patchOrderForm: (p) => set((s) => ({ orderForm: { ...s.orderForm, ...p } })),

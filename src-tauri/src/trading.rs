@@ -570,6 +570,34 @@ impl Trading {
         Ok(())
     }
 
+    pub fn env(&self) -> Env {
+        self.market.env()
+    }
+
+    /// The listen-key calls need the API key but no signature.
+    async fn listen_key_call(&self, method: reqwest::Method) -> Result<Value, String> {
+        let (key, _) = credentials(self.market.env()).ok_or_else(|| self.status().message)?;
+        let url = format!("{}/fapi/v1/listenKey", self.market.env().rest_base());
+        let resp = self.market.http().request(method, &url).header("X-MBX-APIKEY", &key).send().await.map_err(|e| format!("listenKey: {e}"))?;
+        let status = resp.status();
+        let body: Value = resp.json().await.unwrap_or(Value::Null);
+        if status.is_success() {
+            Ok(body)
+        } else {
+            Err(format!("listenKey: HTTP {status} {}", body["msg"].as_str().unwrap_or("")))
+        }
+    }
+
+    /// Start a user-data stream and return its listen key (valid for 60 minutes unless kept alive).
+    pub async fn listen_key_start(&self) -> Result<String, String> {
+        let v = self.listen_key_call(reqwest::Method::POST).await?;
+        v["listenKey"].as_str().map(|s| s.to_string()).ok_or_else(|| "no listenKey in the answer".to_string())
+    }
+
+    pub async fn listen_key_keepalive(&self) -> Result<(), String> {
+        self.listen_key_call(reqwest::Method::PUT).await.map(|_| ())
+    }
+
     /// One signed request. Retries once after a time re-sync when Binance answers -1021.
     async fn signed(&self, method: reqwest::Method, path: &str, params: Vec<(String, String)>) -> Result<Value, String> {
         let (key, secret) = credentials(self.market.env()).ok_or_else(|| self.status().message)?;

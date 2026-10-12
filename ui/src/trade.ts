@@ -1,4 +1,4 @@
-import { api, inTauri } from './api';
+import { api, inTauri, onAccountChanged, onUserStream } from './api';
 import { activeChartStore } from './chartStore';
 import { confirmDialog } from './confirm';
 import { useApp } from './store';
@@ -20,11 +20,49 @@ export async function refreshTrading(): Promise<void> {
   if (orders) app.setOrders(orders);
 }
 
-/** Poll the exchange every few seconds while the app is open (a user-data websocket comes later). */
+/** How often to poll: the user-data stream pushes every change, so the poll is only a safety net while it is connected. */
+export function pollInterval(streamConnected: boolean): number {
+  return streamConnected ? 20_000 : 3000;
+}
+
+/**
+ * Keep the account, positions and orders current: refresh at once when Binance pushes a change (user-data stream,
+ * coalesced so a burst of fills reads once), and poll as a fallback (fast while the stream is down).
+ */
 export function startTradingPoll(): () => void {
   void refreshTrading();
-  const t = window.setInterval(() => void refreshTrading(), 3000);
-  return () => window.clearInterval(t);
+  let connected = false;
+  let timer = 0;
+  let debounce = 0;
+  const arm = () => {
+    window.clearInterval(timer);
+    timer = window.setInterval(() => void refreshTrading(), pollInterval(connected));
+  };
+  arm();
+  const offs: Array<() => void> = [];
+  let stopped = false;
+  const keep = (p: Promise<() => void>) => void p.then((off) => (stopped ? off() : offs.push(off))).catch(() => undefined);
+  keep(
+    onAccountChanged(() => {
+      window.clearTimeout(debounce);
+      debounce = window.setTimeout(() => void refreshTrading(), 150);
+    }),
+  );
+  keep(
+    onUserStream((c) => {
+      useApp.getState().setStreamConnected(c);
+      if (c !== connected) {
+        connected = c;
+        arm();
+      }
+    }),
+  );
+  return () => {
+    stopped = true;
+    window.clearInterval(timer);
+    window.clearTimeout(debounce);
+    offs.forEach((o) => o());
+  };
 }
 
 /** Quantity for the order form's size setting at a given price. */

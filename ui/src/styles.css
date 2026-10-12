@@ -1400,3 +1400,11 @@ button.mini {
   fill: rgba(208, 69, 75, 0.8);
   font-size: 10px;
 }
+
+.stream-dot {
+  font-size: 11px;
+  color: var(--muted);
+}
+.stream-dot.on {
+  color: var(--up);
+}

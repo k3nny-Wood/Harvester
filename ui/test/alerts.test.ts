@@ -19,3 +19,10 @@ describe('signal alerts', () => {
     expect(down[1]).toBeLessThan(down[0]);
   });
 });
+
+import { pollInterval } from '../src/trade';
+describe('trading poll', () => {
+  it('slows down while the user-data stream is connected', () => {
+    expect(pollInterval(true)).toBeGreaterThan(pollInterval(false));
+  });
+});

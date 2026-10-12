@@ -126,6 +126,7 @@ export function App() {
   const env = useApp((s) => s.env);
   const setEnv = useApp((s) => s.setEnv);
   const account = useApp((s) => s.account);
+  const streamConnected = useApp((s) => s.streamConnected);
   const openOrders = useApp((s) => s.orders);
   const toasts = useApp((s) => s.toasts);
   const dismiss = useApp((s) => s.dismissToast);
@@ -228,6 +229,11 @@ export function App() {
               uPnL <b className={account.unrealizedPnl >= 0 ? 'up' : 'down'}>{account.unrealizedPnl.toFixed(2)}</b>
             </span>
           </div>
+        )}
+        {account && (
+          <span className={`stream-dot ${streamConnected ? 'on' : 'off'}`} title={streamConnected ? 'Live updates: Binance pushes order and account changes' : 'Live updates are not connected: refreshing every few seconds'}>
+            {streamConnected ? '● live' : '○ polling'}
+          </span>
         )}
         <button
           className={`env ${env}`}

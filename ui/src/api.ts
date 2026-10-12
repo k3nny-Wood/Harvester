@@ -57,3 +57,12 @@ export function onScannerStatus(handler: (s: ScannerStatus) => void): Promise<Un
 export function onBracket(handler: (e: { symbol: string; ok: boolean; message: string }) => void): Promise<UnlistenFn> {
   return listen<{ symbol: string; ok: boolean; message: string }>('bracket', (ev) => handler(ev.payload));
 }
+
+/** Binance pushed an order / fill / balance change (the state itself is re-read from the exchange). */
+export function onAccountChanged(handler: () => void): Promise<UnlistenFn> {
+  return listen<string>('account-changed', () => handler());
+}
+
+export function onUserStream(handler: (connected: boolean) => void): Promise<UnlistenFn> {
+  return listen<{ connected: boolean }>('userstream', (ev) => handler(ev.payload.connected));
+}
