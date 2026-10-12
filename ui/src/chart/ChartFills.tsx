@@ -80,7 +80,10 @@ export function ChartFills({ chart }: { chart: Vela | null }) {
         anchors: [{ time: m.time, price: m.price }],
         style: { lineColor: m.side === 'BUY' ? GREEN : RED, lineWidth: 2, lineStyle: 'solid' },
       });
-      if (d) ids.current.set(m.key, d.id);
+      if (d) {
+        chart.drawings.setLocked(d.id, true); // an overlay of the app, not something to drag around
+        ids.current.set(m.key, d.id);
+      }
     }
     const wanted = new Set(markers.map((m) => m.key));
     for (const [key, id] of [...ids.current.entries()]) {

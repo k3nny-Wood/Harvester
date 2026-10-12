@@ -107,7 +107,10 @@ export function ChartSmc({ chart }: { chart: Vela | null }) {
         style: { lineColor: `rgba(${s.rgb}, 0.9)`, lineWidth: 1, lineStyle: s.dashed ? 'dashed' : 'solid', fillColor: `rgba(${s.rgb}, ${s.fillOpacity})`, fillOpacity: 1 },
         text: { value: s.label, color: `rgb(${s.rgb})`, size: 'tiny', hAlign: 'left', vAlign: 'top' },
       });
-      if (d) ids.current.set(s.key, d.id);
+      if (d) {
+        chart.drawings.setLocked(d.id, true); // an overlay of the app, not something to drag around
+        ids.current.set(s.key, d.id);
+      }
     }
     const wanted = new Set(shapes.map((s) => s.key));
     for (const [key, id] of [...ids.current.entries()]) {

@@ -125,7 +125,10 @@ export function ChartBases({ chart }: { chart: Vela | null }) {
               style: { lineColor: s.kind === 'holding' ? HOLDING : BROKEN, lineWidth: s.lineWidth, lineStyle: s.kind === 'holding' ? 'solid' : 'dashed', fillColor: `rgba(79, 163, 255, ${s.fillOpacity.toFixed(3)})`, fillOpacity: 1 },
               text: s.label ? { value: s.label, color: '#cfe3ff', size: 'tiny', hAlign: 'left', vAlign: 'top' } : undefined,
             });
-      if (d) ids.current.set(s.key, d.id);
+      if (d) {
+        chart.drawings.setLocked(d.id, true); // an overlay of the app, not something to drag around
+        ids.current.set(s.key, d.id);
+      }
     }
     const wanted = new Set(shapes.map((s) => s.key));
     for (const [key, id] of [...ids.current.entries()]) {
