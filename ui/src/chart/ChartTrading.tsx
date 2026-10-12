@@ -193,7 +193,9 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
       const lv = pos.leverage || account?.leverages?.[symbol] || 0;
       const initial = lv > 0 ? (Math.abs(pos.amount) * pos.entryPrice) / lv : 0;
       const roe = initial > 0 ? `  ROE ${pnl >= 0 ? '+' : ''}${((pnl / initial) * 100).toFixed(2)}%` : '';
-      if (ye != null) lines.push({ key: 'pos', tag: pos.amount > 0 ? 'LONG' : 'SHORT', y: ye, color: '#3b8fd6', label: `${pos.amount > 0 ? 'LONG' : 'SHORT'} ${pos.amount} @ ${formatPrice(pos.entryPrice, precision)}  PNL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}${roe}`, dashed: false });
+      // green while in profit, red in a loss; the box shows the return on the position's margin (price change when the leverage is unknown)
+      const pct = initial > 0 ? (pnl / initial) * 100 : pos.entryPrice > 0 ? ((liveMark ?? pos.markPrice) / pos.entryPrice - 1) * 100 * (pos.amount > 0 ? 1 : -1) : 0;
+      if (ye != null) lines.push({ key: 'pos', tag: `${pos.amount > 0 ? 'LONG' : 'SHORT'} ${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`, y: ye, color: pnl >= 0 ? BUY : SELL, label: `${pos.amount > 0 ? 'LONG' : 'SHORT'} ${pos.amount} @ ${formatPrice(pos.entryPrice, precision)}  PNL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}${roe}`, dashed: false });
       const yl = pos.liquidationPrice > 0 ? yOf(pos.liquidationPrice) : null;
       if (yl != null) lines.push({ key: 'liq', tag: 'LIQUIDATION', y: yl, color: '#e0a33d', label: `LIQ ${formatPrice(pos.liquidationPrice, precision)}`, dashed: true });
     }
