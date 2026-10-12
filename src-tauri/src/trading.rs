@@ -184,6 +184,8 @@ pub struct Position {
     pub liquidation_price: f64,
     pub leverage: f64,
     pub isolated: bool,
+    /// the cash put into an isolated position (Binance's `isolatedWallet`; the margin shown is this plus the unrealised profit)
+    pub isolated_wallet: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -299,6 +301,7 @@ pub fn parse_positions(v: &Value) -> Vec<Position> {
                     liquidation_price: num(&p["liquidationPrice"]),
                     leverage: num(&p["leverage"]),
                     isolated: p["marginType"].as_str().map_or(false, |m| m.eq_ignore_ascii_case("isolated")),
+                    isolated_wallet: num(&p["isolatedWallet"]),
                 })
                 .collect()
         })

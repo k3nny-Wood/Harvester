@@ -184,6 +184,8 @@ export interface Position {
   liquidationPrice: number;
   leverage: number;
   isolated: boolean;
+  /** cash in an isolated position; Binance's margin is this plus the unrealised profit */
+  isolatedWallet?: number;
 }
 
 export interface Account {

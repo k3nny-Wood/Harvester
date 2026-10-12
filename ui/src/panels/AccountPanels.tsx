@@ -118,8 +118,10 @@ export function PositionsPanel() {
           {positions.map((p) => {
             const value = Math.abs(p.amount) * p.markPrice;
             const lev = p.leverage || account.leverages?.[p.symbol] || 0;
-            const margin = lev > 0 ? (Math.abs(p.amount) * p.entryPrice) / lev : 0;
-            const roe = margin > 0 ? (p.unrealizedPnl / margin) * 100 : 0;
+            const initial = lev > 0 ? (Math.abs(p.amount) * p.entryPrice) / lev : 0;
+            // what Binance shows as Margin: isolated = the cash in the position + its profit; cross = the position's initial margin at the mark
+            const margin = p.isolated && p.isolatedWallet ? p.isolatedWallet + p.unrealizedPnl : lev > 0 ? value / lev : 0;
+            const roe = initial > 0 ? (p.unrealizedPnl / initial) * 100 : 0;
             return (
               <tr key={p.symbol}>
                 <td>
@@ -132,7 +134,7 @@ export function PositionsPanel() {
                 <td>{money(value)}</td>
                 <td>{margin ? money(margin) : '-'}</td>
                 <td className={p.unrealizedPnl >= 0 ? 'up' : 'down'}>{money(p.unrealizedPnl)}</td>
-                <td className={roe >= 0 ? 'up' : 'down'}>{margin ? `${roe.toFixed(1)}%` : '-'}</td>
+                <td className={roe >= 0 ? 'up' : 'down'}>{initial ? `${roe.toFixed(1)}%` : '-'}</td>
                 <td>{p.liquidationPrice || '-'}</td>
                 <td>{lev ? `${lev}x` : '-'}</td>
                 <td className="pf-actions">
