@@ -5,6 +5,7 @@
 
 use crate::decimal::{from_f64, round_to_step, to_f64};
 use crate::filters::{validate_order, OrderCheck, SymbolFilters};
+use crate::held::outside_band;
 use serde::{Deserialize, Serialize};
 
 pub const MIN_RUNGS: usize = 2;
@@ -88,6 +89,9 @@ pub struct LadderRung {
     pub notional: f64,
     pub valid: bool,
     pub errors: Vec<String>,
+    /// the price is beyond Binance's price band right now: the order is kept on this computer until the market gets within range
+    #[serde(default)]
+    pub held: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -180,13 +184,15 @@ pub fn build_ladder(spec: &LadderSpec, filters: &SymbolFilters, reference_price:
         let (p, q) = (to_f64(price), to_f64(quantity));
         let notional = p * q;
         let check = OrderCheck { price: Some(price), quantity: Some(quantity), ..Default::default() };
-        let v = validate_order(&check, filters, reference_price);
+        // the percent-price band is not a reason to drop a rung: Harvester holds such an order until the band reaches it
+        let v = validate_order(&check, filters, 0.0);
+        let held = outside_band(p, reference_price, filters);
         if v.ok {
             sum_qty += q;
             sum_notional += notional;
             weighted += p * q;
         }
-        rungs.push(LadderRung { index: i, price: p, quantity: q, notional, valid: v.ok, errors: v.errors });
+        rungs.push(LadderRung { index: i, price: p, quantity: q, notional, valid: v.ok, errors: v.errors, held });
     }
     LadderPreview { rungs, total_quantity: sum_qty, total_notional: sum_notional, average_entry: if sum_qty > 0.0 { weighted / sum_qty } else { 0.0 } }
 }
@@ -211,6 +217,19 @@ pub fn stretch_ladder(spec: &LadderSpec, new_end: f64, tick: &SymbolFilters) -> 
 mod tests {
     use super::*;
     use crate::filters::test_support::eth;
+
+    #[test]
+    fn rungs_beyond_the_price_band_are_valid_but_held_until_the_market_comes_closer() {
+        let f = eth(); // +-5%
+        // a buy ladder from 3000 down to 2400 around a market at 3000: the rungs below 2850 are outside the band
+        let s = LadderSpec { start_price: 3000.0, end_price: 2400.0, count: 4, ..spec() };
+        let p = build_ladder(&s, &f, 3000.0);
+        assert!(p.rungs.iter().all(|r| r.valid), "{:?}", p.rungs);
+        let held: Vec<bool> = p.rungs.iter().map(|r| r.held).collect();
+        assert_eq!(held, vec![false, true, true, true]);
+        // with no market price nothing is held
+        assert!(build_ladder(&s, &f, 0.0).rungs.iter().all(|r| !r.held));
+    }
 
     fn spec() -> LadderSpec {
         LadderSpec {

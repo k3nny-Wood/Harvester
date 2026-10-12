@@ -3,6 +3,7 @@
 pub mod crossover;
 pub mod decimal;
 pub mod filters;
+pub mod held;
 pub mod lab;
 pub mod ladder;
 pub mod candle;

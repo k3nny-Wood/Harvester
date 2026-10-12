@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Account, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
+import type { Account, HeldEvent, HeldOrder, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
 
 /** True when running inside the Tauri shell (false in a plain browser, e.g. `vite` on its own). */
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -24,6 +24,9 @@ export const api = {
   openOrders: (symbol?: string) => invoke<OpenOrder[]>('open_orders', { symbol: symbol ?? null }),
   placeOrder: (order: OrderRequest) => invoke<OrderAck>('place_order', { order }),
   placeOrders: (orders: OrderRequest[]) => invoke<Array<{ Ok: OrderAck } | { Err: string }>>('place_orders', { orders }),
+  heldList: () => invoke<HeldOrder[]>('held_list'),
+  heldCancel: (id: string) => invoke<boolean>('held_cancel', { id }),
+  heldMove: (id: string, price: number) => invoke<void>('held_move', { id, price }),
   cancelOrder: (symbol: string, orderId: number, conditional = false) => invoke<void>('cancel_order', { symbol, orderId, conditional }),
   orderHistory: (symbol: string, limit = 100) => invoke<OrderRecord[]>('order_history', { symbol, limit }),
   tradeHistory: (symbol: string, limit = 200) => invoke<TradeRecord[]>('trade_history', { symbol, limit }),
@@ -68,4 +71,9 @@ export function onUserStream(handler: (connected: boolean) => void): Promise<Unl
 
 export function onLabProgress(handler: (p: LabProgress) => void): Promise<UnlistenFn> {
   return listen<LabProgress>('lab-progress', (ev) => handler(ev.payload));
+}
+
+/** A held order was sent to Binance (its price came within range) or refused. */
+export function onHeldChanged(handler: (e: HeldEvent) => void): Promise<UnlistenFn> {
+  return listen<HeldEvent>('held-changed', (ev) => handler(ev.payload));
 }

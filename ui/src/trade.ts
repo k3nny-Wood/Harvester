@@ -1,4 +1,4 @@
-import { api, inTauri, onAccountChanged, onUserStream } from './api';
+import { api, inTauri, onAccountChanged, onHeldChanged, onUserStream } from './api';
 import { activeChartStore } from './chartStore';
 import { confirmDialog } from './confirm';
 import { useApp } from './store';
@@ -18,6 +18,8 @@ export async function refreshTrading(): Promise<void> {
   const [account, orders] = await Promise.all([api.account().catch((e) => (app.toast(`Account: ${e}`, 'warn'), null)), api.openOrders().catch(() => null)]);
   if (account) app.setAccount(account);
   if (orders) app.setOrders(orders);
+  const held = await api.heldList().catch(() => null);
+  if (held) app.setHeld(held);
 }
 
 /** How often to poll: the user-data stream pushes every change, so the poll is only a safety net while it is connected. */
@@ -46,6 +48,12 @@ export function startTradingPoll(): () => void {
     onAccountChanged(() => {
       window.clearTimeout(debounce);
       debounce = window.setTimeout(() => void refreshTrading(), 150);
+    }),
+  );
+  keep(
+    onHeldChanged((e) => {
+      useApp.getState().toast(e.message, e.status === 'placed' ? 'info' : 'warn');
+      void refreshTrading();
     }),
   );
   keep(
@@ -83,7 +91,11 @@ export async function submitOrder(order: OrderRequest, confirmText?: string): Pr
   if (confirmText && !(await confirmDialog(confirmText, { danger: app.env === 'live', confirmLabel: 'Place order' }))) return false;
   try {
     const ack = await api.placeOrder(order);
-    app.toast(`Placed: ${describeOrder(order.side, order.type, ack.quantity, order.symbol, ack.price ?? undefined)} (${ack.status})`, 'info');
+    if (ack.status === 'HELD') {
+      app.toast(`Held on this computer: ${describeOrder(order.side, order.type, ack.quantity, order.symbol, ack.price ?? undefined)}. Binance only accepts limit orders close to the market; this one is sent automatically when the price comes within range (Harvester must be open).`, 'info');
+    } else {
+      app.toast(`Placed: ${describeOrder(order.side, order.type, ack.quantity, order.symbol, ack.price ?? undefined)} (${ack.status})`, 'info');
+    }
     void refreshTrading();
     return true;
   } catch (e) {

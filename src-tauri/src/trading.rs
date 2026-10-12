@@ -27,7 +27,7 @@ pub enum Side {
 }
 
 impl Side {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Side::Buy => "BUY",
             Side::Sell => "SELL",
@@ -533,6 +533,14 @@ impl Trading {
 
     pub fn env(&self) -> Env {
         self.market.env()
+    }
+
+    pub fn market(&self) -> &Arc<Market> {
+        &self.market
+    }
+
+    pub fn max_notional(&self) -> f64 {
+        self.max_notional
     }
 
     /// The listen-key calls need the API key but no signature.

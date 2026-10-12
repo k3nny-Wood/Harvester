@@ -1523,3 +1523,8 @@ button.mini {
 .bases-pop.smc-pop {
   left: 240px;
 }
+
+.held-row td {
+  opacity: 0.85;
+  font-style: italic;
+}

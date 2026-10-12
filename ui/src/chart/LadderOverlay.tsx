@@ -210,13 +210,14 @@ export function LadderOverlay({ chart, host }: { chart: Vela | null; host: RefOb
             if (y == null) return null;
             const rung = preview?.rungs[i];
             const bad = rung && !rung.valid;
+            const held = !!rung?.held;
             return (
               <g key={i}>
                 <line x1={g.offX} x2={g.offX + g.width} y1={y} y2={y} stroke={bad ? '#e0a33d' : color} strokeWidth={1} strokeDasharray={bad ? '2 4' : '5 4'} opacity={0.85} />
                 <line x1={x - 6} x2={x + 6} y1={y} y2={y} stroke={color} strokeWidth={2} />
                 <text x={g.offX + g.width - 6} y={y - 3} textAnchor="end" className="ladder-label" fill={bad ? '#e0a33d' : color}>
                   #{i + 1} {rung ? `${rung.quantity} @ ${formatPrice(rung.price, precision)}` : formatPrice(p, precision)}
-                  {bad ? ' ⚠' : ''}
+                  {bad ? ' ⚠' : held ? ' ⏸ held' : ''}
                 </text>
               </g>
             );
@@ -273,11 +274,12 @@ function LadderCard({ style, color, precision }: { style: React.CSSProperties; c
   const [busy, setBusy] = useState(false);
   const p = d.preview;
   const invalid = p ? p.rungs.filter((r) => !r.valid).length : 0;
+  const heldCount = p ? p.rungs.filter((r) => r.valid && r.held).length : 0;
   const valid = p ? p.rungs.filter((r) => r.valid) : [];
 
   const place = async () => {
     if (!p || valid.length === 0) return;
-    const text = `${env === 'live' ? 'LIVE ORDERS - real money.\n\n' : ''}Place ${valid.length} ${side} limit orders on ${symbol}?\nTotal about ${p.totalNotional.toFixed(2)} USDT, average ${formatPrice(p.averageEntry, precision)}${invalid ? `\n(${invalid} rung(s) that break exchange limits are skipped)` : ''}`;
+    const text = `${env === 'live' ? 'LIVE ORDERS - real money.\n\n' : ''}Place ${valid.length} ${side} limit orders on ${symbol}?\nTotal about ${p.totalNotional.toFixed(2)} USDT, average ${formatPrice(p.averageEntry, precision)}${invalid ? `\n(${invalid} rung(s) that break exchange limits are skipped)` : ''}${heldCount ? `\n${heldCount} rung(s) are beyond Binance's price band: they are kept on this computer and sent automatically when the price comes within range (Harvester must be open).` : ''}`;
     if (!(await confirmDialog(text, { danger: env === 'live', confirmLabel: `Place ${valid.length} orders` }))) return;
     setBusy(true);
     const tag = `hv${Date.now().toString(36)}`;
@@ -285,7 +287,8 @@ function LadderCard({ style, color, precision }: { style: React.CSSProperties; c
       const results = await api.placeOrders(valid.map((r, i) => ({ symbol, side, type: 'LIMIT' as const, quantity: r.quantity, price: r.price, clientId: `${tag}-${i}` })));
       const failed = results.filter((x) => 'Err' in x) as Array<{ Err: string }>;
       const ok = results.length - failed.length;
-      toast(failed.length === 0 ? `Ladder placed: ${ok} ${side} orders on ${symbol}` : `Ladder: ${ok} placed, ${failed.length} failed - ${failed[0].Err}`, failed.length ? 'warn' : 'info');
+      const heldNow = results.filter((x) => 'Ok' in x && x.Ok.status === 'HELD').length;
+      toast(failed.length === 0 ? `Ladder placed: ${ok - heldNow} ${side} orders on ${symbol}${heldNow ? ` and ${heldNow} held on this computer until the price comes within Binance's range` : ''}` : `Ladder: ${ok} placed, ${failed.length} failed - ${failed[0].Err}`, failed.length ? 'warn' : 'info');
       void refreshTrading();
       if (failed.length === 0) reset();
     } catch (e) {

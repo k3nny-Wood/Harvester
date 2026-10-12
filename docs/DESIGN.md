@@ -57,6 +57,14 @@ sells, because the order inside a candle is unknowable), `simulate_account` (cap
 drawdown), `luck_test`, `start_dates`, `run_lab`. `src-tauri/src/lab.rs` downloads 1000-candle pages at 4 requests a second, retries a refusal after a
 pause, caches per symbol for 6 hours and emits `lab-progress`. Differences from MarketScanner's Lab: long only, equal-share sells, no trailing last sell.
 
+## Held orders
+
+`harvester-core::held` holds the pure rules (`outside_band`, `ready_to_place` with a safety margin); `src-tauri/src/held.rs` the persistent store
+(`%APPDATA%\Harvester\held_orders.json`, written through a temporary file), `place_or_hold` / `place_many_or_hold` (a plain LIMIT beyond the band is validated and
+stored instead of refused; everything else is placed as before) and the watcher (every 3 s: mark price per symbol, send what is ready, report with the `held-changed`
+event). A refusal that only means "the band moved a tick" keeps the order waiting; any other refusal marks it failed with the exchange's message. The UI draws held orders
+as dashed lines (draggable: `held_move`), lists them in Open orders and shows ladder rungs that will be held (`LadderRung.held`).
+
 ## Roadmap
 
 | # | Milestone | Status |

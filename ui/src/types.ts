@@ -70,6 +70,8 @@ export interface LadderRung {
   notional: number;
   valid: boolean;
   errors: string[];
+  /** beyond Binance's price band right now: kept on this computer until the market comes closer */
+  held?: boolean;
 }
 
 export interface LadderPreview {
@@ -344,4 +346,22 @@ export interface SmcZone {
   fullHigh: number;
   partiallyMitigated: boolean;
   sizePct: number;
+}
+
+/** A limit order kept on this computer because Binance will not take its price yet (outside the percent-price band). */
+export interface HeldOrder {
+  id: string;
+  env: Env;
+  request: OrderRequest;
+  createdMs: number;
+  status: 'held' | 'placed' | 'failed';
+  note: string;
+  placedOrderId: number | null;
+}
+
+export interface HeldEvent {
+  id: string;
+  symbol: string;
+  status: 'held' | 'placed' | 'failed';
+  message: string;
 }

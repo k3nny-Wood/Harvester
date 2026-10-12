@@ -15,6 +15,8 @@ interface Line {
   color: string;
   label: string;
   orderId?: number;
+  /** a limit order kept on this computer (not on the exchange yet) */
+  heldId?: string;
   conditional?: boolean;
   dashed: boolean;
   /** the price is above (up) or below (down) the visible range: drawn at that edge with an arrow */
@@ -30,7 +32,10 @@ interface MenuState {
 }
 
 interface DragState {
+  /** an order on the exchange (0 for a held one) */
   orderId: number;
+  /** a limit order kept on this computer: moving it only changes what will be sent later */
+  heldId?: string;
   conditional: boolean;
   /** price of the line when it was picked up */
   from: number;
@@ -51,6 +56,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
   const filters = useChart((s) => s.filters);
   const patchLadder = useChart((s) => s.patchLadder);
   const orders = useApp((s) => s.orders);
+  const held = useApp((s) => s.held);
   const account = useApp((s) => s.account);
   const trading = useApp((s) => s.trading);
   const patchForm = useApp((s) => s.patchOrderForm);
@@ -147,6 +153,26 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
         dragging: !!dragging,
       });
     }
+    // limit orders waiting on this computer for Binance's price band to reach them
+    for (const h of held.filter((x) => x.status === 'held' && x.request.symbol === symbol)) {
+      const dragging = drag && drag.heldId === h.id ? drag : null;
+      const hp = dragging ? dragging.to : (h.request.price ?? 0);
+      const at = hp ? place(hp) : null;
+      if (!at) continue;
+      lines.push({
+        key: `h${h.id}`,
+        y: at.y,
+        pinned: at.pinned,
+        price: hp,
+        color: '#9aa7b8',
+        label: dragging
+          ? `HELD ${h.request.side} LIMIT ${h.request.quantity} → ${formatPrice(hp, precision)}${mark > 0 ? `  (${((hp / mark - 1) * 100).toFixed(2)}% from last)` : ''}  · release to move`
+          : `${at.pinned === 'up' ? '▲ ' : at.pinned === 'down' ? '▼ ' : ''}HELD ${h.request.side} LIMIT ${h.request.quantity} @ ${formatPrice(hp, precision)} · sent when Binance allows it`,
+        heldId: h.id,
+        dashed: true,
+        dragging: !!dragging,
+      });
+    }
     const pos = account?.positions.find((p) => p.symbol === symbol);
     if (pos) {
       const ye = yOf(pos.entryPrice);
@@ -164,11 +190,11 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
     const botP = info.proj.pxToPoint(0, info.proj.height, 'price').price;
     if (band.high < topP) {
       const edge = Math.max(0, info.proj.yOf(band.high, 'price') ?? 0);
-      zones.push({ y: offY, h: edge, edgeY: offY + edge, label: `limit orders above ${formatPrice(band.high, precision)} are refused` });
+      zones.push({ y: offY, h: edge, edgeY: offY + edge, label: `limit orders above ${formatPrice(band.high, precision)} are held here until price comes closer` });
     }
     if (band.low > botP) {
       const edge = Math.min(info.proj.height, info.proj.yOf(band.low, 'price') ?? info.proj.height);
-      zones.push({ y: offY + edge, h: info.proj.height - edge, edgeY: offY + edge, label: `limit orders below ${formatPrice(band.low, precision)} are refused` });
+      zones.push({ y: offY + edge, h: info.proj.height - edge, edgeY: offY + edge, label: `limit orders below ${formatPrice(band.low, precision)} are held here until price comes closer` });
     }
   }
   const plotW = info?.proj.width ?? 0;
@@ -176,17 +202,22 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
 
   /** Press on an order line: the line follows the pointer; releasing the button moves the order on the exchange. */
   const startDrag = (e: React.PointerEvent, l: Line) => {
-    if (l.orderId == null || l.pinned || !l.price) return;
+    if ((l.orderId == null && l.heldId == null) || l.pinned || !l.price) return;
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     setMenu(null);
-    setDrag({ orderId: l.orderId, conditional: !!l.conditional, from: l.price, to: l.price });
+    setDrag({ orderId: l.orderId ?? 0, heldId: l.heldId, conditional: !!l.conditional, from: l.price, to: l.price });
   };
   const moveDrag = (e: React.PointerEvent) => {
     if (!drag) return;
     const raw = priceAt(e.clientY);
     if (raw == null || raw <= 0) return;
+    // a held order lives on this computer, so it may be dragged anywhere, also outside the band
+    if (drag.heldId) {
+      setDrag({ ...drag, to: raw });
+      return;
+    }
     // a limit price outside the exchange's band is refused, so the line stops at the edge; stop triggers are free to go anywhere
     const isStop = useApp.getState().orders.some((x) => x.orderId === drag.orderId && x.conditional === drag.conditional && x.conditional);
     setDrag({ ...drag, to: isStop ? raw : clampToBand(raw, band) });
@@ -201,6 +232,19 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
     }
     setDrag(null);
     if (d.to === d.from) return;
+    if (d.heldId) {
+      // show the new price at once; the saved copy on disk follows
+      const app = useApp.getState();
+      app.setHeld(app.held.map((x) => (x.id === d.heldId ? { ...x, request: { ...x.request, price: d.to } } : x)));
+      try {
+        await api.heldMove(d.heldId, d.to);
+        toast(`Moved the held order to ${formatPrice(d.to, precision)}. It is sent when Binance's range reaches it.`, 'info');
+      } catch (err) {
+        toast(`Could not move the held order: ${err}`, 'warn');
+      }
+      void refreshTrading();
+      return;
+    }
     const o: OpenOrder | undefined = useApp.getState().orders.find((x) => x.orderId === d.orderId && x.conditional === d.conditional);
     if (!o) return;
     const delta = d.to - (o.price || o.stopPrice);
@@ -247,7 +291,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
         {lines.map((l) => (
           <g key={l.key}>
             <line x1={offX} x2={offX + plotW} y1={l.y} y2={l.y} stroke={l.color} strokeWidth={l.dragging ? 2.4 : l.pinned ? 0.8 : 1.2} strokeDasharray={l.pinned ? '2 5' : l.dashed ? '5 4' : undefined} opacity={l.pinned ? 0.55 : 0.9} />
-            {l.orderId != null && !l.pinned && (
+            {(l.orderId != null || l.heldId != null) && !l.pinned && (
               <line
                 className="order-hit"
                 x1={offX}
@@ -261,12 +305,30 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
                 onPointerUp={(e) => void endDrag(e)}
                 onPointerCancel={() => setDrag(null)}
               >
-                <title>Drag to move this order</title>
+                <title>{l.heldId != null ? 'Drag to move this held order (it is kept on this computer)' : 'Drag to move this order'}</title>
               </line>
             )}
             <text x={l.pinned ? offX + plotW - 90 : offX + 8} y={l.y - 4} textAnchor={l.pinned ? 'end' : 'start'} className="trade-label" fill={l.color}>
               {l.label}
             </text>
+            {l.heldId != null && (
+              <g
+                className="cancel-x"
+                transform={`translate(${offX + plotW - 70}, ${l.y})`}
+                onClick={() =>
+                  void api
+                    .heldCancel(l.heldId!)
+                    .then(() => refreshTrading())
+                    .catch((e) => toast(`Cancel: ${e}`, 'warn'))
+                }
+              >
+                <title>Cancel this held order (it was never sent to Binance)</title>
+                <circle r={8} fill="#0f1620" stroke={l.color} />
+                <text textAnchor="middle" y={4} fill={l.color} fontSize={12}>
+                  ×
+                </text>
+              </g>
+            )}
             {l.orderId != null && (
               <g
                 className="cancel-x"

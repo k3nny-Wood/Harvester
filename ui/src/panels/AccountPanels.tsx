@@ -130,8 +130,18 @@ export function PositionsPanel() {
 export function OpenOrdersPanel() {
   const trading = useApp((s) => s.trading);
   const orders = useApp((s) => s.orders);
+  const held = useApp((s) => s.held).filter((h) => h.status === 'held');
   const toast = useApp((s) => s.toast);
   if (trading && !trading.hasCredentials) return <NoKeys />;
+
+  const cancelHeld = async (id: string) => {
+    try {
+      await api.heldCancel(id);
+      await refreshTrading();
+    } catch (e) {
+      toast(`Cancel: ${e}`, 'warn');
+    }
+  };
 
   const cancel = async (symbol: string, id: number, conditional: boolean) => {
     try {
@@ -179,13 +189,35 @@ export function OpenOrdersPanel() {
           </tr>
         </thead>
         <tbody>
-          {orders.length === 0 && (
+          {orders.length === 0 && held.length === 0 && (
             <tr>
               <td colSpan={10} className="muted">
                 No open orders.
               </td>
             </tr>
           )}
+          {held.map((h) => (
+            <tr key={h.id} className="held-row">
+              <td className="muted">{when(h.createdMs)}</td>
+              <td>
+                <SymbolLink symbol={h.request.symbol} />
+              </td>
+              <td className={h.request.side === 'BUY' ? 'up' : 'down'}>{h.request.side}</td>
+              <td>LIMIT (held here)</td>
+              <td>{h.request.quantity}</td>
+              <td>-</td>
+              <td>{h.request.price}</td>
+              <td>-</td>
+              <td className="muted" title="Kept on this computer: Binance only takes limit orders close to the market. It is sent automatically when the price comes within range, while Harvester is open.">
+                waiting for range{h.request.reduceOnly ? ' · reduce-only' : ''}
+              </td>
+              <td>
+                <button className="icon-btn" title="Cancel this held order (it was never sent to Binance)" onClick={() => void cancelHeld(h.id)}>
+                  ×
+                </button>
+              </td>
+            </tr>
+          ))}
           {orders.map((o) => (
             <tr key={`${o.conditional}-${o.orderId}`}>
               <td className="muted">{when(o.time)}</td>

@@ -43,6 +43,19 @@ Every chart tab has a **Pine** button (top left of the chart) and a `/` quick pi
 8 built-in indicators and 138 community scripts from everget's public TradingView collection, ported to Pine v6; each one is run by
 `pnpm --dir ui test` so nothing in the list is a placeholder. Write or paste your own in the editor. Scripts are remembered per chart tab.
 
+## Held orders: limit orders outside Binance's price band
+
+Binance refuses a LIMIT order whose price is too far from the market (the percent-price filter, about 5% either way for most coins). Harvester no longer
+refuses it either: the order is **held on this computer** and sent to Binance automatically once the allowed range has moved to its price. It works from the
+Orders panel, a right-click on the chart and ladders (rungs inside the range go to Binance at once, the others are held).
+
+- On the chart a held order is a grey dashed line, "HELD BUY LIMIT ... sent when Binance allows it", with a x to cancel it. **Drag it like any other order**; the new
+  price is kept on this computer (drag it inside the range and it is sent within a few seconds). The Open orders table lists it as "LIMIT (held here)".
+- Held orders are saved in `%APPDATA%\Harvester\held_orders.json`, so they survive a restart, but **they are only sent while Harvester is running**: nothing is resting on
+  the exchange. They belong to the environment (testnet / live) they were made in and are never sent to the other one. The size, tick and notional cap are checked
+  when the order is held, and an order is only sent when it is comfortably (0.2%) inside the range. At most 60 orders wait at a time.
+- Stops, take-profits and market orders are not subject to the band and are never held.
+
 ## QFL support zones on the chart
 
 The **Bases** button (top left of every chart, next to Pine) draws the QFL bases of the symbol and timeframe as **zones**. A base is a swing low that

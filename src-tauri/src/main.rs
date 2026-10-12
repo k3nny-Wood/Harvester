@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod held;
 mod lab;
 mod userstream;
 mod market;
@@ -13,6 +14,7 @@ use harvester_core::qfl::{base_zones, BaseZone, QflParams};
 use harvester_core::smc::{smc_zones, SmcParams, SmcZone};
 use harvester_core::signals::Signal;
 use harvester_core::lab::{LabConfig, LabReport};
+use held::{HeldOrder, HeldStore};
 use lab::{Lab, LabRequest};
 use market::{Env, Kline, Market, SymbolQuote};
 use scanner::{Scanner, ScannerConfig, ScannerStatus, Sources};
@@ -23,6 +25,7 @@ use tauri::{AppHandle, Manager, State};
 
 struct AppState {
     lab: Lab,
+    held: Arc<HeldStore>,
     market: Arc<Market>,
     streams: Streams,
     scanner: Scanner,
@@ -88,13 +91,30 @@ async fn open_orders(state: State<'_, AppState>, symbol: Option<String>) -> Resu
 
 #[tauri::command]
 async fn place_order(state: State<'_, AppState>, order: OrderRequest) -> Result<OrderAck, String> {
-    state.trading.place(order).await
+    // a limit order beyond Binance's price band is held here until the band reaches it (status "HELD")
+    held::place_or_hold(&state.trading, &state.held, order).await
 }
 
 /// Several orders at once (a ladder); each rung reports its own success or error.
 #[tauri::command]
 async fn place_orders(state: State<'_, AppState>, orders: Vec<OrderRequest>) -> Result<Vec<Result<OrderAck, String>>, String> {
-    state.trading.place_many(orders).await
+    held::place_many_or_hold(&state.trading, &state.held, orders).await
+}
+
+/// Orders kept on this computer until Binance will take them (and the recent ones that were sent or refused).
+#[tauri::command]
+fn held_list(state: State<'_, AppState>) -> Vec<HeldOrder> {
+    state.held.list(state.trading.env())
+}
+
+#[tauri::command]
+fn held_cancel(state: State<'_, AppState>, id: String) -> bool {
+    state.held.cancel(&id)
+}
+
+#[tauri::command]
+fn held_move(state: State<'_, AppState>, id: String, price: f64) -> Result<(), String> {
+    state.held.set_price(&id, price)
 }
 
 #[tauri::command]
@@ -206,17 +226,18 @@ fn main() {
     let env = Env::from_name(&std::env::var("HARVESTER_ENV").unwrap_or_default());
     let market = Arc::new(Market::new(env));
     tauri::Builder::default()
-        .manage(AppState { lab: Lab::default(), market: market.clone(), streams: Streams::default(), scanner: Scanner::default(), trading: Arc::new(Trading::new(market)) })
+        .manage(AppState { lab: Lab::default(), held: Arc::new(HeldStore::open(held::default_path())), market: market.clone(), streams: Streams::default(), scanner: Scanner::default(), trading: Arc::new(Trading::new(market)) })
         .setup(|app| {
             let state = app.state::<AppState>();
             state.scanner.start(app.handle().clone(), state.market.clone(), ScannerConfig::default());
             userstream::start(app.handle().clone(), state.trading.clone());
+            held::start(app.handle().clone(), state.trading.clone(), state.held.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
             qfl_zones, smc_zones_cmd, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
-            trading_status, account_overview, open_orders, place_order, place_orders, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
+            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");
