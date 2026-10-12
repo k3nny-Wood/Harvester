@@ -119,8 +119,8 @@ export function PositionsPanel() {
             const value = Math.abs(p.amount) * p.markPrice;
             const lev = p.leverage || account.leverages?.[p.symbol] || 0;
             const initial = lev > 0 ? (Math.abs(p.amount) * p.entryPrice) / lev : 0;
-            // what Binance shows as Margin: isolated = the cash in the position + its profit; cross = the position's initial margin at the mark
-            const margin = p.isolated && p.isolatedWallet ? p.isolatedWallet + p.unrealizedPnl : lev > 0 ? value / lev : 0;
+            // what Binance shows as Margin: isolated = the cash in the position (fixed); cross = the position's initial margin at the mark
+            const margin = p.isolated && p.isolatedWallet ? p.isolatedWallet : lev > 0 ? value / lev : 0;
             const roe = initial > 0 ? (p.unrealizedPnl / initial) * 100 : 0;
             return (
               <tr key={p.symbol}>
