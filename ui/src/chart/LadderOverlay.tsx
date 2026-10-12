@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import type { Vela } from '@luxalgo/vela';
 import { api } from '../api';
+import { confirmDialog } from '../confirm';
 import { refreshTrading } from '../trade';
 import { formatPrice, rawRungPrices, snapToTick } from '../ladderMath';
 import { ladderSide, useChart, useChartId, type LadderDraft } from '../chartStore';
@@ -277,7 +278,7 @@ function LadderCard({ style, color, precision }: { style: React.CSSProperties; c
   const place = async () => {
     if (!p || valid.length === 0) return;
     const text = `${env === 'live' ? 'LIVE ORDERS - real money.\n\n' : ''}Place ${valid.length} ${side} limit orders on ${symbol}?\nTotal about ${p.totalNotional.toFixed(2)} USDT, average ${formatPrice(p.averageEntry, precision)}${invalid ? `\n(${invalid} rung(s) that break exchange limits are skipped)` : ''}`;
-    if (!window.confirm(text)) return;
+    if (!(await confirmDialog(text, { danger: env === 'live', confirmLabel: `Place ${valid.length} orders` }))) return;
     setBusy(true);
     const tag = `hv${Date.now().toString(36)}`;
     try {

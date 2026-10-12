@@ -1,5 +1,6 @@
 import { api, inTauri } from './api';
 import { activeChartStore } from './chartStore';
+import { confirmDialog } from './confirm';
 import { useApp } from './store';
 import type { OrderRequest, Side } from './types';
 
@@ -41,7 +42,7 @@ export function describeOrder(side: Side, type: string, qty: number, symbol: str
 /** Place one order and report the outcome as a toast. Returns true when the exchange accepted it. */
 export async function submitOrder(order: OrderRequest, confirmText?: string): Promise<boolean> {
   const app = useApp.getState();
-  if (confirmText && !window.confirm(confirmText)) return false;
+  if (confirmText && !(await confirmDialog(confirmText, { danger: app.env === 'live', confirmLabel: 'Place order' }))) return false;
   try {
     const ack = await api.placeOrder(order);
     app.toast(`Placed: ${describeOrder(order.side, order.type, ack.quantity, order.symbol, ack.price ?? undefined)} (${ack.status})`, 'info');
@@ -53,19 +54,24 @@ export async function submitOrder(order: OrderRequest, confirmText?: string): Pr
   }
 }
 
-/** The current form settings turned into an order for the focused chart's symbol, at `price` (limit) or the last price (market). */
+/** The current form settings turned into an order for the focused chart's symbol. */
 export function orderFromForm(price?: number, side?: Side): { order: OrderRequest; notional: number } | string {
   const app = useApp.getState();
   const chart = activeChartStore()?.getState();
   if (!chart) return 'No chart is open.';
   const f = app.orderForm;
-  const usePrice = f.type === 'LIMIT' ? price ?? (Number(f.price) || chart.markPrice) : undefined;
-  const ref = usePrice ?? chart.markPrice;
+  const type = price != null ? 'LIMIT' : f.type; // the right-click menu always places a limit order at the clicked price
+  const isStop = type === 'STOP_MARKET' || type === 'STOP' || type === 'TAKE_PROFIT_MARKET' || type === 'TAKE_PROFIT';
+  const hasLimit = type === 'LIMIT' || type === 'STOP' || type === 'TAKE_PROFIT';
+  const stopPrice = isStop ? Number(f.stopPrice) || undefined : undefined;
+  if (isStop && !stopPrice) return 'Enter a trigger (stop) price.';
+  const limitPrice = hasLimit ? price ?? (Number(f.price) || stopPrice || chart.markPrice) : undefined;
+  const ref = limitPrice ?? stopPrice ?? chart.markPrice;
   const lev = Number(f.leverage) || 1;
   const qty = quantityFor(ref, f.sizeMode, Number(f.size), app.account?.availableBalance ?? 0, lev);
   if (!(qty > 0)) return 'Enter a size greater than zero.';
   return {
-    order: { symbol: chart.symbol, side: side ?? f.side, type: f.type, quantity: qty, price: usePrice, postOnly: f.postOnly, reduceOnly: f.reduceOnly },
+    order: { symbol: chart.symbol, side: side ?? f.side, type, quantity: qty, price: limitPrice, stopPrice, postOnly: f.postOnly && hasLimit && type === 'LIMIT', reduceOnly: f.reduceOnly },
     notional: qty * ref,
   };
 }

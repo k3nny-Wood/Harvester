@@ -9,7 +9,11 @@ import { useApp } from '../store';
 import { DRAWING_GROUPS } from './drawingTools';
 import { ChartTrading } from './ChartTrading';
 import { LadderOverlay } from './LadderOverlay';
+import { pushLayerData } from './projector';
 import { HarvesterProvider } from './provider';
+import { registerTickerWatermarkLayer } from './tickerWatermark';
+
+let watermarkRegistered = false;
 
 interface ChartParams {
   symbol?: string;
@@ -66,6 +70,10 @@ function ChartBody() {
   useEffect(() => {
     const container = ref.current;
     if (!container) return;
+    if (!watermarkRegistered) {
+      registerTickerWatermarkLayer(); // before the first chart exists
+      watermarkRegistered = true;
+    }
     const c = new Vela(container, {
       symbol: `binance:${initial.current.symbol}`,
       timeframe: intervalToVela(initial.current.timeframe),
@@ -79,6 +87,8 @@ function ChartBody() {
     c.data.registerProvider('binance', new HarvesterProvider());
     c.drawings.setStayMode(true);
     c.drawings.setSnapMode('weak');
+    pushLayerData(c, 'ticker-watermark', { symbol: initial.current.symbol, enabled: true });
+    c.on('market:changed', (p: { symbol: string }) => pushLayerData(c, 'ticker-watermark', { symbol: p.symbol.split(':').pop() ?? p.symbol, enabled: true }));
     setChart(c);
     return () => {
       setChart(null);
@@ -89,6 +99,7 @@ function ChartBody() {
   useEffect(() => {
     if (!chart) return;
     void chart.setMarket({ symbol: `binance:${symbol}`, timeframe: intervalToVela(timeframe) });
+    pushLayerData(chart, 'ticker-watermark', { symbol, enabled: true });
   }, [chart, symbol, timeframe]);
 
   // Trading constraints of the symbol on screen (tick, step, minimum notional...).

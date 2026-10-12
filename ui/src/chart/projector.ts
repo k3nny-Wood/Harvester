@@ -22,3 +22,9 @@ export function getProjector(chart: Vela): ProjectorInfo | null {
     return null;
   }
 }
+
+/** Push a payload into a custom renderer layer's channel, which forces it to repaint. */
+export function pushLayerData(chart: Vela, layerId: string, data: unknown): void {
+  const inner = (chart.renderer as unknown as { renderer?: { setNativeData?: (type: string, payload: unknown) => void } }).renderer;
+  inner?.setNativeData?.(layerId, data);
+}

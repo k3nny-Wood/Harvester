@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DockviewReact, type DockviewApi, type DockviewReadyEvent, type IDockviewPanelProps } from 'dockview-react';
 import { api, inTauri, onScannerStatus, onSignalNew, onSignals } from './api';
+import { ConfirmHost, confirmDialog } from './confirm';
 import { activeChartStore, useActiveChart } from './chartStore';
 import { ChartPanel } from './chart/ChartPanel';
 import { newChartId, openChart, setDock } from './dock';
@@ -14,7 +15,7 @@ import { SymbolsPanel } from './panels/SymbolsPanel';
 import { useApp } from './store';
 import { startTradingPoll } from './trade';
 
-const LAYOUT_KEY = 'harvester.layout.v3';
+const LAYOUT_KEY = 'harvester.layout.v5';
 
 interface PanelDef {
   id: string;
@@ -59,14 +60,14 @@ function buildDefaultLayout(dock: DockviewApi) {
   dock.addPanel({ id: chartId, title: 'BTCUSDT 15m', component: 'chart', params: { symbol: 'BTCUSDT', timeframe: '15m' } });
   addPanel(dock, by('symbols'), { referencePanel: chartId, direction: 'left' });
   addPanel(dock, by('signals'), { referencePanel: chartId, direction: 'right' });
-  addPanel(dock, by('ladder'), { referencePanel: 'signals', direction: 'below' });
-  addPanel(dock, by('orders'), { referencePanel: 'ladder', direction: 'within' });
+  addPanel(dock, by('orders'), { referencePanel: 'signals', direction: 'below' });
+  addPanel(dock, by('ladder'), { referencePanel: 'orders', direction: 'within' });
   addPanel(dock, by('portfolio'), { referencePanel: chartId, direction: 'below' });
-  dock.getPanel('ladder')?.api.setActive();
+  dock.getPanel('orders')?.api.setActive(); // the order form is what the trader needs in view
   dock.getPanel(chartId)?.api.setActive();
   try {
     dock.getPanel('symbols')?.api.setSize({ width: 280 });
-    dock.getPanel('signals')?.api.setSize({ width: 400, height: 520 });
+    dock.getPanel('signals')?.api.setSize({ width: 450, height: 440 });
     dock.getPanel('portfolio')?.api.setSize({ height: 190 });
   } catch {
     /* sizes are a nicety */
@@ -197,9 +198,9 @@ export function App() {
         <button
           className={`env ${env}`}
           title="Switch between the testnet and live exchange"
-          onClick={() => {
+          onClick={async () => {
             const next = env === 'testnet' ? 'live' : 'testnet';
-            if (next === 'live' && !window.confirm('Switch to LIVE market data and trading? Real money is at risk once orders are enabled.')) return;
+            if (next === 'live' && !(await confirmDialog('Switch to LIVE market data and trading?\n\nReal money is at risk once live API keys are configured.', { danger: true, confirmLabel: 'Go live' }))) return;
             void api.setEnvironment(next).then(() => {
               setEnv(next);
               window.location.reload();
@@ -226,6 +227,7 @@ export function App() {
       <main className="dock">
         <DockviewReact className="dockview-theme-abyss" components={components} onReady={onReady} />
       </main>
+      <ConfirmHost />
       <div className="toasts">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.tone}`} onClick={() => dismiss(t.id)}>

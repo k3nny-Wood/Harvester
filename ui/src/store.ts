@@ -1,13 +1,15 @@
 import { create } from 'zustand';
-import type { Account, Env, OpenOrder, ScannerConfig, ScannerStatus, Side, Signal, SymbolQuote, TradingStatus } from './types';
+import type { Account, Env, OpenOrder, OrderKind, ScannerConfig, ScannerStatus, Side, Signal, SymbolQuote, TradingStatus } from './types';
 
 /** App-wide state. Everything that belongs to one chart tab lives in `chartStore.ts` instead. */
 /** The order-entry form. Shared so the Orders panel, the chart's right-click menu and the ladder card agree. */
 export interface OrderForm {
   side: Side;
-  type: 'LIMIT' | 'MARKET';
+  type: OrderKind;
   /** empty = follow the last price */
   price: string;
+  /** trigger price of a stop / take-profit (empty = a default near the market) */
+  stopPrice: string;
   sizeMode: 'usdt' | 'qty' | 'pct';
   size: string;
   reduceOnly: boolean;
@@ -54,7 +56,7 @@ export const useApp = create<AppState>((set) => ({
   trading: null,
   account: null,
   orders: [],
-  orderForm: { side: 'BUY', type: 'LIMIT', price: '', sizeMode: 'usdt', size: '100', reduceOnly: false, postOnly: false, leverage: '' },
+  orderForm: { side: 'BUY', type: 'LIMIT', price: '', stopPrice: '', sizeMode: 'usdt', size: '100', reduceOnly: false, postOnly: false, leverage: '' },
   toasts: [],
   setTrading: (trading) => set({ trading }),
   setAccount: (account) => set({ account }),

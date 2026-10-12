@@ -13,6 +13,7 @@ interface Line {
   color: string;
   label: string;
   orderId?: number;
+  conditional?: boolean;
   dashed: boolean;
 }
 
@@ -111,6 +112,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
         color: o.side === 'BUY' ? BUY : SELL,
         label: `${o.side} ${o.type.replace('_', ' ')} ${o.origQty} @ ${formatPrice(p, precision)}`,
         orderId: o.orderId,
+        conditional: o.conditional,
         dashed: o.type !== 'LIMIT',
       });
     }
@@ -149,7 +151,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
                 transform={`translate(${offX + plotW - 70}, ${l.y})`}
                 onClick={() =>
                   void api
-                    .cancelOrder(symbol, l.orderId!)
+                    .cancelOrder(symbol, l.orderId!, l.conditional)
                     .then(() => refreshTrading())
                     .catch((e) => toast(`Cancel: ${e}`, 'warn'))
                 }

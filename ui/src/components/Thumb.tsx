@@ -12,7 +12,7 @@ interface Props {
 }
 
 /** A small candlestick picture of a signal: the base (blue), the crack level (amber, dashed) and the last price. */
-export function Thumb({ candles, base, crackLevel, width = 132, height = 76, onClick, title }: Props) {
+export function Thumb({ candles, base, crackLevel, width = 116, height = 68, onClick, title }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {

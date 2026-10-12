@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useActiveChart } from '../chartStore';
-import { openChart, showSymbol } from '../dock';
+import { openChart } from '../dock';
 import { useApp } from '../store';
 
 function compact(n: number): string {
@@ -52,9 +52,8 @@ export function SymbolsPanel() {
           <button
             key={s.symbol}
             className={`symbol-row${s.symbol === current ? ' active' : ''}`}
-            title="Click: show in this chart. Ctrl+click or double-click: open in a new tab"
-            onClick={(e) => (e.ctrlKey ? openChart(s.symbol, undefined, true) : showSymbol(s.symbol))}
-            onDoubleClick={() => openChart(s.symbol, undefined, true)}
+            title="Opens a chart tab for this symbol (switches to it if it is already open). Ctrl+click always opens a new tab."
+            onClick={(e) => openChart(s.symbol, undefined, e.ctrlKey)}
           >
             <span className="sym">{s.symbol.replace('USDT', '')}</span>
             <span className="px">{s.lastPrice}</span>

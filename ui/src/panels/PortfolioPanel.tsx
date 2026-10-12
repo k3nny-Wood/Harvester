@@ -1,4 +1,5 @@
 import { api } from '../api';
+import { confirmDialog } from '../confirm';
 import { openChart } from '../dock';
 import { useApp } from '../store';
 import { refreshTrading } from '../trade';
@@ -23,8 +24,8 @@ export function PortfolioPanel() {
   }
   if (!account) return <div className="panel pad muted">Loading the account…</div>;
 
-  const close = (symbol: string, fraction: number) => {
-    if (!window.confirm(`Close ${Math.round(fraction * 100)}% of the ${symbol} position at market?`)) return;
+  const close = async (symbol: string, fraction: number) => {
+    if (!(await confirmDialog(`Close ${Math.round(fraction * 100)}% of the ${symbol} position at market?`))) return;
     void api
       .closePosition(symbol, fraction)
       .then(() => {
@@ -130,7 +131,7 @@ export function PortfolioPanel() {
                     className="icon-btn"
                     onClick={() =>
                       void api
-                        .cancelOrder(o.symbol, o.orderId)
+                        .cancelOrder(o.symbol, o.orderId, o.conditional)
                         .then(() => refreshTrading())
                         .catch((e) => toast(`Cancel: ${e}`, 'warn'))
                     }

@@ -27,12 +27,20 @@ export function openChart(symbol: string, timeframe?: string, forceNew = false):
   if (!d) return;
   const tf = timeframe ?? activeChartStore()?.getState().timeframe ?? '15m';
   if (!forceNew) {
+    // an exact match (same timeframe) wins; when no timeframe was asked for, any tab of the symbol will do
+    let any: string | null = null;
     for (const [id, store] of chartRegistry) {
       const s = store.getState();
-      if (s.symbol === symbol && s.timeframe === tf) {
+      if (s.symbol !== symbol) continue;
+      if (s.timeframe === tf) {
         d.getPanel(id)?.api.setActive();
         return;
       }
+      any = any ?? id;
+    }
+    if (any && timeframe === undefined) {
+      d.getPanel(any)?.api.setActive();
+      return;
     }
   }
   const active = useApp.getState().activeChartId;

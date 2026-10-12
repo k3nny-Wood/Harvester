@@ -36,10 +36,37 @@ impl Side {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "UPPERCASE")]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OrderType {
     Limit,
     Market,
+    /// stop-loss that sells / buys at market once the trigger is hit
+    StopMarket,
+    /// stop-loss that places a limit order once the trigger is hit
+    Stop,
+    TakeProfitMarket,
+    TakeProfit,
+}
+
+impl OrderType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OrderType::Limit => "LIMIT",
+            OrderType::Market => "MARKET",
+            OrderType::StopMarket => "STOP_MARKET",
+            OrderType::Stop => "STOP",
+            OrderType::TakeProfitMarket => "TAKE_PROFIT_MARKET",
+            OrderType::TakeProfit => "TAKE_PROFIT",
+        }
+    }
+    /// Stops and take-profits are conditional orders, placed through Binance's algo-order service.
+    pub fn is_conditional(self) -> bool {
+        !matches!(self, OrderType::Limit | OrderType::Market)
+    }
+    /// Needs a limit price (plain limit, and the limit variants of stop / take-profit).
+    pub fn has_price(self) -> bool {
+        matches!(self, OrderType::Limit | OrderType::Stop | OrderType::TakeProfit)
+    }
 }
 
 /// An order as the UI asks for it. Prices and quantities are plain numbers; the Rust side rounds and validates them.
@@ -53,6 +80,9 @@ pub struct OrderRequest {
     pub quantity: f64,
     #[serde(default)]
     pub price: Option<f64>,
+    /// trigger price of a stop / take-profit
+    #[serde(default)]
+    pub stop_price: Option<f64>,
     /// post-only (GTX) instead of GTC
     #[serde(default)]
     pub post_only: bool,
@@ -72,6 +102,8 @@ pub struct OrderAck {
     /// the rounded quantity and price that were sent (what is now on the exchange)
     pub quantity: f64,
     pub price: Option<f64>,
+    /// a stop / take-profit (cancelled through the algo-order service)
+    pub conditional: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,6 +122,15 @@ pub struct OpenOrder {
     pub reduce_only: bool,
     pub client_id: String,
     pub time: u64,
+    /// true for a stop / take-profit; `order_id` is then the algo id
+    pub conditional: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeverageInfo {
+    pub leverage: u32,
+    pub max_leverage: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -191,6 +232,7 @@ pub fn parse_open_orders(v: &Value) -> Vec<OpenOrder> {
                     reduce_only: o["reduceOnly"].as_bool().unwrap_or(false),
                     client_id: text(&o["clientOrderId"]),
                     time: o["time"].as_u64().unwrap_or(0),
+                    conditional: false,
                 })
                 .collect()
         })
@@ -217,31 +259,77 @@ pub fn parse_positions(v: &Value) -> Vec<Position> {
         .unwrap_or_default()
 }
 
-/// Round and validate an order request; returns the exact decimals that will be sent.
-pub fn prepare(req: &OrderRequest, filters: &SymbolFilters, reference_price: f64, max_notional: f64) -> Result<(Decimal, Option<Decimal>), String> {
+/// Open conditional (stop / take-profit) orders from `/fapi/v1/openAlgoOrders`.
+pub fn parse_algo_orders(v: &Value) -> Vec<OpenOrder> {
+    let arr = if v.is_array() { v.as_array().cloned().unwrap_or_default() } else { v["orders"].as_array().cloned().unwrap_or_default() };
+    arr.iter()
+        .map(|o| OpenOrder {
+            order_id: o["algoId"].as_i64().unwrap_or(0),
+            symbol: text(&o["symbol"]),
+            side: text(&o["side"]),
+            order_type: {
+                let t = text(&o["orderType"]);
+                if t.is_empty() { text(&o["type"]) } else { t }
+            },
+            price: num(&o["price"]),
+            stop_price: num(&o["triggerPrice"]),
+            orig_qty: num(&o["quantity"]),
+            executed_qty: 0.0,
+            status: {
+                let t = text(&o["algoStatus"]);
+                if t.is_empty() { "NEW".to_string() } else { t }
+            },
+            reduce_only: o["reduceOnly"].as_bool().unwrap_or(false) || matches!(&o["reduceOnly"], Value::String(s) if s == "true"),
+            client_id: text(&o["clientAlgoId"]),
+            time: o["createTime"].as_u64().unwrap_or(0),
+            conditional: true,
+        })
+        .collect()
+}
+
+/// The highest initial leverage in a `leverageBracket` answer.
+pub fn parse_max_leverage(v: &Value) -> Option<u32> {
+    let first = if v.is_array() { v.get(0)? } else { v };
+    first["brackets"].as_array()?.iter().filter_map(|b| b["initialLeverage"].as_u64()).max().map(|x| x as u32)
+}
+
+/// Round and validate an order request; returns the exact decimals that will be sent: (quantity, limit price, trigger price).
+pub fn prepare(req: &OrderRequest, filters: &SymbolFilters, reference_price: f64, max_notional: f64) -> Result<(Decimal, Option<Decimal>, Option<Decimal>), String> {
     let qty = filters.round_quantity(req.quantity);
-    let price = match req.order_type {
-        OrderType::Limit => Some(filters.round_price(req.price.ok_or("a limit order needs a price")?)),
-        OrderType::Market => None,
-    };
-    let check = OrderCheck { price, quantity: Some(qty), is_market: req.order_type == OrderType::Market, ..Default::default() };
+    let t = req.order_type;
+    let price = if t.has_price() { Some(filters.round_price(req.price.ok_or("this order type needs a limit price")?)) } else { None };
+    let trigger = if t.is_conditional() { Some(filters.round_price(req.stop_price.ok_or("a stop / take-profit needs a trigger price")?)) } else { None };
+    if let Some(tp) = trigger {
+        // Binance rejects a trigger that would fire immediately: say so clearly instead
+        let is_stop = matches!(t, OrderType::StopMarket | OrderType::Stop);
+        let is_buy = req.side == Side::Buy;
+        let must_be_above = is_stop == is_buy; // a buy-stop and a sell-take-profit trigger above the market
+        let tp_f = to_f64(tp);
+        if must_be_above && tp_f <= reference_price {
+            return Err(format!("The trigger {tp} must be ABOVE the current price {reference_price} for this order."));
+        }
+        if !must_be_above && tp_f >= reference_price {
+            return Err(format!("The trigger {tp} must be BELOW the current price {reference_price} for this order."));
+        }
+    }
+    let check = OrderCheck { price, quantity: Some(qty), stop_price: trigger, is_market: !t.has_price(), ..Default::default() };
     let v = validate_order(&check, filters, reference_price);
     if !v.ok {
         return Err(v.errors.join(" "));
     }
-    let notional = to_f64(qty) * price.map(to_f64).unwrap_or(reference_price);
+    let notional = to_f64(qty) * price.or(trigger).map(to_f64).unwrap_or(reference_price);
     if notional > max_notional {
         return Err(format!("Order notional {notional:.2} USDT is above the safety cap of {max_notional:.0} USDT (MAX_ORDER_NOTIONAL)."));
     }
-    Ok((qty, price))
+    Ok((qty, price, trigger))
 }
 
-/// The query parameters of one new-order request.
+/// The query parameters of one plain limit / market order (`/fapi/v1/order`).
 pub fn order_params(req: &OrderRequest, qty: Decimal, price: Option<Decimal>) -> Vec<(String, String)> {
     let mut p = vec![
         ("symbol".to_string(), req.symbol.clone()),
         ("side".to_string(), req.side.as_str().to_string()),
-        ("type".to_string(), if req.order_type == OrderType::Limit { "LIMIT" } else { "MARKET" }.to_string()),
+        ("type".to_string(), req.order_type.as_str().to_string()),
         ("quantity".to_string(), qty.to_string()),
         ("newOrderRespType".to_string(), "ACK".to_string()),
     ];
@@ -254,6 +342,30 @@ pub fn order_params(req: &OrderRequest, qty: Decimal, price: Option<Decimal>) ->
     }
     if let Some(id) = &req.client_id {
         p.push(("newClientOrderId".to_string(), id.clone()));
+    }
+    p
+}
+
+/// The parameters of a conditional order (stop / take-profit): `/fapi/v1/algoOrder`.
+pub fn algo_params(req: &OrderRequest, qty: Decimal, price: Option<Decimal>, trigger: Decimal) -> Vec<(String, String)> {
+    let mut p = vec![
+        ("algoType".to_string(), "CONDITIONAL".to_string()),
+        ("symbol".to_string(), req.symbol.clone()),
+        ("side".to_string(), req.side.as_str().to_string()),
+        ("type".to_string(), req.order_type.as_str().to_string()),
+        ("quantity".to_string(), qty.to_string()),
+        ("triggerPrice".to_string(), trigger.to_string()),
+        ("workingType".to_string(), "MARK_PRICE".to_string()),
+    ];
+    if let Some(px) = price {
+        p.push(("price".to_string(), px.to_string()));
+        p.push(("timeInForce".to_string(), "GTC".to_string()));
+    }
+    if req.reduce_only {
+        p.push(("reduceOnly".to_string(), "true".to_string()));
+    }
+    if let Some(id) = &req.client_id {
+        p.push(("clientAlgoId".to_string(), id.clone()));
     }
     p
 }
@@ -333,8 +445,22 @@ impl Trading {
     }
 
     pub async fn open_orders(&self, symbol: Option<&str>) -> Result<Vec<OpenOrder>, String> {
-        let params = symbol.map(|s| vec![("symbol".to_string(), s.to_string())]).unwrap_or_default();
-        Ok(parse_open_orders(&self.signed(reqwest::Method::GET, "/fapi/v1/openOrders", params).await?))
+        let params = || symbol.map(|s| vec![("symbol".to_string(), s.to_string())]).unwrap_or_default();
+        let mut out = parse_open_orders(&self.signed(reqwest::Method::GET, "/fapi/v1/openOrders", params()).await?);
+        // stops and take-profits live in the algo-order service; a failure there must not hide the plain orders
+        if let Ok(v) = self.signed(reqwest::Method::GET, "/fapi/v1/openAlgoOrders", params()).await {
+            out.extend(parse_algo_orders(&v));
+        }
+        Ok(out)
+    }
+
+    /// Current and maximum leverage of a symbol.
+    pub async fn leverage(&self, symbol: &str) -> Result<LeverageInfo, String> {
+        let acc = self.signed(reqwest::Method::GET, "/fapi/v2/account", vec![]).await?;
+        let current = acc["positions"].as_array().and_then(|a| a.iter().find(|p| p["symbol"] == symbol)).map(|p| num(&p["leverage"])).unwrap_or(0.0);
+        let brackets = self.signed(reqwest::Method::GET, "/fapi/v1/leverageBracket", vec![("symbol".to_string(), symbol.to_string())]).await.ok();
+        let max = brackets.as_ref().and_then(|b| parse_max_leverage(b)).unwrap_or(20);
+        Ok(LeverageInfo { leverage: if current >= 1.0 { current as u32 } else { 1 }, max_leverage: max })
     }
 
     async fn reference_price(&self, symbol: &str) -> Result<f64, String> {
@@ -345,9 +471,13 @@ impl Trading {
     pub async fn place(&self, req: OrderRequest) -> Result<OrderAck, String> {
         let filters = self.market.symbol_filters(&req.symbol).await?;
         let reference = self.reference_price(&req.symbol).await?;
-        let (qty, price) = prepare(&req, &filters, reference, self.max_notional)?;
+        let (qty, price, trigger) = prepare(&req, &filters, reference, self.max_notional)?;
+        if let Some(trigger) = trigger {
+            let v = self.signed(reqwest::Method::POST, "/fapi/v1/algoOrder", algo_params(&req, qty, price, trigger)).await?;
+            return Ok(OrderAck { order_id: v["algoId"].as_i64().unwrap_or(0), symbol: req.symbol, status: "NEW".to_string(), client_id: text(&v["clientAlgoId"]), quantity: to_f64(qty), price: Some(to_f64(price.unwrap_or(trigger))), conditional: true });
+        }
         let v = self.signed(reqwest::Method::POST, "/fapi/v1/order", order_params(&req, qty, price)).await?;
-        Ok(OrderAck { order_id: v["orderId"].as_i64().unwrap_or(0), symbol: req.symbol, status: text(&v["status"]), client_id: text(&v["clientOrderId"]), quantity: to_f64(qty), price: price.map(to_f64) })
+        Ok(OrderAck { order_id: v["orderId"].as_i64().unwrap_or(0), symbol: req.symbol, status: text(&v["status"]), client_id: text(&v["clientOrderId"]), quantity: to_f64(qty), price: price.map(to_f64), conditional: false })
     }
 
     /// Place many orders for one symbol (a ladder): validated up front, sent in batches of five.
@@ -362,7 +492,8 @@ impl Trading {
         for (i, r) in reqs.iter().enumerate() {
             results.push(Err("not sent".into()));
             match prepare(r, &filters, reference, self.max_notional) {
-                Ok((qty, price)) => prepared.push((i, order_params(r, qty, price))),
+                Ok((qty, price, None)) => prepared.push((i, order_params(r, qty, price))),
+                Ok(_) => results[i] = Err("stops and take-profits are placed one at a time".into()),
                 Err(e) => results[i] = Err(e),
             }
         }
@@ -373,7 +504,7 @@ impl Trading {
                 Ok(Value::Array(items)) => {
                     for ((idx, _), item) in chunk.iter().zip(items) {
                         results[*idx] = if item.get("orderId").is_some() {
-                            Ok(OrderAck { order_id: item["orderId"].as_i64().unwrap_or(0), symbol: symbol.clone(), status: text(&item["status"]), client_id: text(&item["clientOrderId"]), quantity: num(&item["origQty"]), price: Some(num(&item["price"])) })
+                            Ok(OrderAck { order_id: item["orderId"].as_i64().unwrap_or(0), symbol: symbol.clone(), status: text(&item["status"]), client_id: text(&item["clientOrderId"]), quantity: num(&item["origQty"]), price: Some(num(&item["price"])), conditional: false })
                         } else {
                             Err(format!("{} ({})", item["msg"].as_str().unwrap_or("rejected"), item["code"].as_i64().unwrap_or(0)))
                         };
@@ -394,12 +525,23 @@ impl Trading {
         Ok(results)
     }
 
-    pub async fn cancel(&self, symbol: &str, order_id: i64) -> Result<(), String> {
+    /// Cancel one order. A stop / take-profit (`conditional`) is cancelled by its algo id.
+    pub async fn cancel(&self, symbol: &str, order_id: i64, conditional: bool) -> Result<(), String> {
+        if conditional {
+            return self.signed(reqwest::Method::DELETE, "/fapi/v1/algoOrder", vec![("symbol".into(), symbol.into()), ("algoId".into(), order_id.to_string())]).await.map(|_| ());
+        }
         self.signed(reqwest::Method::DELETE, "/fapi/v1/order", vec![("symbol".into(), symbol.into()), ("orderId".into(), order_id.to_string())]).await.map(|_| ())
     }
 
+    /// Cancel every open order of a symbol, stops and take-profits included.
     pub async fn cancel_all(&self, symbol: &str) -> Result<(), String> {
-        self.signed(reqwest::Method::DELETE, "/fapi/v1/allOpenOrders", vec![("symbol".into(), symbol.into())]).await.map(|_| ())
+        self.signed(reqwest::Method::DELETE, "/fapi/v1/allOpenOrders", vec![("symbol".into(), symbol.into())]).await?;
+        if let Ok(v) = self.signed(reqwest::Method::GET, "/fapi/v1/openAlgoOrders", vec![("symbol".to_string(), symbol.to_string())]).await {
+            for o in parse_algo_orders(&v) {
+                self.cancel(symbol, o.order_id, true).await?;
+            }
+        }
+        Ok(())
     }
 
     /// Close (or reduce) a position with an exact-size reduce-only market order. `fraction` is 0..1 (1 = all).
@@ -417,12 +559,13 @@ impl Trading {
             order_type: OrderType::Market,
             quantity: qty,
             price: None,
+            stop_price: None,
             post_only: false,
             reduce_only: true,
             client_id: None,
         };
         let v = self.signed(reqwest::Method::POST, "/fapi/v1/order", order_params(&req, from_f64(qty), None)).await?;
-        Ok(OrderAck { order_id: v["orderId"].as_i64().unwrap_or(0), symbol: symbol.to_string(), status: text(&v["status"]), client_id: text(&v["clientOrderId"]), quantity: qty, price: None })
+        Ok(OrderAck { order_id: v["orderId"].as_i64().unwrap_or(0), symbol: symbol.to_string(), status: text(&v["status"]), client_id: text(&v["clientOrderId"]), quantity: qty, price: None, conditional: false })
     }
 
     pub async fn set_leverage(&self, symbol: &str, leverage: u32) -> Result<(), String> {
@@ -453,7 +596,7 @@ mod tests {
     }
 
     fn limit(price: f64, qty: f64) -> OrderRequest {
-        OrderRequest { symbol: "ETHUSDT".into(), side: Side::Buy, order_type: OrderType::Limit, quantity: qty, price: Some(price), post_only: false, reduce_only: false, client_id: None }
+        OrderRequest { symbol: "ETHUSDT".into(), side: Side::Buy, order_type: OrderType::Limit, quantity: qty, price: Some(price), stop_price: None, post_only: false, reduce_only: false, client_id: None }
     }
 
     #[test]
@@ -472,7 +615,8 @@ mod tests {
 
     #[test]
     fn an_order_is_rounded_to_the_exchange_filters() {
-        let (qty, price) = prepare(&limit(3000.567, 0.12345), &eth(), 3000.0, 5000.0).unwrap();
+        let (qty, price, trigger) = prepare(&limit(3000.567, 0.12345), &eth(), 3000.0, 5000.0).unwrap();
+        assert!(trigger.is_none());
         assert_eq!(qty.to_string(), "0.123");
         assert_eq!(price.unwrap().to_string(), "3000.57");
     }
@@ -518,6 +662,49 @@ mod tests {
         ]));
         assert_eq!(p.len(), 1);
         assert!(p[0].amount < 0.0 && p[0].isolated && p[0].unrealized_pnl == 5.0);
+    }
+
+    fn stop(side: Side, t: OrderType, trigger: f64, price: Option<f64>) -> OrderRequest {
+        OrderRequest { side, order_type: t, stop_price: Some(trigger), price, ..limit(0.0, 0.1) }
+    }
+
+    #[test]
+    fn stops_and_take_profits_need_a_trigger_on_the_right_side_of_the_market() {
+        let f = eth();
+        // sell-stop below the market, buy-stop above, sell take-profit above, buy take-profit below
+        assert!(prepare(&stop(Side::Sell, OrderType::StopMarket, 2900.0, None), &f, 3000.0, 5000.0).is_ok());
+        assert!(prepare(&stop(Side::Sell, OrderType::StopMarket, 3100.0, None), &f, 3000.0, 5000.0).is_err());
+        assert!(prepare(&stop(Side::Buy, OrderType::StopMarket, 3100.0, None), &f, 3000.0, 5000.0).is_ok());
+        assert!(prepare(&stop(Side::Sell, OrderType::TakeProfitMarket, 3100.0, None), &f, 3000.0, 5000.0).is_ok());
+        assert!(prepare(&stop(Side::Sell, OrderType::TakeProfitMarket, 2900.0, None), &f, 3000.0, 5000.0).is_err());
+        assert!(prepare(&stop(Side::Buy, OrderType::TakeProfit, 2900.0, Some(2899.0)), &f, 3000.0, 5000.0).is_ok());
+        // a stop-limit needs its limit price; a stop without a trigger is refused
+        assert!(prepare(&stop(Side::Sell, OrderType::Stop, 2900.0, None), &f, 3000.0, 5000.0).is_err());
+        let mut no_trigger = stop(Side::Sell, OrderType::StopMarket, 2900.0, None);
+        no_trigger.stop_price = None;
+        assert!(prepare(&no_trigger, &f, 3000.0, 5000.0).is_err());
+    }
+
+    #[test]
+    fn conditional_orders_use_the_algo_parameters() {
+        let r = stop(Side::Sell, OrderType::Stop, 2900.0, Some(2895.0));
+        let p = algo_params(&r, from_f64(0.5), Some(from_f64(2895.0)), from_f64(2900.0));
+        let get = |k: &str| p.iter().find(|(a, _)| a == k).map(|(_, v)| v.as_str());
+        assert_eq!(get("algoType"), Some("CONDITIONAL"));
+        assert_eq!(get("type"), Some("STOP"));
+        assert_eq!(get("triggerPrice"), Some("2900"));
+        assert_eq!(get("price"), Some("2895"));
+        assert!(OrderType::StopMarket.is_conditional() && !OrderType::Limit.is_conditional());
+        assert!(OrderType::TakeProfit.has_price() && !OrderType::TakeProfitMarket.has_price());
+    }
+
+    #[test]
+    fn parses_algo_orders_and_the_leverage_bracket() {
+        let o = parse_algo_orders(&json!([{"algoId": 99, "symbol": "ETHUSDT", "side": "SELL", "orderType": "STOP_MARKET", "triggerPrice": "2900", "quantity": "0.5", "algoStatus": "NEW", "reduceOnly": true, "clientAlgoId": "x"}]));
+        assert_eq!(o.len(), 1);
+        assert!(o[0].conditional && o[0].order_id == 99 && o[0].stop_price == 2900.0 && o[0].order_type == "STOP_MARKET");
+        let m = parse_max_leverage(&json!([{"symbol": "ETHUSDT", "brackets": [{"bracket": 1, "initialLeverage": 100}, {"bracket": 2, "initialLeverage": 50}]}]));
+        assert_eq!(m, Some(100));
     }
 
     #[test]

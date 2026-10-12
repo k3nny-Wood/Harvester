@@ -178,14 +178,24 @@ export interface OpenOrder {
   reduceOnly: boolean;
   clientId: string;
   time: number;
+  /** a stop / take-profit (cancelled by its algo id) */
+  conditional: boolean;
+}
+
+export type OrderKind = 'LIMIT' | 'MARKET' | 'STOP_MARKET' | 'STOP' | 'TAKE_PROFIT_MARKET' | 'TAKE_PROFIT';
+
+export interface LeverageInfo {
+  leverage: number;
+  maxLeverage: number;
 }
 
 export interface OrderRequest {
   symbol: string;
   side: Side;
-  type: 'LIMIT' | 'MARKET';
+  type: OrderKind;
   quantity: number;
   price?: number;
+  stopPrice?: number;
   postOnly?: boolean;
   reduceOnly?: boolean;
   clientId?: string;
@@ -199,4 +209,5 @@ export interface OrderAck {
   /** the rounded quantity and price that were actually sent */
   quantity: number;
   price: number | null;
+  conditional: boolean;
 }

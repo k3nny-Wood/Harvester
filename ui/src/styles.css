@@ -815,3 +815,136 @@ table.rungs tr.bad td {
   font-size: 11px;
   margin-left: 2px;
 }
+
+/* in-app confirmation */
+.modal-back {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+.modal {
+  min-width: 340px;
+  max-width: 520px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px 20px 14px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7);
+}
+.modal.danger {
+  border-color: var(--down);
+}
+.modal-text {
+  white-space: pre-wrap;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* order form: segmented controls and slider fields */
+.order-entry {
+  overflow-y: auto;
+}
+.of-sym {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.of-types,
+.of-sizemode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.of-types button,
+.of-sizemode button {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.of-types button.on,
+.of-sizemode button.on {
+  background: #1d2a40;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.of-sizemode > span {
+  font-size: 11px;
+  color: var(--muted);
+  margin-right: 2px;
+}
+.of-hint {
+  font-size: 11px;
+  margin-top: -4px;
+}
+.sf {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sf-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+.sf-row > span:first-child {
+  color: var(--muted);
+}
+.sf-val {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sf-val input {
+  width: 96px;
+  text-align: right;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.sf-val em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 28px;
+}
+.sf input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.sf-sub {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.of-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-items: center;
+  font-size: 11px;
+}
+.of-quick button {
+  padding: 1px 6px;
+  font-size: 11px;
+}
+.of-quick a {
+  color: var(--accent);
+  cursor: pointer;
+  margin-left: 6px;
+}
+.of-summary {
+  grid-template-columns: 1fr 1fr;
+}

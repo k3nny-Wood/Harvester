@@ -12,7 +12,7 @@ use market::{Env, Kline, Market, SymbolQuote};
 use scanner::{Scanner, ScannerConfig, ScannerStatus};
 use std::sync::Arc;
 use stream::Streams;
-use trading::{Account, OpenOrder, OrderAck, OrderRequest, Trading, TradingStatus};
+use trading::{Account, LeverageInfo, OpenOrder, OrderAck, OrderRequest, Trading, TradingStatus};
 use tauri::{AppHandle, Manager, State};
 
 struct AppState {
@@ -91,8 +91,13 @@ async fn place_orders(state: State<'_, AppState>, orders: Vec<OrderRequest>) -> 
 }
 
 #[tauri::command]
-async fn cancel_order(state: State<'_, AppState>, symbol: String, order_id: i64) -> Result<(), String> {
-    state.trading.cancel(&symbol, order_id).await
+async fn cancel_order(state: State<'_, AppState>, symbol: String, order_id: i64, conditional: Option<bool>) -> Result<(), String> {
+    state.trading.cancel(&symbol, order_id, conditional.unwrap_or(false)).await
+}
+
+#[tauri::command]
+async fn symbol_leverage(state: State<'_, AppState>, symbol: String) -> Result<LeverageInfo, String> {
+    state.trading.leverage(&symbol).await
 }
 
 #[tauri::command]
@@ -145,7 +150,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
             scanner_signals, scanner_status, scanner_config, scanner_configure,
-            trading_status, account_overview, open_orders, place_order, place_orders, cancel_order, cancel_all_orders, close_position, set_leverage
+            trading_status, account_overview, open_orders, place_order, place_orders, cancel_order, symbol_leverage, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");
