@@ -15,6 +15,7 @@ import { ChartBases } from './ChartBases';
 import { ChartFills } from './ChartFills';
 import { ChartSmc } from './ChartSmc';
 import { ChartTrading } from './ChartTrading';
+import { QuickOrder } from './QuickOrder';
 import { LadderOverlay } from './LadderOverlay';
 import { pushLayerData } from './projector';
 import { HarvesterProvider } from './provider';
@@ -192,6 +193,7 @@ function ChartBody() {
       <ChartSmc chart={chart} />
       <ChartTrading chart={chart} host={ref} />
       <LadderOverlay chart={chart} host={ref} />
+      <QuickOrder chart={chart} host={ref} />
     </div>
   );
 }

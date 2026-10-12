@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod brackets;
 mod held;
 mod movers;
 mod lab;
@@ -17,6 +18,7 @@ use harvester_core::smc::{smc_zones, SmcParams, SmcZone};
 use harvester_core::signals::Signal;
 use harvester_core::lab::{LabConfig, LabReport};
 use harvester_core::movers::{MoverDetector, MoverParams};
+use brackets::{Bracket, BracketStore};
 use held::{HeldOrder, HeldStore};
 use lab::{Lab, LabRequest};
 use market::{Env, Kline, Market, SymbolQuote};
@@ -29,6 +31,7 @@ use tauri::{AppHandle, Manager, State};
 struct AppState {
     lab: Lab,
     movers: movers::SharedDetector,
+    brackets: Arc<BracketStore>,
     marks: marks::Marks,
     held: Arc<HeldStore>,
     market: Arc<Market>,
@@ -116,6 +119,22 @@ fn held_list(state: State<'_, AppState>) -> Vec<HeldOrder> {
 #[tauri::command]
 async fn move_to_held(state: State<'_, AppState>, symbol: String, order_id: i64, price: f64) -> Result<OrderAck, String> {
     held::move_to_held(&state.trading, &state.held, &symbol, order_id, price).await
+}
+
+/// Exits (take-profit / stop-loss) that wait for an entry order to fill, then are placed on Binance.
+#[tauri::command]
+fn bracket_add(state: State<'_, AppState>, symbol: String, long: bool, take_profit: f64, stop_loss: f64, entry_order_id: i64, entry_conditional: bool) -> Result<Bracket, String> {
+    state.brackets.add(state.trading.env(), symbol, long, take_profit, stop_loss, entry_order_id, entry_conditional)
+}
+
+#[tauri::command]
+fn bracket_list(state: State<'_, AppState>) -> Vec<Bracket> {
+    state.brackets.list(state.trading.env())
+}
+
+#[tauri::command]
+fn bracket_cancel(state: State<'_, AppState>, id: String) -> bool {
+    state.brackets.cancel(&id)
 }
 
 /// Live mark prices (from the websocket) of the given symbols; symbols without a price yet are left out.
@@ -255,11 +274,12 @@ fn main() {
     let env = Env::from_name(&std::env::var("HARVESTER_ENV").unwrap_or_default());
     let market = Arc::new(Market::new(env));
     tauri::Builder::default()
-        .manage(AppState { lab: Lab::default(), marks: Default::default(), movers: Arc::new(Mutex::new(MoverDetector::new(MoverParams::default()))), held: Arc::new(HeldStore::open(held::default_path())), market: market.clone(), streams: Streams::default(), scanner: Scanner::default(), trading: Arc::new(Trading::new(market)) })
+        .manage(AppState { lab: Lab::default(), brackets: Arc::new(BracketStore::open(brackets::default_path())), marks: Default::default(), movers: Arc::new(Mutex::new(MoverDetector::new(MoverParams::default()))), held: Arc::new(HeldStore::open(held::default_path())), market: market.clone(), streams: Streams::default(), scanner: Scanner::default(), trading: Arc::new(Trading::new(market)) })
         .setup(|app| {
             let state = app.state::<AppState>();
             state.scanner.start(app.handle().clone(), state.market.clone(), ScannerConfig::default());
             userstream::start(app.handle().clone(), state.trading.clone());
+            brackets::start(app.handle().clone(), state.trading.clone(), state.brackets.clone());
             marks::start(state.trading.clone(), state.marks.clone());
             held::start(app.handle().clone(), state.trading.clone(), state.held.clone());
             movers::start(app.handle().clone(), state.market.clone(), state.scanner.injector(), state.movers.clone());
@@ -268,7 +288,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
             qfl_zones, smc_zones_cmd, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
-            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
+            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, bracket_add, bracket_list, bracket_cancel, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");

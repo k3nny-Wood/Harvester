@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Account, MoverParams, HeldEvent, HeldOrder, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
+import type { Account, ArmedBracket, MoverParams, HeldEvent, HeldOrder, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
 
 /** True when running inside the Tauri shell (false in a plain browser, e.g. `vite` on its own). */
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -24,6 +24,9 @@ export const api = {
   openOrders: (symbol?: string) => invoke<OpenOrder[]>('open_orders', { symbol: symbol ?? null }),
   placeOrder: (order: OrderRequest) => invoke<OrderAck>('place_order', { order }),
   placeOrders: (orders: OrderRequest[]) => invoke<Array<{ Ok: OrderAck } | { Err: string }>>('place_orders', { orders }),
+  bracketAdd: (b: { symbol: string; long: boolean; takeProfit: number; stopLoss: number; entryOrderId: number; entryConditional: boolean }) => invoke<ArmedBracket>('bracket_add', b),
+  bracketList: () => invoke<ArmedBracket[]>('bracket_list'),
+  bracketCancel: (id: string) => invoke<boolean>('bracket_cancel', { id }),
   markPrices: (symbols: string[]) => invoke<Record<string, number>>('mark_prices', { symbols }),
   moversConfig: () => invoke<MoverParams>('movers_config'),
   moversConfigure: (params: MoverParams) => invoke<void>('movers_configure', { params }),

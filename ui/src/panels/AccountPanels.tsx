@@ -6,7 +6,7 @@ import { confirmDialog } from '../confirm';
 import { openChart } from '../dock';
 import { useApp } from '../store';
 import { refreshTrading } from '../trade';
-import type { OrderRecord, TradeRecord } from '../types';
+import type { ArmedBracket, OrderRecord, TradeRecord } from '../types';
 
 function money(n: number, digits = 2): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -142,6 +142,17 @@ export function OpenOrdersPanel() {
   const trading = useApp((s) => s.trading);
   const orders = useApp((s) => s.orders);
   const leverages = useApp((s) => s.account?.leverages);
+  const [armed, setArmed] = useState<ArmedBracket[]>([]);
+  useEffect(() => {
+    let stop = false;
+    const load = () => void api.bracketList().then((b) => !stop && setArmed(b)).catch(() => undefined);
+    load();
+    const t = window.setInterval(load, 2000);
+    return () => {
+      stop = true;
+      window.clearInterval(t);
+    };
+  }, []);
   const held = useApp((s) => s.held).filter((h) => h.status === 'held');
   const toast = useApp((s) => s.toast);
   if (trading && !trading.hasCredentials) return <NoKeys />;
@@ -202,13 +213,36 @@ export function OpenOrdersPanel() {
           </tr>
         </thead>
         <tbody>
-          {orders.length === 0 && held.length === 0 && (
+          {orders.length === 0 && held.length === 0 && armed.length === 0 && (
             <tr>
               <td colSpan={11} className="muted">
                 No open orders.
               </td>
             </tr>
           )}
+          {armed.map((a) => (
+            <tr key={a.id} className="held-row">
+              <td className="muted">{when(a.createdMs)}</td>
+              <td>
+                <SymbolLink symbol={a.symbol} />
+              </td>
+              <td className={a.long ? 'down' : 'up'}>{a.long ? 'SELL' : 'BUY'}</td>
+              <td>TP + SL (armed)</td>
+              <td>-</td>
+              <td>-</td>
+              <td className="up">TP {a.takeProfit}</td>
+              <td className="down">SL {a.stopLoss}</td>
+              <td>-</td>
+              <td className="muted" title="Sent to Binance automatically when the entry order fills, while Harvester is open.">
+                waiting for the entry to fill
+              </td>
+              <td>
+                <button className="icon-btn" title="Forget these exits (the entry order stays)" onClick={() => void api.bracketCancel(a.id).then(() => setArmed((x) => x.filter((b) => b.id !== a.id)))}>
+                  ×
+                </button>
+              </td>
+            </tr>
+          ))}
           {held.map((h) => (
             <tr key={h.id} className="held-row">
               <td className="muted">{when(h.createdMs)}</td>

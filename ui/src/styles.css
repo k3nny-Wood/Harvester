@@ -1597,3 +1597,88 @@ button.mini {
 .tab-trading {
   height: 100%;
 }
+
+/* quick bracket order (F long / D short) */
+.quick-hit {
+  pointer-events: stroke;
+  cursor: ns-resize;
+}
+.quick-panel {
+  position: absolute;
+  top: 44px;
+  right: 76px;
+  width: 290px;
+  max-height: calc(100% - 56px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: auto;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+  z-index: 45;
+}
+.quick-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+.quick-live {
+  background: var(--down);
+  color: #fff;
+  border-radius: 3px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.quick-note {
+  font-size: 11px;
+}
+.quick-row {
+  display: grid;
+  grid-template-columns: 74px 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+.quick-row input {
+  min-width: 0;
+}
+.quick-row em {
+  font-style: normal;
+  font-size: 11px;
+  min-width: 70px;
+  text-align: right;
+}
+.quick-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.quick-slider span {
+  display: flex;
+  justify-content: space-between;
+}
+.quick-sum {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.quick-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.quick-actions .primary.buy {
+  background: #2e9b6f;
+  color: #fff;
+}
+.quick-actions .primary.sell {
+  background: #d0454b;
+  color: #fff;
+}

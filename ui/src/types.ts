@@ -175,6 +175,17 @@ export interface TradingStatus {
   message: string;
 }
 
+/** Take-profit / stop-loss waiting for an entry order to fill. */
+export interface ArmedBracket {
+  id: string;
+  symbol: string;
+  long: boolean;
+  takeProfit: number;
+  stopLoss: number;
+  entryOrderId: number;
+  createdMs: number;
+}
+
 export interface Position {
   symbol: string;
   amount: number;
