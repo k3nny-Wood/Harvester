@@ -1,0 +1,14 @@
+window: day 20666 -> day 20726 (60 days). Universe chosen at the START by volume in the 6 weeks before; chosen at the END by volume in the last 6 weeks. 28 of the 40 are in both.
+
+BUY AND HOLD (equal weight, 1x, never rebalanced)       return    max drawdown
+  40 coins picked by volume at the END (hindsight)       +103.8%     27.5%
+  40 coins picked by volume at the START (fair)           +48.9%     16.5%
+  BTC alone                                               +33.8%      7.8%
+  ETH alone                                               +44.0%      9.6%
+  BTC + ETH                                               +38.9%      7.3%
+
+QFL LADDER (V2 live setting, 3x, 3.6% per ladder, 25 at once)      return    max drawdown   ladders
+  coins picked at the END (hindsight)    factor 1       +37.9%     19.7%     193
+  coins picked at the END (hindsight)    factor 3.5     +32.2%     20.5%     158
+  coins picked at the START (fair)       factor 1       +21.4%     17.4%     114
+  coins picked at the START (fair)       factor 3.5     +22.8%     12.8%     111
