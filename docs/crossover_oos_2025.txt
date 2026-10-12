@@ -1,0 +1,8 @@
+55 coins, trading 303 days (2025-03-01 -> 20451 days since epoch)
+equal-weight buy & hold: whole -9.8%, thirds +8.2%  +22.8%  -30.4%
+1h 20/50 long gate, 3x no stop (study)     trades   965  ret   -34.6%  dd  51.1%  pf 0.75  luck   -35.9% (p10   -39.4%)  worst-start   -34.6%  stressed   -59.5%  thirds: -31% +17% -19%
+1h 20/50 long gate, 2x stop 10%            trades   965  ret   -22.5%  dd  39.0%  pf 0.77  luck   -21.5% (p10   -25.7%)  worst-start   -22.5%  stressed   -43.3%  thirds: -21% +13% -13%
+1h 20/50 long gate, 1x                     trades   965  ret    -8.7%  dd  21.5%  pf 0.83  luck    -8.8% (p10   -10.8%)  worst-start    -8.7%  stressed   -21.9%  thirds: -9% +7% -7%
+4h 20/50 long gate, 3x no stop             trades   240  ret   -44.4%  dd  65.4%  pf 0.44  luck   -44.2% (p10   -49.2%)  worst-start   -44.4%  stressed   -55.0%  thirds: -15% -5% -28%
+1h 20/50 long NO gate, 3x (control)        trades  4001  ret   -78.1%  dd  85.8%  pf 0.79  luck   -81.2% (p10   -85.5%)  worst-start   -78.1%  stressed   -96.7%  thirds: -44% +42% -68%
+QFL ladder (V2 live), same data            ladders 3650  ret    +2.8%  dd  48.9%  pf 1.03  stressed    -5.3%  thirds: +26% +19% -7%
