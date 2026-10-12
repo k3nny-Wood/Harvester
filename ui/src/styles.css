@@ -1725,3 +1725,15 @@ button.mini {
   min-width: 0;
   width: 100%;
 }
+
+.quick-ladder-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+  width: max-content;
+  cursor: pointer;
+}
+.quick-ladder-check input {
+  margin: 0;
+}

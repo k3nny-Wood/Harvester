@@ -252,6 +252,8 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
   const clampY = (y: number | null) => (y == null ? null : Math.max(offY, Math.min(offY + plotH, y)));
 
   const set = (which: Which, p: number) => (which === 'end' ? setLad((l) => ({ ...l, end: p })) : setQ((cur) => (cur ? { ...cur, [which]: p } : cur)));
+  // one switch for the ladder, used by the checkbox in the panel and the one on the amount box
+  const toggleLadder = (on: boolean) => setLad((l) => ({ ...l, on, end: l.end > 0 && l.end !== q.entry ? l.end : defaultLadderEnd(q.side, q.entry, tickSize) }));
   const startDrag = (e: React.PointerEvent, which: Which) => {
     e.preventDefault();
     e.stopPropagation();
@@ -424,7 +426,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
       {yE != null && (
         <div
           className="quick-amount"
-          style={{ left: offX + plotW - TAG_W - 2, top: yE + 12 + 48 > offY + plotH ? yE - 62 : yE + 12, width: TAG_W }}
+          style={{ left: offX + plotW - TAG_W - 2, top: yE + 12 + 64 > offY + plotH ? yE - 76 : yE + 12, width: TAG_W }}
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
@@ -435,6 +437,9 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
           <div className="muted">
             ≈ {notional.toFixed(2)} USDT · {usedPct.toFixed(1)}%
           </div>
+          <label className="quick-ladder-check" title="Spread the entry over several orders (same switch as in the panel)">
+            <input type="checkbox" checked={lad.on} onChange={(e) => toggleLadder(e.target.checked)} /> Ladder
+          </label>
         </div>
       )}
       <div className="quick-panel" onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
@@ -455,7 +460,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
           <input
             type="checkbox"
             checked={lad.on}
-            onChange={(e) => setLad((l) => ({ ...l, on: e.target.checked, end: l.end > 0 && l.end !== q.entry ? l.end : defaultLadderEnd(q.side, q.entry, tickSize) }))}
+            onChange={(e) => toggleLadder(e.target.checked)}
           />{' '}
           Ladder: spread the entry over several orders
         </label>
