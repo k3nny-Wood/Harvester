@@ -314,12 +314,12 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
         <line className="quick-hit" x1={offX} x2={offX + plotW} y1={y} y2={y} stroke="transparent" strokeWidth={14} onPointerDown={(e) => startDrag(e, which)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={() => setDrag(null)}>
           <title>Drag to move</title>
         </line>
-        <g className="line-tag drag" transform={`translate(${offX + plotW - TAG_W - 2}, ${y - 9})`} onPointerDown={(e) => startDrag(e, which)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={() => setDrag(null)}>
+        <g className="line-tag drag" transform={`translate(${offX + plotW - TAG_W - 2}, ${y - 9})`} onPointerDown={(e) => startDrag(e, which)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={() => setDrag(null)} onDoubleClick={() => canTrade && void place()}>
           <rect width={TAG_W} height={18} rx={3} fill="#0f1620" stroke={color} strokeWidth={drag === which ? 2 : 1} />
           <text x={TAG_W / 2} y={12.5} textAnchor="middle" fill={color}>
             {tag}
           </text>
-          <title>Grab to move</title>
+          <title>Grab to move · double-click to place the order</title>
         </g>
         <text x={offX + 8} y={y - 4} className="trade-label" fill={color}>
           {label}
@@ -378,7 +378,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
           </button>
         </div>
         <div className="muted quick-note">
-          {kind === 'STOP' ? `Stop-limit: triggers at the entry price, limit ${(LIMIT_OFFSET * 100).toFixed(1)}% beyond it.` : `Limit order: the entry is on the near side of the market, so it waits as a normal limit order.`} Drag the lines on the chart or type prices.
+          {kind === 'STOP' ? `Stop-limit: triggers at the entry price, limit ${(LIMIT_OFFSET * 100).toFixed(1)}% beyond it.` : `Limit order: the entry is on the near side of the market, so it waits as a normal limit order.`} Drag the boxes on the chart or type prices; double-click a box to place the order.
         </div>
         {field('entry', 'Entry')}
         {field('tp', 'Take-profit')}
