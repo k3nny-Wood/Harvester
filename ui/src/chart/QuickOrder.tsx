@@ -426,7 +426,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
       {yE != null && (
         <div
           className="quick-amount"
-          style={{ left: offX + plotW - TAG_W - 2, top: yE + 12 + 64 > offY + plotH ? yE - 76 : yE + 12, width: TAG_W }}
+          style={{ left: offX + plotW - 2 * TAG_W - 8, top: yE + 12 + 64 > offY + plotH ? yE - 76 : yE + 12, width: TAG_W }}
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
