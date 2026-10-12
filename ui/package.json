@@ -1,0 +1,31 @@
+{
+  "name": "harvester-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@luxalgo/vela": "0.8.3",
+    "@luxalgo/vela-pinets": "^0.2.15",
+    "@tauri-apps/api": "^2",
+    "dockview-react": "^8.5.1",
+    "pinets": "^0.11.0",
+    "react": "18",
+    "react-dom": "18",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@types/react": "18",
+    "@types/react-dom": "18",
+    "@vitejs/plugin-react": "4",
+    "typescript": "^5.9.3",
+    "vite": "5",
+    "vitest": "2"
+  }
+}

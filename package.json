@@ -1,0 +1,17 @@
+{
+  "name": "harvester",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "dev": "pnpm tauri dev",
+    "build": "pnpm tauri build",
+    "tauri": "tauri",
+    "ui": "pnpm --dir ui dev",
+    "test": "cargo test --workspace && pnpm --dir ui test",
+    "typecheck": "pnpm --dir ui typecheck"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.2"
+  }
+}
