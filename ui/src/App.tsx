@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { DockviewReact, type DockviewApi, type DockviewReadyEvent, type IDockviewPanelProps } from 'dockview-react';
+import { alertForSignal } from './alerts';
 import { api, inTauri, onBracket, onScannerStatus, onSignalNew, onSignals } from './api';
 import { ConfirmHost, confirmDialog } from './confirm';
 import { activeChartStore, useActiveChart } from './chartStore';
@@ -100,6 +101,7 @@ function useScannerEvents() {
     keep(onScannerStatus(setScanner));
     keep(
       onSignalNew((s) => {
+        alertForSignal(s);
         toast(s.kind === 'ml' ? `ML ${s.side === 'BUY' ? 'LONG' : 'SHORT'} ${s.symbol} · ${s.score}%` : `CRACK ${s.symbol} ${s.timeframe} · score ${s.score}`, 'signal');
       }),
     );

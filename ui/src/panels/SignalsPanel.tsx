@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { alertSettings, playChime, updateAlerts } from '../alerts';
 import { api } from '../api';
 import { Thumb } from '../components/Thumb';
 import { openChart } from '../dock';
@@ -34,6 +35,9 @@ export function SignalsPanel() {
   const [kinds, setKinds] = useState<Record<SignalKind, boolean>>({ ml: true, crack: true, drop: true, near: true });
   const [minScore, setMinScore] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const [alerts, setAlerts] = useState(alertSettings.current);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const changeAlerts = (patch: Parameters<typeof updateAlerts>[0]) => setAlerts(updateAlerts(patch));
 
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
@@ -120,6 +124,36 @@ export function SignalsPanel() {
             </button>
           ))}
         </div>
+        <div className="sig-alerts">
+          <button className={`chip${alerts.sound ? ' on crack' : ''}`} onClick={() => changeAlerts({ sound: !alerts.sound })} title="Play a sound when a new signal arrives">
+            {alerts.sound ? '🔔 Sound on' : '🔕 Sound off'}
+          </button>
+          <button className="chip" onClick={() => setAlertsOpen((v) => !v)} title="Choose which signals make a sound">
+            Alert settings {alertsOpen ? '▴' : '▾'}
+          </button>
+        </div>
+        {alertsOpen && (
+          <div className="alert-box">
+            <div className="alert-kinds">
+              {(['ml', 'crack', 'drop', 'near'] as const).map((k) => (
+                <label key={k}>
+                  <input type="checkbox" checked={alerts.kinds[k]} onChange={() => changeAlerts({ kinds: { ...alerts.kinds, [k]: !alerts.kinds[k] } })} /> {KIND_LABEL[k]}
+                </label>
+              ))}
+            </div>
+            <label className="minscore">
+              Sound from score <b>{alerts.minScore}</b>
+              <input type="range" min={0} max={90} step={5} value={alerts.minScore} onChange={(e) => changeAlerts({ minScore: Number(e.target.value) })} />
+            </label>
+            <label className="minscore">
+              Volume <b>{Math.round(alerts.volume * 100)}</b>
+              <input type="range" min={0.1} max={1} step={0.1} value={alerts.volume} onChange={(e) => changeAlerts({ volume: Number(e.target.value) })} />
+            </label>
+            <button className="chip" onClick={() => playChime([440, 660], alerts.volume)}>
+              Test sound
+            </button>
+          </div>
+        )}
         <label className="minscore">
           Min score <b>{minScore}</b>
           <input type="range" min={0} max={90} step={5} value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} />

@@ -1362,3 +1362,27 @@ button.mini {
 .plan-note {
   font-size: 11px;
 }
+
+/* signal alerts */
+.sig-alerts {
+  display: flex;
+  gap: 4px;
+}
+.alert-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2, rgba(255, 255, 255, 0.03));
+}
+.alert-kinds {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.alert-kinds input {
+  accent-color: var(--accent);
+}
