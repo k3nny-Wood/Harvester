@@ -130,6 +130,68 @@ plot(2 * pivot - prevHigh, "S1", color.red, 1, plot.style_line)
 plot(pivot - (prevHigh - prevLow), "S2", color.red, 1, plot.style_line)`,
   },
   {
+    id: 'rsi',
+    name: 'RSI',
+    description: 'Relative Strength Index with 70 / 30 bands, a shaded overbought and oversold zone and an optional smoothing average.',
+    source: `//@version=5
+indicator("RSI", overlay=false)
+length = input.int(14, "Length", minval=1)
+src = input.source(close, "Source")
+upper = input.int(70, "Overbought")
+lower = input.int(30, "Oversold")
+smoothLength = input.int(14, "Smoothing average length", minval=1)
+value = ta.rsi(src, length)
+plot(value, "RSI", color.purple, 2)
+plot(ta.sma(value, smoothLength), "RSI average", color.yellow, 1)
+hline(upper, "Overbought", color.red)
+hline(50, "Middle", color.gray)
+hline(lower, "Oversold", color.green)`,
+  },
+  {
+    id: 'trix',
+    name: 'TRIX',
+    description: 'Rate of change (%) of a triple-smoothed EMA, with a signal line and a histogram. Crossing zero marks a trend change.',
+    source: `//@version=5
+indicator("TRIX", overlay=false)
+length = input.int(15, "Length", minval=1)
+signalLength = input.int(9, "Signal length", minval=1)
+ema1 = ta.ema(math.log(close), length)
+ema2 = ta.ema(ema1, length)
+ema3 = ta.ema(ema2, length)
+trix = 10000 * (ema3 - ema3[1])
+signal = ta.sma(trix, signalLength)
+plot(trix - signal, "Histogram", trix - signal >= 0 ? color.new(color.green, 40) : color.new(color.red, 40), 1, plot.style_columns)
+plot(trix, "TRIX", color.blue, 2)
+plot(signal, "Signal", color.orange, 1)
+hline(0, "Zero", color.gray)`,
+  },
+  {
+    id: 'atr',
+    name: 'ATR',
+    description: 'Average True Range: how far the price typically moves in one candle, in price units, plus the same as a percentage of price.',
+    source: `//@version=5
+indicator("ATR", overlay=false)
+length = input.int(14, "Length", minval=1)
+atr = ta.atr(length)
+plot(atr, "ATR", color.orange, 2)
+plot(ta.sma(atr, length), "ATR average", color.gray, 1)
+plot(atr / close * 100, "ATR %", color.new(color.blue, 30), 1)`,
+  },
+  {
+    id: 'momentum',
+    name: 'Momentum',
+    description: 'Price change over N candles (close minus close N candles ago), as a coloured histogram with a smoothing line.',
+    source: `//@version=5
+indicator("Momentum", overlay=false)
+length = input.int(10, "Length", minval=1)
+src = input.source(close, "Source")
+smoothLength = input.int(9, "Smoothing average length", minval=1)
+mom = src - src[length]
+plot(mom, "Momentum", mom >= 0 ? color.new(color.green, 30) : color.new(color.red, 30), 1, plot.style_columns)
+plot(ta.sma(mom, smoothLength), "Momentum average", color.orange, 2)
+hline(0, "Zero", color.gray)`,
+  },
+  {
     id: 'momentum-backtest',
     name: 'Momentum Strategy',
     description: 'A strategy() that goes long when the 20 EMA crosses above the 50 EMA and closes on the reverse. Fills are painted on the chart.',
