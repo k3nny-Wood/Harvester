@@ -10,3 +10,6 @@ harvester-core = { path = "../harvester-core" }
 serde.workspace = true
 serde_json.workspace = true
 ort = "2.0.0-rc.11"
+
+[dev-dependencies]
+serde_json.workspace = true

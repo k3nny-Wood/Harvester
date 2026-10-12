@@ -1,0 +1,18 @@
+40 coins, candles to day 20738; windows: last 30 days (from day 20708), unseen by the model since Aug 22 (day 20687)
+ML made 1936 calls (one per coin per 4 hours at most)
+
+=== LAST 30 DAYS: 20708 -> day 20738 ===
+  QFL ladder (V2 live setting)       trades   888  ret    +28.5%  dd  15.3%  pf  4.68  win  97%  luck +28.6% (p10 +25.6%)  worst-start -0.3%  stressed    +25.0%
+  ML all picks                       trades  1936  ret    -54.0%  dd  54.0%  pf  0.67  win  29%  luck -45.4% (p10 -49.0%)  worst-start -54.0%  stressed    -72.4%
+  ML longs only                      trades   699  ret    -14.3%  dd  19.0%  pf  0.83  win  35%  luck -11.3% (p10 -16.9%)  worst-start -16.2%  stressed    -29.1%
+  ML shorts only                     trades  1237  ret    -42.7%  dd  44.0%  pf  0.64  win  28%  luck -34.8% (p10 -40.0%)  worst-start -42.7%  stressed    -59.8%
+  ML confidence >= 0.85              trades   580  ret    -39.1%  dd  39.5%  pf  0.59  win  26%  luck -31.0% (p10 -37.5%)  worst-start -39.1%  stressed    -49.1%
+  equal-weight buy & hold (1x)       +54.5%
+
+=== UNSEEN BY THE MODEL (since Aug 22): 20687 -> day 20738 ===
+  QFL ladder (V2 live setting)       trades  1491  ret    +58.3%  dd  16.2%  pf  6.10  win  98%  luck +57.6% (p10 +53.7%)  worst-start +8.4%  stressed    +51.4%
+  ML all picks                       trades  1936  ret    -39.9%  dd  54.6%  pf  0.87  win  34%  luck -32.6% (p10 -38.2%)  worst-start -52.9%  stressed    -72.9%
+  ML longs only                      trades   699  ret    -11.6%  dd  19.0%  pf  0.91  win  37%  luck -9.6% (p10 -15.3%)  worst-start -14.9%  stressed    -35.0%
+  ML shorts only                     trades  1237  ret    -26.9%  dd  44.3%  pf  0.87  win  34%  luck -22.0% (p10 -26.9%)  worst-start -42.5%  stressed    -57.8%
+  ML confidence >= 0.85              trades   580  ret    -26.5%  dd  39.6%  pf  0.82  win  33%  luck -18.8% (p10 -28.1%)  worst-start -38.6%  stressed    -42.7%
+  equal-weight buy & hold (1x)       +54.9%

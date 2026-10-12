@@ -7,6 +7,7 @@
 //! The honest reading of the result is the NET average per trade and how it moves from week to week; one flattering week proves nothing.
 
 use crate::candle::Candle;
+use crate::lab::LadderPath;
 use crate::ladder::Side;
 use crate::ml::plan::TradePlan;
 use serde::{Deserialize, Serialize};
@@ -88,6 +89,39 @@ pub fn judge(symbol: &str, candles: &[Candle], signal_idx: usize, side: Side, pl
     let cost = 2.0 * (p.fee_pct + p.slippage_pct);
     let r = if long { exit - entry } else { entry - exit } / risk;
     Some(ForwardTrade { symbol: symbol.to_string(), time_ms: candles[entry_idx].open_time, long, outcome, gross_pct: gross, net_pct: gross - cost, r })
+}
+
+/// The same judgement as `judge`, but as a per-candle path for the shared-account simulator: profit per 1.0 of margin at the close of
+/// every candle from the entry to the exit, at `leverage`, fees and slippage charged on both sides.
+pub fn judge_path(symbol: &str, candles: &[Candle], signal_idx: usize, side: Side, plan: &TradePlan, p: &ForwardParams, leverage: f64) -> Option<LadderPath> {
+    let entry_idx = signal_idx + 1;
+    if entry_idx >= candles.len() {
+        return None;
+    }
+    let long = side == Side::Buy;
+    let entry = candles[entry_idx].open;
+    if (long && (entry <= plan.stop || entry >= plan.target)) || (!long && (entry >= plan.stop || entry <= plan.target)) {
+        return None;
+    }
+    let sign = if long { 1.0 } else { -1.0 };
+    let cost = (p.fee_pct + p.slippage_pct) / 100.0;
+    let last = (entry_idx + p.max_hold).min(candles.len() - 1);
+    let mut pnl: Vec<f32> = Vec::new();
+    let (mut end, mut reason) = (last, "tp");
+    let mut exit_px = candles[last].close;
+    for (i, c) in candles.iter().enumerate().take(last + 1).skip(entry_idx) {
+        let stop_hit = if long { c.low <= plan.stop } else { c.high >= plan.stop };
+        let target_hit = if long { c.high >= plan.target } else { c.low <= plan.target };
+        if stop_hit || target_hit {
+            exit_px = if stop_hit { plan.stop } else { plan.target };
+            reason = if stop_hit { "stop" } else { "tp" };
+            end = i;
+            break;
+        }
+        pnl.push((leverage * sign * (c.close / entry - 1.0) - leverage * cost).max(-1.0) as f32);
+    }
+    pnl.push(((leverage * sign * (exit_px / entry - 1.0) - 2.0 * leverage * cost).max(-1.0)) as f32);
+    Some(LadderPath { symbol: symbol.to_string(), trigger_ms: candles[entry_idx].open_time, end_ms: candles[end].open_time, reason, pnl })
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -238,6 +272,20 @@ mod tests {
         let cs = vec![c(0, 100.0, 100.0, 100.0, 100.0), c(1, 100.0, 105.0, 99.9, 104.0)];
         let t = judge("X", &cs, 0, Side::Buy, &plan(100.0, 98.0, 104.0), &ForwardParams::default()).unwrap();
         assert!((t.gross_pct - t.net_pct - 0.14).abs() < 1e-9, "{} {}", t.gross_pct, t.net_pct);
+    }
+
+    #[test]
+    fn a_path_ends_with_the_trades_net_result_scaled_by_leverage() {
+        let cs = vec![c(0, 100.0, 100.0, 100.0, 100.0), c(1, 100.0, 101.0, 99.5, 100.5), c(2, 100.5, 104.5, 100.2, 104.0)];
+        let p = ForwardParams { fee_pct: 0.0, slippage_pct: 0.0, ..ForwardParams::default() };
+        let path = judge_path("X", &cs, 0, Side::Buy, &plan(100.0, 98.0, 104.0), &p, 3.0).unwrap();
+        assert_eq!(path.reason, "tp");
+        assert_eq!(path.pnl.len(), 2);
+        assert!((*path.pnl.last().unwrap() as f64 - 0.12).abs() < 1e-6, "{:?}", path.pnl);
+        // the same trade with costs ends lower by 2 x leverage x (fee + slippage)
+        let paid = ForwardParams { fee_pct: 0.05, slippage_pct: 0.02, ..ForwardParams::default() };
+        let b = judge_path("X", &cs, 0, Side::Buy, &plan(100.0, 98.0, 104.0), &paid, 3.0).unwrap();
+        assert!((0.12 - *b.pnl.last().unwrap() as f64 - 3.0 * 0.0014).abs() < 1e-6);
     }
 
     #[test]
