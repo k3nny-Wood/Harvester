@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { Vela } from '@luxalgo/vela';
 import { api } from '../api';
 import type { OpenOrder } from '../types';
@@ -6,6 +6,7 @@ import { useChart, useChartId } from '../chartStore';
 import { formatPrice, snapToTick } from '../ladderMath';
 import { useApp } from '../store';
 import { priceBand } from '../priceBand';
+import { fitMenu, type MenuPlacement } from '../menuFit';
 import { closeOrder, maxPct, notionalOfForm, pctFromNotional, sizeFromPct } from '../sizing';
 import { orderFromForm, refreshTrading, submitOrder } from '../trade';
 import { getProjector } from './projector';
@@ -329,6 +330,25 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
     );
   };
 
+  // keep the whole menu inside the chart: opened near the bottom or the right edge it is moved up / left (below the chart it would hide
+  // under the next panel). Measured before the browser paints, so it never flashes in the wrong place.
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [placement, setPlacement] = useState<MenuPlacement | null>(null);
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    const box = rootRef.current;
+    if (!menu || !el || !box) {
+      setPlacement(null);
+      return;
+    }
+    // measure at the natural size: take any earlier height cap off for the reading
+    const prev = el.style.maxHeight;
+    el.style.maxHeight = '';
+    const next = fitMenu(menu.x + 4, menu.y + 4, el.offsetWidth, el.offsetHeight, box.clientWidth, box.clientHeight);
+    el.style.maxHeight = prev;
+    setPlacement((p) => (p && p.left === next.left && p.top === next.top && p.maxHeight === next.maxHeight ? p : next));
+  }, [menu, holding, overCap, maxLev, closing?.quantity]);
+
   const placeAt = async (side: 'BUY' | 'SELL', price: number) => {
     setMenu(null);
     const built = orderFromForm(price, side);
@@ -414,7 +434,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
       </svg>
 
       {menu && (
-        <div className="ctx-menu" style={{ left: menu.x + 4, top: menu.y + 4 }} onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
+        <div ref={menuRef} className="ctx-menu" style={{ left: placement?.left ?? menu.x + 4, top: placement?.top ?? menu.y + 4, maxHeight: placement?.maxHeight, overflowY: 'auto' }} onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
           <div className="ctx-title">
             {symbol} @ {formatPrice(menu.price, precision)}
           </div>
