@@ -11,8 +11,6 @@
 //! the MarketScanner research; treat it as a hypothesis, not a guarantee).
 
 use crate::candle::{atr_pct, Candle};
-use crate::ladder::Side;
-use crate::ml::plan::{MlCall, TradePlan};
 use crate::qfl::{detect_filtered, BaseRangeFilter, QflParams};
 use serde::{Deserialize, Serialize};
 
@@ -22,8 +20,6 @@ pub enum SignalKind {
     Crack,
     Near,
     Drop,
-    /// an entry suggested by the ML models, with a trade plan
-    Ml,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,13 +79,6 @@ pub struct Signal {
     pub score: u8,
     pub parts: ScoreParts,
     pub reasons: Vec<String>,
-    /// ML signals: the direction, the model's probability and the trade plan (entry, stop, target)
-    #[serde(default)]
-    pub side: Option<Side>,
-    #[serde(default)]
-    pub probability: Option<f64>,
-    #[serde(default)]
-    pub plan: Option<TradePlan>,
     /// last candles for the thumbnail: [time, open, high, low, close]
     pub thumb: Vec<[f64; 5]>,
 }
@@ -215,39 +204,6 @@ fn explain(c: &Common, drop_window: usize, bars_name: &str) -> Vec<String> {
     r
 }
 
-/// The signal for an accepted ML call. `closed` are the candles the call was made on (the last one is the entry candle).
-pub fn ml_signal(symbol: &str, timeframe: &str, closed: &[Candle], call: &MlCall, thumb_bars: usize) -> Signal {
-    let side_name = if call.side == Side::Buy { "LONG" } else { "SHORT" };
-    let plan = call.plan;
-    let id = format!("{symbol}:{timeframe}:ml:{}:{side_name}", plan.entry_time);
-    let reasons = vec![
-        format!("Model: {:.0}% probability of a good {} entry", call.probability * 100.0, side_name.to_lowercase()),
-        format!("RSI(14) {:.0}{}", call.rsi, if call.side == Side::Buy { " (reversal filter: oversold side)" } else { " (reversal filter: overbought side)" }),
-        format!("Plan: stop {:.6} (-{:.2}%), target {:.6} (+{:.2}%), {:.1}R", plan.stop, plan.risk_pct, plan.target, plan.reward_pct, plan.rr),
-    ];
-    Signal {
-        id,
-        symbol: symbol.to_string(),
-        timeframe: timeframe.to_string(),
-        kind: SignalKind::Ml,
-        time_ms: plan.entry_time,
-        price: plan.entry,
-        base: None,
-        crack_level: None,
-        distance_pct: None,
-        drop_pct: 0.0,
-        vol_ratio: 1.0,
-        donch_pos: None,
-        score: (call.probability * 100.0).round().clamp(0.0, 100.0) as u8,
-        parts: ScoreParts { structure: 0.0, volume: 0.0, magnitude: 0.0, pivot: 0.0, stabilising: 0.0 },
-        reasons,
-        side: Some(call.side),
-        probability: Some(call.probability),
-        plan: Some(plan),
-        thumb: thumb(closed, thumb_bars),
-    }
-}
-
 /// Analyse one symbol's candles. Needs about 200 candles for the QFL part (the volatility average) and fewer for drops.
 pub fn analyse(symbol: &str, timeframe: &str, candles: &[Candle], p: &SignalParams) -> Vec<Signal> {
     let n = candles.len();
@@ -286,9 +242,6 @@ pub fn analyse(symbol: &str, timeframe: &str, candles: &[Candle], p: &SignalPara
                     parts: sp,
                     reasons,
                     thumb: thumb(candles, p.thumb_bars),
-                    side: None,
-                    probability: None,
-                    plan: None,
                 });
             }
             None => {
@@ -315,9 +268,6 @@ pub fn analyse(symbol: &str, timeframe: &str, candles: &[Candle], p: &SignalPara
                         parts: sp,
                         reasons,
                         thumb: thumb(candles, p.thumb_bars),
-                    side: None,
-                    probability: None,
-                    plan: None,
                     });
                 }
             }
@@ -348,9 +298,6 @@ pub fn analyse(symbol: &str, timeframe: &str, candles: &[Candle], p: &SignalPara
             parts: sp,
             reasons,
             thumb: thumb(candles, p.thumb_bars),
-                    side: None,
-                    probability: None,
-                    plan: None,
         });
     }
     out

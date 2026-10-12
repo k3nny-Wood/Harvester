@@ -193,7 +193,6 @@ pub fn simulate_ladder(symbol: &str, candles: &[Candle], crack_idx: usize, base:
             path.push(total as f32);
             reason = exit_reason;
             end = i;
-            qty = 0.0;
             break;
         }
         // 3. sells the high reached. On a candle that also bought, the high may have come first, so no sell counts (pessimistic).

@@ -4,11 +4,10 @@ import { api } from '../api';
 import { Thumb } from '../components/Thumb';
 import { openChart } from '../dock';
 import { TIMEFRAMES } from '../intervals';
-import { showPlan } from '../plan';
 import { useApp } from '../store';
 import type { Signal, SignalKind } from '../types';
 
-const KIND_LABEL: Record<SignalKind, string> = { ml: 'ML', crack: 'CRACK', near: 'WATCH', drop: 'DROP' };
+const KIND_LABEL: Record<SignalKind, string> = { crack: 'CRACK', near: 'WATCH', drop: 'DROP' };
 const UNIVERSES = [20, 40, 80, 150];
 
 function ago(ms: number, now: number): string {
@@ -32,7 +31,7 @@ export function SignalsPanel() {
   const status = useApp((s) => s.scanner);
   const config = useApp((s) => s.scannerConfig);
   const setConfig = useApp((s) => s.setScannerConfig);
-  const [kinds, setKinds] = useState<Record<SignalKind, boolean>>({ ml: true, crack: true, drop: true, near: true });
+  const [kinds, setKinds] = useState<Record<SignalKind, boolean>>({ crack: true, drop: true, near: true });
   const [minScore, setMinScore] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [alerts, setAlerts] = useState(alertSettings.current);
@@ -46,22 +45,21 @@ export function SignalsPanel() {
 
   const rows = useMemo(() => signals.filter((s) => kinds[s.kind] && s.score >= minScore), [signals, kinds, minScore]);
   const fresh = status && status.lastUpdateMs > 0 && now - status.lastUpdateMs < 30_000;
-  const sources = config?.sources ?? { qfl: true, ml: true };
-  const mlPossible = (config?.timeframe ?? '15m') === '15m';
+  const sources = config?.sources ?? { qfl: true };
 
   const restart = (patch: Partial<{ timeframe: string; universe: number }>) => {
     if (!config) return;
     void api.scannerConfigure({ ...config, ...patch });
   };
 
-  const toggleSource = (key: 'qfl' | 'ml') => {
+  const toggleSource = (key: 'qfl') => {
     if (!config) return;
     const next = { ...sources, [key]: !sources[key] };
     setConfig({ ...config, sources: next });
     void api.scannerSources(next);
   };
 
-  const count = (k: SignalKind) => (k === 'ml' ? status?.mlCount : k === 'crack' ? status?.crackCount : k === 'drop' ? status?.dropCount : status?.nearCount) ?? 0;
+  const count = (k: SignalKind) => (k === 'crack' ? status?.crackCount : k === 'drop' ? status?.dropCount : status?.nearCount) ?? 0;
 
   return (
     <div className="panel signals">
@@ -92,15 +90,6 @@ export function SignalsPanel() {
           <button className={`src${sources.qfl ? ' on' : ''}`} onClick={() => toggleSource('qfl')} title="QFL base cracks, drops and watches (rule based)">
             <i /> QFL
           </button>
-          <button
-            className={`src ml${sources.ml && mlPossible ? ' on' : ''}`}
-            disabled={!mlPossible}
-            onClick={() => toggleSource('ml')}
-            title={mlPossible ? `ML entry model: ${status?.mlStatus ?? ''}` : 'The ML models are trained on 15-minute candles: set the scanner timeframe to 15m'}
-          >
-            <i /> ML
-          </button>
-          {status?.mlStatus && !status.mlStatus.startsWith('long') && !status.mlStatus.startsWith('short') && <span className="warn">{status.mlStatus}</span>}
         </div>
 
         <div className="sig-controls">
@@ -118,7 +107,7 @@ export function SignalsPanel() {
               </option>
             ))}
           </select>
-          {(['ml', 'crack', 'drop', 'near'] as const).map((k) => (
+          {(['crack', 'drop', 'near'] as const).map((k) => (
             <button key={k} className={`chip ${k}${kinds[k] ? ' on' : ''}`} onClick={() => setKinds((v) => ({ ...v, [k]: !v[k] }))} title={`Show / hide ${KIND_LABEL[k].toLowerCase()} entries`}>
               {KIND_LABEL[k]} {count(k)}
             </button>
@@ -135,7 +124,7 @@ export function SignalsPanel() {
         {alertsOpen && (
           <div className="alert-box">
             <div className="alert-kinds">
-              {(['ml', 'crack', 'drop', 'near'] as const).map((k) => (
+              {(['crack', 'drop', 'near'] as const).map((k) => (
                 <label key={k}>
                   <input type="checkbox" checked={alerts.kinds[k]} onChange={() => changeAlerts({ kinds: { ...alerts.kinds, [k]: !alerts.kinds[k] } })} /> {KIND_LABEL[k]}
                 </label>
@@ -164,67 +153,13 @@ export function SignalsPanel() {
         {rows.length === 0 && (
           <div className="muted pad">
             {status?.phase === 'scanning live'
-              ? 'No setups right now. The scanner is running: cracks, drops and ML entries appear here as they happen, and WATCH entries show bases that price is approaching.'
+              ? 'No setups right now. The scanner is running: cracks and drops appear here as they happen, and WATCH entries show bases that price is approaching.'
               : 'Waiting for the first scan to finish…'}
           </div>
         )}
-        {rows.map((s) => (s.kind === 'ml' ? <MlCard key={s.id} s={s} now={now} /> : <SignalCard key={s.id} s={s} now={now} />))}
-      </div>
-    </div>
-  );
-}
-
-/** An ML entry: direction, the model's confidence, and the trade plan. Clicking it puts the plan on the chart. */
-function MlCard({ s, now }: { s: Signal; now: number }) {
-  const long = s.side === 'BUY';
-  const plan = s.plan;
-  const levels = plan
-    ? [
-        { price: plan.entry, color: '#4f8fdd' },
-        { price: plan.stop, color: '#d0454b', dash: [3, 3] },
-        { price: plan.target, color: '#2e9b6f', dash: [3, 3] },
-      ]
-    : undefined;
-  const open = () => showPlan(s);
-  return (
-    <div className={`sig-card ml ${long ? 'long' : 'short'}`}>
-      <Thumb candles={s.thumb} levels={levels} onClick={open} title="Show this trade plan on the chart" />
-      <div className="sig-body">
-        <div className="sig-top">
-          <button className="sig-sym" onClick={open} title="Show the trade plan on the chart">
-            {s.symbol.replace('USDT', '')}
-            <span className="muted">USDT · {s.timeframe}</span>
-          </button>
-          <span className={`kind side ${long ? 'long' : 'short'}`}>{long ? 'LONG' : 'SHORT'}</span>
-          <span className="kind ml">ML</span>
-          <span className={`score ${scoreClass(s.score)}`} title="The model's probability of a good entry">
-            {s.score}%
-          </span>
-        </div>
-        {plan && (
-          <div className="sig-nums">
-            <span>
-              Entry <b>{fmtPrice(plan.entry)}</b>
-            </span>
-            <span className="down">
-              SL <b>{fmtPrice(plan.stop)}</b> (-{plan.riskPct.toFixed(2)}%)
-            </span>
-            <span className="up">
-              TP <b>{fmtPrice(plan.target)}</b> (+{plan.rewardPct.toFixed(2)}%)
-            </span>
-            <span>
-              R:R <b>{plan.rr.toFixed(1)}</b>
-            </span>
-          </div>
-        )}
-        <div className="sig-reasons">
-          {s.reasons.slice(0, 2).map((r, i) => (
-            <div key={i}>• {r}</div>
-          ))}
-        </div>
-        <div className="sig-age muted">
-          {ago(s.timeMs, now)} · <a onClick={() => openChart(s.symbol, s.timeframe)}>open chart</a>
-        </div>
+        {rows.map((s) => (
+          <SignalCard key={s.id} s={s} now={now} />
+        ))}
       </div>
     </div>
   );

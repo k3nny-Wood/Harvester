@@ -9,7 +9,7 @@ Open source (AGPL-3.0-or-later), Windows first, testnet by default.
 | Decision | Choice | Why |
 |---|---|---|
 | Shell | **Tauri 2** (Rust core + system WebView2) | Vela and PineTS are JavaScript; a native window cannot run them without embedding a browser anyway. Tauri gives a small installer and a Rust core. |
-| Logic | **Rust** (`crates/harvester-core`, `src-tauri`) | One source of truth, fast scanning / QFL / ML, testable without a window. |
+| Logic | **Rust** (`crates/harvester-core`, `src-tauri`) | One source of truth, fast scanning and QFL, testable without a window. |
 | UI | React 18 + Vite + Zustand, **dockview** panels | Drag, re-arrange, float, tab and persist panels (Qt-style docking) without a C++ toolchain. |
 | Chart | **Vela** (LuxAlgo, Apache-2.0, attribution required) | Charting + drawing tools. |
 | Indicators | **PineTS** via `@luxalgo/vela-pinets` (AGPL-3.0) | Runs real Pine scripts in a web worker. This is why the app is AGPL. |
@@ -19,9 +19,7 @@ Open source (AGPL-3.0-or-later), Windows first, testnet by default.
 ## Layout
 
 ```
-crates/harvester-core   pure logic, no I/O: decimals, symbol filters, ladder builder, QFL detector, signals, ML features + trade plans
-crates/harvester-ml     ONNX inference (`ort`): scaler, model config, long / short predictors
-models                  models/15m/*.onnx and model_config_*.json (found next to the exe or in the project)
+crates/harvester-core   pure logic, no I/O: decimals, symbol filters, ladder builder, QFL detector, signals, Lab simulator, crossover study
 src-tauri               the app: Binance REST + websocket feeds, Tauri commands/events
 ui                      React + dockview + Vela
 docs                    this file
@@ -43,18 +41,6 @@ The Rust side owns every feed and every calculation; the UI renders and listens.
 
 Buy ladder when the range runs down from its start, sell ladder when it runs up (switchable).
 Placing the orders needs the signed trading API and comes with the trading milestone.
-
-## ML signals and trade plans
-
-`harvester-core::ml` holds the 38-feature calculation (`BatchIndicators`, ported from MarketScanner) and `plan.rs`:
-`evaluate(candles, params, predict)` asks the model for a long and a short probability, applies the RSI reversal filter and the minimum
-confidence, and builds a `TradePlan` (stop from the recent swing / ATR clamped to 0.5-8 %, target at 2R). `harvester-ml` loads the ONNX models.
-The scanner evaluates ML on the last closed 15 m candle of each scanned symbol and emits `Signal { kind: Ml, side, probability, plan }`.
-
-Placing a plan (`trading::place_bracket`): the stop and the target are checked to be on the right sides of the entry, the entry order goes out,
-and a watcher waits until the entry is no longer open, reads the position and places a reduce-only STOP_MARKET and TAKE_PROFIT_MARKET for its
-size. Exits cannot be sent first because the exchange refuses reduce-only orders without a position. The outcome is reported as a `bracket`
-event. `harvester-core::filters::validate_order` applies the percent-price band to limit prices only, as Binance does.
 
 ## Live account updates
 
@@ -83,8 +69,8 @@ pause, caches per symbol for 6 hours and emits `lab-progress`. Differences from 
 | 6 | The ladder tool places real orders (draw start/end, slider, preview, place) | done |
 | 7 | Pine Script: per-chart workspace (PineTS in a web worker), 8 built-in + 138 community scripts (everget, MIT/GPL-3.0), `/` quick picker, editor, live plot values; every script is run by the test suite | done |
 | 8 | Lab panel: shared-account QFL ladder backtest (`harvester-core::lab`), luck test, eight start dates, stressed costs; candles downloaded politely and cached (`src-tauri/src/lab.rs`) | done (QFL ladder; no short side, no trailing sell) |
-| 9 | ML trade finder (ONNX via `ort`), clearly marked experimental: ML signals, trade-plan overlay (entry -> target arrow, stop), plan card, bracket placement (entry, then reduce-only stop-loss and take-profit) | done |
-| 10 | Installer (NSIS, per-user, models + DirectML.dll bundled; `pnpm bundle`), documentation | done (settings screen, CI, code signing not yet) |
+| 9 | ML trade finder (ONNX) with plan overlay and bracket orders | **removed Oct 12 2026**: net negative on unseen data (see `docs/qfl_vs_ml_2026-10-12.txt`); code in git history (`db3cc7e`) |
+| 10 | Installer (NSIS, per-user; `pnpm bundle`), documentation | done (settings screen, CI, code signing not yet) |
 | 11 | Sound alerts, percent-price band on the chart, user-data websocket (`userstream.rs`) instead of 3 s polling | done |
 
 ## Principles

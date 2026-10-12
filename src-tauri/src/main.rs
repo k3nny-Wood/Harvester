@@ -11,13 +11,12 @@ use harvester_core::filters::SymbolFilters;
 use harvester_core::ladder::{build_ladder, LadderPreview, LadderSpec};
 use harvester_core::signals::Signal;
 use harvester_core::lab::{LabConfig, LabReport};
-use harvester_core::ml::forward::ForwardReport;
-use lab::{Lab, LabRequest, MlForwardRequest};
+use lab::{Lab, LabRequest};
 use market::{Env, Kline, Market, SymbolQuote};
 use scanner::{Scanner, ScannerConfig, ScannerStatus, Sources};
 use std::sync::Arc;
 use stream::Streams;
-use trading::{Account, BracketRequest, LeverageInfo, OpenOrder, OrderAck, OrderRecord, OrderRequest, Trading, TradingStatus, TradeRecord};
+use trading::{Account, LeverageInfo, OpenOrder, OrderAck, OrderRecord, OrderRequest, Trading, TradingStatus, TradeRecord};
 use tauri::{AppHandle, Manager, State};
 
 struct AppState {
@@ -107,13 +106,6 @@ async fn modify_order(state: State<'_, AppState>, symbol: String, order_id: i64,
     state.trading.modify(&symbol, order_id, conditional.unwrap_or(false), price, stop_price).await
 }
 
-/// Place the entry of a trade plan; its stop-loss and take-profit follow automatically once the entry has filled.
-#[tauri::command]
-async fn place_bracket(app: AppHandle, state: State<'_, AppState>, plan: BracketRequest) -> Result<OrderAck, String> {
-    let trading = state.trading.clone();
-    trading.place_bracket(app, plan).await
-}
-
 #[tauri::command]
 async fn order_history(state: State<'_, AppState>, symbol: String, limit: Option<u32>) -> Result<Vec<OrderRecord>, String> {
     state.trading.order_history(&symbol, limit.unwrap_or(100)).await
@@ -159,7 +151,7 @@ fn scanner_config(state: State<'_, AppState>) -> ScannerConfig {
     state.scanner.config()
 }
 
-/// Switch the QFL / ML signal sources on or off (no restart).
+/// Switch the QFL signal source on or off (no restart).
 #[tauri::command]
 fn scanner_sources(app: AppHandle, state: State<'_, AppState>, sources: Sources) {
     state.scanner.set_sources(&app, sources);
@@ -183,12 +175,6 @@ async fn lab_run(app: AppHandle, state: State<'_, AppState>, request: LabRequest
     state.lab.run(app, state.market.clone(), request).await
 }
 
-/// Replay the ML trade finder over recent candles and score every plan it would have shown, with fees.
-#[tauri::command]
-async fn lab_ml_forward(app: AppHandle, state: State<'_, AppState>, request: MlForwardRequest) -> Result<ForwardReport, String> {
-    state.lab.run_ml_forward(app, state.market.clone(), request).await
-}
-
 #[tauri::command]
 fn lab_cancel(state: State<'_, AppState>) {
     state.lab.cancel();
@@ -208,8 +194,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
-            lab_default_config, lab_run, lab_ml_forward, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
-            trading_status, account_overview, open_orders, place_order, place_orders, cancel_order, modify_order, place_bracket, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
+            lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
+            trading_status, account_overview, open_orders, place_order, place_orders, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");

@@ -10,7 +10,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 harvester-core = { path = "../crates/harvester-core" }
-harvester-ml = { path = "../crates/harvester-ml" }
 tauri = { version = "2", features = [] }
 serde.workspace = true
 serde_json.workspace = true

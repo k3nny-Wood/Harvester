@@ -5,7 +5,7 @@ draggable and re-arrangeable panels. Open source (AGPL-3.0-or-later). Windows. T
 
 > Status: early but usable on the testnet. Working: tabbed charts, draggable panels, live QFL / drop **signals with thumbnails**,
 > manual order entry, right-click orders on the chart, and the **ladder tool** (draw a range, set the number of orders, place them).
-> **Pine Script** works per chart tab (146 indicators, `/` quick picker, editor). The **ML trade finder** (experimental) turns a signal into a trade plan you can place with its stop-loss and take-profit. The **Lab** backtests the QFL ladder as one shared account with the luck test, start dates and stressed costs. Sound alerts, a live user-data stream and the price-band shading are in too.
+> **Pine Script** works per chart tab (146 indicators, `/` quick picker, editor). The **Lab** backtests the QFL ladder as one shared account with the luck test, start dates and stressed costs. Sound alerts, a live user-data stream and the price-band shading are in too.
 
 ## Run
 
@@ -18,8 +18,14 @@ pnpm test         # cargo tests + UI tests
 pnpm bundle       # release build + Windows installer (NSIS, per-user): target/release/bundle/nsis/Harvester_*_x64-setup.exe
 ```
 
-The installer ships the ML models (`models/15m`) and the ONNX Runtime's `DirectML.dll` next to the exe. API keys are read from a `.env` file in the folder
+API keys are read from a `.env` file in the folder
 Harvester is started from (or any parent); an installed copy needs its own `.env` next to `harvester.exe`.
+
+## Removed: the ML trade finder
+
+Harvester briefly had an ML entry finder (38-feature XGBoost models, trade-plan overlay, bracket orders). It was removed on Oct 12 2026 because it lost money on
+unseen data: 1,235 plans in the last 30 days averaged -0.52% per trade after fees, and in a shared account with the QFL ladder's sizing it lost 40-54% while the
+ladder made money. Using fewer indicators did not help either. The measurements are in `docs/qfl_vs_ml_2026-10-12.txt`; the code is in git history (commit `db3cc7e`).
 
 `HARVESTER_ENV=live` selects the live exchange (default: testnet). Market data needs no API key. To trade, copy `.env.example` to `.env`
 and fill in the testnet keys (`BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`). Live trading needs separate `BINANCE_LIVE_*` keys.
@@ -51,24 +57,10 @@ MarketScanner. It places no orders. The tested coins are today's most liquid, a 
 - **Price band**: Binance refuses LIMIT orders more than a few percent from the market. The chart shades that zone and a dragged limit order stops at its edge. Stop and take-profit triggers are not limited.
 - **Live updates**: orders, fills and balances arrive through Binance's user-data websocket (header shows "live"); if it drops the app polls every 3 s and shows "polling".
 
-## ML trade finder (experimental)
-
-The Signals panel has **QFL** and **ML** switches. With ML on, each closed 15 m candle of the scanned symbols is scored by the 38-feature
-XGBoost models (`models/15m/`, run with ONNX Runtime), then filtered by the RSI reversal rule (long only when RSI <= 40, short when RSI >= 60)
-and a minimum confidence. Click an ML card and the chart shows a **trade plan**: entry, stop-loss, take-profit, an arrow from the entry to the
-target and a dashed one to the stop. In the plan card you choose a market or limit entry and adjust the stop distance, reward:risk and the
-risk in USDT; the size follows. **Place** sends the entry and, once it has filled, a reduce-only stop-loss and take-profit for the position that
-exists. A resting limit entry is watched only while Harvester is open. The model's earlier research showed little directional edge once fees
-are paid: treat it as a way to find candidates to look at, not a system to follow.
-
-Binance's percent-price band applies to **limit prices only**; stop and take-profit triggers can sit further away.
-
 ## Layout
 
 ```
-crates/harvester-core   pure trading logic (decimals, filters, ladders, QFL, signals, ML features and trade plans)
-crates/harvester-ml     ONNX inference (ort) for the 15 m models
-models                  the ONNX models and their scalers
+crates/harvester-core   pure trading logic (decimals, filters, ladders, QFL, signals, Lab simulator, crossover study)
 src-tauri               Tauri app: market data feeds, commands
 ui                      React + dockview + Vela
 ```

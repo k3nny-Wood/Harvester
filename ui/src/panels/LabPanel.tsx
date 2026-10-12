@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, inTauri, onLabProgress } from '../api';
 import type { LabAccountResult, LabConfig, LabProgress, LabReport } from '../types';
 import { useApp } from '../store';
-import { MlForwardTab } from './MlForwardTab';
 
 /** The same numbers as `LabConfig::default()` in the core crate (V2 live), used until the backend answers. */
 const FALLBACK: LabConfig = {
@@ -117,7 +116,6 @@ export function LabPanel() {
   const [days, setDays] = useState(saved.days);
   const [universe, setUniverse] = useState(saved.universe);
   const [weightsText, setWeightsText] = useState(saved.cfg.weights.join(', '));
-  const [mode, setMode] = useState<'qfl' | 'ml'>('qfl');
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<LabProgress | null>(null);
   const [report, setReport] = useState<LabReport | null>(null);
@@ -171,16 +169,7 @@ export function LabPanel() {
 
   return (
     <div className="panel lab">
-      <div className="lab-modes">
-        <button className={mode === 'qfl' ? 'on' : ''} onClick={() => setMode('qfl')}>
-          QFL ladder backtest
-        </button>
-        <button className={mode === 'ml' ? 'on' : ''} onClick={() => setMode('ml')} title="Score the ML trade finder on recent unseen candles">
-          ML forward test
-        </button>
-      </div>
-      {mode === 'ml' && <MlForwardTab />}
-      <div className="lab-form" hidden={mode !== 'qfl'}>
+      <div className="lab-form">
         <div className="lab-row">
           <label className="lab-field">
             <span>Test the last</span>
@@ -251,7 +240,7 @@ export function LabPanel() {
         </div>
       </div>
 
-      {mode === 'qfl' && report && (
+      {report && (
         <div className="lab-out">
           <div className="muted lab-window">
             {dateOf(report.windowStartMs)} → {dateOf(report.windowEndMs)} · {report.symbols} coins · {report.setups} setups passed the filters · 15 m candles · one shared account of {cfg.startEquity} USDT
@@ -295,7 +284,7 @@ export function LabPanel() {
           </ul>
         </div>
       )}
-      {mode === 'qfl' && !report && !running && !error && (
+      {!report && !running && !error && (
         <p className="muted pad">
           Backtests the QFL ladder on recent public candles as one shared account (cap on open ladders, budget per ladder, drawdown counting open ladders). Treat one flattering number with suspicion: the luck test,
           the start dates and the stressed costs show how fragile it is. Nothing here places an order.

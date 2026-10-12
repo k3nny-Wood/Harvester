@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "pnpm tauri dev",
     "build": "pnpm tauri build",
-    "bundle": "node scripts/prepare-bundle.mjs && pnpm tauri build",
+    "bundle": "pnpm tauri build",
     "tauri": "tauri",
     "ui": "pnpm --dir ui dev",
     "test": "cargo test --workspace && pnpm --dir ui test",

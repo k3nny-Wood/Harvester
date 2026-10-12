@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Account, LabConfig, MlForwardReport, LabProgress, LabReport, Side, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
+import type { Account, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
 
 /** True when running inside the Tauri shell (false in a plain browser, e.g. `vite` on its own). */
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -29,16 +29,12 @@ export const api = {
   tradeHistory: (symbol: string, limit = 200) => invoke<TradeRecord[]>('trade_history', { symbol, limit }),
   modifyOrder: (symbol: string, orderId: number, conditional: boolean, price?: number, stopPrice?: number) =>
     invoke<OrderAck>('modify_order', { symbol, orderId, conditional, price: price ?? null, stopPrice: stopPrice ?? null }),
-  placeBracket: (plan: { symbol: string; side: Side; quantity: number; entryPrice?: number; stop: number; target: number }) =>
-    invoke<OrderAck>('place_bracket', { plan: { ...plan, entryPrice: plan.entryPrice ?? null } }),
   symbolLeverage: (symbol: string) => invoke<LeverageInfo>('symbol_leverage', { symbol }),
   cancelAll: (symbol: string) => invoke<void>('cancel_all_orders', { symbol }),
   closePosition: (symbol: string, fraction = 1) => invoke<OrderAck>('close_position', { symbol, fraction }),
   setLeverage: (symbol: string, leverage: number) => invoke<void>('set_leverage', { symbol, leverage }),
   labDefaultConfig: () => invoke<LabConfig>('lab_default_config'),
   labRun: (request: { config: LabConfig; days: number; universe: number; luckRuns: number }) => invoke<LabReport>('lab_run', { request }),
-  labMlForward: (request: { days: number; universe: number; minConfidence: number; reversalFilter: boolean; forward: { maxHold: number; cooldown: number; feePct: number; slippagePct: number } }) =>
-    invoke<MlForwardReport>('lab_ml_forward', { request }),
   labCancel: () => invoke<void>('lab_cancel'),
   previewLadder: (spec: LadderSpec, referencePrice: number) => invoke<LadderPreview>('preview_ladder', { spec, referencePrice }),
 };
@@ -57,10 +53,6 @@ export function onSignalNew(handler: (s: Signal) => void): Promise<UnlistenFn> {
 
 export function onScannerStatus(handler: (s: ScannerStatus) => void): Promise<UnlistenFn> {
   return listen<ScannerStatus>('scanner-status', (ev) => handler(ev.payload));
-}
-
-export function onBracket(handler: (e: { symbol: string; ok: boolean; message: string }) => void): Promise<UnlistenFn> {
-  return listen<{ symbol: string; ok: boolean; message: string }>('bracket', (ev) => handler(ev.payload));
 }
 
 /** Binance pushed an order / fill / balance change (the state itself is re-read from the exchange). */

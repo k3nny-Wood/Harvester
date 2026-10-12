@@ -1,13 +1,9 @@
 //! The Lab commands: download public 15 m candles for the most liquid perpetuals of the REAL exchange (cached on disk, rate limited
-//! so the exchange never bans the IP), then either run the QFL ladder backtest (`harvester_core::lab`) or replay the ML trade finder
-//! over the same candles (`harvester_core::ml::forward`). Public data only, no API key.
+//! so the exchange never bans the IP), then run the QFL ladder backtest (`harvester_core::lab`). Public data only, no API key.
 
 use crate::market::{Kline, Market};
 use harvester_core::candle::Candle;
 use harvester_core::lab::{run_lab, LabConfig, LabReport, STEP_MS};
-use harvester_core::ml::forward::{judge, report as forward_report, ForwardParams, ForwardReport, ForwardTrade};
-use harvester_core::ml::plan::{evaluate, MlParams};
-use harvester_ml::Engine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -25,16 +21,6 @@ pub struct LabRequest {
     /// how many of the busiest perpetuals
     pub universe: usize,
     pub luck_runs: usize,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MlForwardRequest {
-    pub days: u32,
-    pub universe: usize,
-    pub min_confidence: f64,
-    pub reversal_filter: bool,
-    pub forward: ForwardParams,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -55,10 +41,6 @@ pub struct Lab {
 pub fn warmup_days(cfg: &LabConfig) -> u32 {
     (cfg.gate_days.max(1) as u32) + 4
 }
-
-/// The ML features look at the last 333 candles (3.5 days of 15 m); a little more is loaded.
-const ML_WARMUP_DAYS: u32 = 5;
-const ML_WINDOW: usize = 333;
 
 fn cache_dir() -> PathBuf {
     std::env::temp_dir().join("harvester_lab")
@@ -117,13 +99,6 @@ impl Lab {
         out
     }
 
-    pub async fn run_ml_forward(&self, app: AppHandle, market: Arc<Market>, req: MlForwardRequest) -> Result<ForwardReport, String> {
-        self.begin()?;
-        let out = self.ml_forward_inner(&app, &market, req).await;
-        self.running.store(false, Ordering::SeqCst);
-        out
-    }
-
     /// Download (or read from the cache) the 15 m candles of the busiest perpetuals from `from_ms` to now.
     async fn load_candles(&self, app: &AppHandle, market: &Arc<Market>, universe: usize, from_ms: u64) -> Result<HashMap<String, Vec<Candle>>, String> {
         emit_progress(app, "listing symbols", 0, 0);
@@ -169,54 +144,6 @@ impl Lab {
         let runs = req.luck_runs.clamp(0, 200);
         let mut report = tauri::async_runtime::spawn_blocking(move || run_lab(&all, &cfg, trade_from, runs)).await.map_err(|e| e.to_string())?;
         report.base.equity = thin(&report.base.equity, 400);
-        emit_progress(app, "done", 1, 1);
-        Ok(report)
-    }
-
-    async fn ml_forward_inner(&self, app: &AppHandle, market: &Arc<Market>, req: MlForwardRequest) -> Result<ForwardReport, String> {
-        let dir = crate::scanner::find_models_dir().ok_or("The ML models were not found (models/15m).")?;
-        let engine = Engine::load(&dir)?;
-        let universe = req.universe.clamp(5, 120);
-        let total_days = req.days.clamp(7, 90) + ML_WARMUP_DAYS;
-        let from_ms = (now_ms() - total_days as u64 * 86_400_000) / STEP_MS * STEP_MS;
-        let scan_from = from_ms + ML_WARMUP_DAYS as u64 * 86_400_000;
-        let all = self.load_candles(app, market, universe, from_ms).await?;
-        let mut ml = MlParams::default();
-        ml.min_confidence = req.min_confidence.clamp(0.5, 0.99);
-        ml.reversal_filter = req.reversal_filter;
-        let fwd = req.forward.clone();
-        let handle = app.clone();
-        let mut symbols: Vec<(String, Vec<Candle>)> = all.into_iter().collect();
-        symbols.sort_by(|a, b| a.0.cmp(&b.0));
-        let report = tauri::async_runtime::spawn_blocking(move || {
-            let mut engine = engine;
-            let total = symbols.len();
-            let (mut trades, mut scanned): (Vec<ForwardTrade>, usize) = (Vec::new(), 0);
-            for (n, (symbol, candles)) in symbols.iter().enumerate() {
-                emit_progress(&handle, "scoring with the model", n, total);
-                let first = candles.partition_point(|c| c.open_time < scan_from).max(ML_WINDOW);
-                let mut quiet_until = 0usize;
-                for i in first..candles.len().saturating_sub(1) {
-                    scanned += 1;
-                    if i < quiet_until {
-                        continue;
-                    }
-                    let window = &candles[i + 1 - ML_WINDOW..=i];
-                    let calls = evaluate(window, &ml, |f, side| engine.predict(f, side));
-                    // one call per candle: the more confident side
-                    if let Some(call) = calls.into_iter().max_by(|a, b| a.probability.partial_cmp(&b.probability).unwrap_or(std::cmp::Ordering::Equal)) {
-                        if let Some(t) = judge(symbol, candles, i, call.side, &call.plan, &fwd) {
-                            trades.push(t);
-                            quiet_until = i + fwd.cooldown.max(1);
-                        }
-                    }
-                }
-            }
-            let to_ms = symbols.iter().filter_map(|(_, c)| c.last()).map(|c| c.open_time + STEP_MS).max().unwrap_or(0);
-            forward_report(&trades, total, scanned, scan_from, to_ms)
-        })
-        .await
-        .map_err(|e| e.to_string())?;
         emit_progress(app, "done", 1, 1);
         Ok(report)
     }

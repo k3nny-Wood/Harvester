@@ -79,19 +79,7 @@ export interface LadderPreview {
   averageEntry: number;
 }
 
-export type SignalKind = 'crack' | 'near' | 'drop' | 'ml';
-
-/** A trade plan: entry, stop and target (from an ML signal; the trader can move the stop and the target). */
-export interface TradePlan {
-  side: Side;
-  entry: number;
-  stop: number;
-  target: number;
-  riskPct: number;
-  rewardPct: number;
-  rr: number;
-  entryTime: number;
-}
+export type SignalKind = 'crack' | 'near' | 'drop';
 
 export interface ScoreParts {
   structure: number;
@@ -117,9 +105,6 @@ export interface Signal {
   score: number;
   parts: ScoreParts;
   reasons: string[];
-  side?: Side | null;
-  probability?: number | null;
-  plan?: TradePlan | null;
   /** [time, open, high, low, close] */
   thumb: Array<[number, number, number, number, number]>;
 }
@@ -135,8 +120,6 @@ export interface ScannerStatus {
   crackCount: number;
   nearCount: number;
   dropCount: number;
-  mlCount: number;
-  mlStatus: string;
   error: string | null;
 }
 
@@ -153,7 +136,6 @@ export interface SignalParams {
 
 export interface Sources {
   qfl: boolean;
-  ml: boolean;
 }
 
 export interface ScannerConfig {
@@ -328,26 +310,3 @@ export interface LabProgress {
   total: number;
 }
 
-export interface MlForwardStats {
-  trades: number;
-  winRatePct: number;
-  avgGrossPct: number;
-  avgNetPct: number;
-  avgR: number;
-  profitFactor: number | null;
-}
-
-export interface MlForwardReport {
-  symbols: number;
-  candlesScanned: number;
-  windowStartMs: number;
-  windowEndMs: number;
-  all: MlForwardStats;
-  longs: MlForwardStats;
-  shorts: MlForwardStats;
-  targets: number;
-  stops: number;
-  timeouts: number;
-  weeks: Array<{ weekStartMs: number; trades: number; avgNetPct: number }>;
-  notes: string[];
-}

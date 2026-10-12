@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Account, TradePlan, Env, OpenOrder, OrderKind, ScannerConfig, ScannerStatus, Side, Signal, SymbolQuote, TradingStatus } from './types';
+import type { Account, Env, OpenOrder, OrderKind, ScannerConfig, ScannerStatus, Side, Signal, SymbolQuote, TradingStatus } from './types';
 
 /** App-wide state. Everything that belongs to one chart tab lives in `chartStore.ts` instead. */
 /** The order-entry form. Shared so the Orders panel, the chart's right-click menu and the ladder card agree. */
@@ -17,19 +17,6 @@ export interface OrderForm {
   leverage: string;
 }
 
-/** The trade plan on show for a symbol (from an ML signal). The trader can move the stop and the target and place it. */
-export interface PlanState {
-  signalId: string;
-  timeframe: string;
-  plan: TradePlan;
-  /** the model's probability, for the label */
-  probability: number;
-  /** USDT the trader is willing to lose if the stop is hit */
-  riskUsd: number;
-  /** 'market' enters now, 'limit' rests at the entry price */
-  entryType: 'market' | 'limit';
-}
-
 interface AppState {
   env: Env;
   symbols: SymbolQuote[];
@@ -44,16 +31,12 @@ interface AppState {
   account: Account | null;
   orders: OpenOrder[];
   orderForm: OrderForm;
-  plans: Record<string, PlanState>;
   toasts: Array<{ id: number; text: string; tone: 'info' | 'signal' | 'warn' }>;
   setTrading: (t: TradingStatus) => void;
   setStreamConnected: (c: boolean) => void;
   setAccount: (a: Account | null) => void;
   setOrders: (o: OpenOrder[]) => void;
   patchOrderForm: (p: Partial<OrderForm>) => void;
-  setPlan: (symbol: string, p: PlanState) => void;
-  patchPlan: (symbol: string, p: Partial<PlanState>) => void;
-  clearPlan: (symbol: string) => void;
   setEnv: (e: Env) => void;
   setSymbols: (s: SymbolQuote[]) => void;
   setActiveChart: (id: string) => void;
@@ -78,20 +61,12 @@ export const useApp = create<AppState>((set) => ({
   account: null,
   orders: [],
   orderForm: { side: 'BUY', type: 'LIMIT', price: '', stopPrice: '', sizeMode: 'usdt', size: '100', reduceOnly: false, postOnly: false, leverage: '' },
-  plans: {},
   toasts: [],
   setTrading: (trading) => set({ trading }),
   setStreamConnected: (streamConnected) => set({ streamConnected }),
   setAccount: (account) => set({ account }),
   setOrders: (orders) => set({ orders }),
   patchOrderForm: (p) => set((s) => ({ orderForm: { ...s.orderForm, ...p } })),
-  setPlan: (symbol, p) => set((s) => ({ plans: { ...s.plans, [symbol]: p } })),
-  patchPlan: (symbol, p) => set((s) => (s.plans[symbol] ? { plans: { ...s.plans, [symbol]: { ...s.plans[symbol], ...p } } } : s)),
-  clearPlan: (symbol) =>
-    set((s) => {
-      const { [symbol]: _gone, ...rest } = s.plans;
-      return { plans: rest };
-    }),
   setEnv: (env) => set({ env }),
   setSymbols: (symbols) => set({ symbols }),
   setActiveChart: (activeChartId) => set({ activeChartId }),

@@ -5,7 +5,7 @@ interface Props {
   candles: Array<[number, number, number, number, number]>;
   base?: number | null;
   crackLevel?: number | null;
-  /** extra horizontal lines, e.g. an ML plan's entry, stop and target */
+  /** extra horizontal lines drawn over the thumbnail */
   levels?: Array<{ price: number; color: string; dash?: number[] }>;
   width?: number;
   height?: number;

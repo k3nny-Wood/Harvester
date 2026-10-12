@@ -11,7 +11,7 @@ export interface AlertSettings {
 }
 
 const KEY = 'harvester.alerts.v1';
-const DEFAULTS: AlertSettings = { sound: true, minScore: 60, kinds: { ml: true, crack: true, drop: false, near: false }, volume: 0.5 };
+const DEFAULTS: AlertSettings = { sound: true, minScore: 60, kinds: { crack: true, drop: false, near: false }, volume: 0.5 };
 
 export function loadAlerts(): AlertSettings {
   try {
@@ -41,7 +41,6 @@ export function shouldAlert(s: Signal, a: AlertSettings): boolean {
 
 /** A short two-note chime: rising for a long / crack, falling for a short, a single note for the rest. */
 export function chimeNotes(s: Signal): number[] {
-  if (s.kind === 'ml') return s.side === 'SELL' ? [660, 440] : [440, 660];
   if (s.kind === 'crack') return [523, 784];
   return [587];
 }

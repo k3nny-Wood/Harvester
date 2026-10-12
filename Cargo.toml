@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/harvester-core", "crates/harvester-ml", "src-tauri"]
+members = ["crates/harvester-core", "src-tauri"]
 resolver = "2"
 
 [workspace.package]

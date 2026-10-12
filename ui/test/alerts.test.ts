@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { chimeNotes, shouldAlert, type AlertSettings } from '../src/alerts';
 import type { Signal } from '../src/types';
 
-const base: AlertSettings = { sound: true, minScore: 60, kinds: { ml: true, crack: true, drop: false, near: false }, volume: 0.5 };
+const base: AlertSettings = { sound: true, minScore: 60, kinds: { crack: true, drop: false, near: false }, volume: 0.5 };
 const sig = (p: Partial<Signal>) => ({ kind: 'crack', score: 70, side: null, ...p }) as Signal;
 
 describe('signal alerts', () => {
@@ -12,11 +12,10 @@ describe('signal alerts', () => {
     expect(shouldAlert(sig({ kind: 'drop' }), base)).toBe(false);
     expect(shouldAlert(sig({}), { ...base, sound: false })).toBe(false);
   });
-  it('rises for a long and falls for a short', () => {
-    const up = chimeNotes(sig({ kind: 'ml', side: 'BUY' }));
-    const down = chimeNotes(sig({ kind: 'ml', side: 'SELL' }));
-    expect(up[1]).toBeGreaterThan(up[0]);
-    expect(down[1]).toBeLessThan(down[0]);
+  it('a crack gets a rising two-note chime, the other kinds a single note', () => {
+    const crack = chimeNotes(sig({ kind: 'crack' }));
+    expect(crack[1]).toBeGreaterThan(crack[0]);
+    expect(chimeNotes(sig({ kind: 'drop' })).length).toBe(1);
   });
 });
 
