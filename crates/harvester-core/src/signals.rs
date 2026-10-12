@@ -318,32 +318,44 @@ pub fn analyse(symbol: &str, timeframe: &str, candles: &[Candle], p: &SignalPara
         }
     }
 
-    // Drop: large relative to the symbol's own volatility
-    let c = common(candles, n - 1, p);
-    if c.drop_pct >= p.drop_min_pct && c.drop_multiple >= p.drop_min_multiple {
-        let sp = parts(0.0, &c);
-        let mut reasons = vec![format!("Dropped {:.1}% from the {}-bar high", c.drop_pct, p.drop_window)];
-        reasons.extend(explain(&c, p.drop_window, timeframe).into_iter().skip(1));
-        out.push(Signal {
-            id: format!("{symbol}:{timeframe}:drop"),
-            symbol: symbol.to_string(),
-            timeframe: timeframe.to_string(),
-            kind: SignalKind::Drop,
-            time_ms: last.open_time,
-            price: last.close,
-            base: None,
-            crack_level: None,
-            distance_pct: None,
-            drop_pct: c.drop_pct,
-            vol_ratio: c.vol_ratio,
-            donch_pos: c.donch_pos,
-            score: total(&sp),
-            parts: sp,
-            reasons,
-            thumb: thumb(candles, p.thumb_bars),
-        });
-    }
+    out.extend(analyse_drop(symbol, timeframe, candles, p));
     out
+}
+
+/// The drop signal alone: a fall from the recent high that is large relative to the symbol's own volatility. It only looks at the last
+/// `drop_window` candles and the ~50 before them (plus the Donchian window for the score), so it is cheap enough to run on every live update,
+/// and a handful of recent candles (about 100) is enough to produce it.
+pub fn analyse_drop(symbol: &str, timeframe: &str, candles: &[Candle], p: &SignalParams) -> Option<Signal> {
+    let n = candles.len();
+    if n < 40 {
+        return None;
+    }
+    let last = candles[n - 1];
+    let c = common(candles, n - 1, p);
+    if !(c.drop_pct >= p.drop_min_pct && c.drop_multiple >= p.drop_min_multiple) {
+        return None;
+    }
+    let sp = parts(0.0, &c);
+    let mut reasons = vec![format!("Dropped {:.1}% from the {}-bar high", c.drop_pct, p.drop_window)];
+    reasons.extend(explain(&c, p.drop_window, timeframe).into_iter().skip(1));
+    Some(Signal {
+        id: format!("{symbol}:{timeframe}:drop"),
+        symbol: symbol.to_string(),
+        timeframe: timeframe.to_string(),
+        kind: SignalKind::Drop,
+        time_ms: last.open_time,
+        price: last.close,
+        base: None,
+        crack_level: None,
+        distance_pct: None,
+        drop_pct: c.drop_pct,
+        vol_ratio: c.vol_ratio,
+        donch_pos: c.donch_pos,
+        score: total(&sp),
+        parts: sp,
+        reasons,
+        thumb: thumb(candles, p.thumb_bars),
+    })
 }
 
 #[cfg(test)]
@@ -401,6 +413,27 @@ mod tests {
         let sigs = analyse("DROPUSDT", "15m", &c, &SignalParams::default());
         let d = sigs.iter().find(|s| s.kind == SignalKind::Drop).expect("a drop signal");
         assert!(d.drop_pct > 10.0 && d.vol_ratio > 1.5);
+    }
+
+    #[test]
+    fn the_drop_alone_needs_only_about_a_hundred_recent_candles_and_agrees_with_the_full_analysis() {
+        let mut c: Vec<Candle> = (0..120)
+            .map(|i| Candle::new(i * 900_000, 100.0, 100.3, 99.7, 100.0 + ((i as f64) * 0.9).sin() * 0.1, 1000.0))
+            .collect();
+        for i in 0..8u64 {
+            let p = 100.0 - 1.5 * (i as f64 + 1.0);
+            c.push(Candle::new((120 + i) * 900_000, p + 1.5, p + 1.6, p - 0.1, p, 4000.0));
+        }
+        let params = SignalParams::default();
+        let tail = &c[c.len() - 99..];
+        let fast = analyse_drop("DROPUSDT", "15m", tail, &params).expect("a drop from 99 candles");
+        let full = analyse("DROPUSDT", "15m", &c, &params).into_iter().find(|s| s.kind == SignalKind::Drop).expect("a drop from the full history");
+        assert_eq!(fast.id, full.id);
+        assert!((fast.drop_pct - full.drop_pct).abs() < 1e-9);
+        // a calm market gives nothing, and so does too little data
+        let calm: Vec<Candle> = c[..100].to_vec();
+        assert!(analyse_drop("DROPUSDT", "15m", &calm, &params).is_none());
+        assert!(analyse_drop("DROPUSDT", "15m", &c[c.len() - 20..], &params).is_none());
     }
 
     #[test]

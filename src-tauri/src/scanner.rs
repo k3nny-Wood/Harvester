@@ -7,9 +7,9 @@
 
 use crate::market::{Env, Market};
 use crate::stream::parse_kline_value;
-use futures_util::StreamExt;
+use futures_util::{stream, StreamExt};
 use harvester_core::candle::Candle;
-use harvester_core::signals::{analyse, Signal, SignalKind, SignalParams};
+use harvester_core::signals::{analyse, analyse_drop, Signal, SignalKind, SignalParams};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -20,6 +20,16 @@ use tokio_tungstenite::tungstenite::Message;
 
 const MAX_CANDLES: usize = 700;
 const SEED_CANDLES: u32 = 500;
+/// The first, quick pass: just enough recent candles to find drops (weight 1 per request on Binance, so it can run wide and fast).
+const FAST_CANDLES: u32 = 99;
+const FAST_PARALLEL: usize = 10;
+/// The slower pass with the long history the QFL bases need (weight 5 per request: kept polite).
+const FULL_PARALLEL: usize = 3;
+const FULL_PACE_MS: u64 = 450;
+/// The heavy QFL analysis of a symbol runs when one of its candles closes, or at most this often while it moves.
+const FULL_REFRESH_SECS: u64 = 10;
+/// How many of the latest candles the drop check looks at (it needs the drop window, ~50 for the volatility and the Donchian window).
+const DROP_TAIL: usize = 300;
 /// A triggered crack or drop stays in the list this long after it was last seen.
 const KEEP_MS: u64 = 6 * 3600 * 1000;
 /// A sudden pump or dump stays this long.
@@ -84,6 +94,8 @@ pub struct ScannerStatus {
 struct Inner {
     config: ScannerConfig,
     buffers: HashMap<String, Vec<Candle>>,
+    /// symbols whose long history has arrived (the QFL analysis needs it)
+    full: HashSet<String>,
     last_run: HashMap<String, Instant>,
     signals: HashMap<String, Signal>,
     announced: HashSet<String>,
@@ -151,12 +163,10 @@ fn analyse_symbol(app: &AppHandle, inner: &mut Inner, symbol: &str) {
     // QFL / drop / watch signals
     if cfg.sources.qfl {
         let fresh = analyse(symbol, &cfg.timeframe, &candles, &cfg.params);
-        // watches always reflect the present: drop this symbol's old ones first
+        // watches always reflect the present: drop this symbol's old ones first (cracks are kept for KEEP_MS even after they stop being "fresh")
         inner.signals.retain(|_, s| !(s.symbol == symbol && s.kind == SignalKind::Near));
-        // a drop that is no longer a drop disappears; cracks are kept for KEEP_MS even after they stop being "fresh"
-        let fresh_ids: HashSet<&str> = fresh.iter().map(|s| s.id.as_str()).collect();
-        inner.signals.retain(|id, s| !(s.symbol == symbol && s.kind == SignalKind::Drop && !fresh_ids.contains(id.as_str())));
-        for s in fresh {
+        // drops are checked on every live update by `analyse_drops`, not here
+        for s in fresh.into_iter().filter(|s| s.kind != SignalKind::Drop) {
             if s.kind == SignalKind::Crack && inner.announced.insert(s.id.clone()) {
                 let _ = app.emit("signal-new", s.clone());
             }
@@ -165,6 +175,40 @@ fn analyse_symbol(app: &AppHandle, inner: &mut Inner, symbol: &str) {
     }
     inner.signals.retain(|_, s| !(s.kind == SignalKind::Crack && now.saturating_sub(s.time_ms) > KEEP_MS));
     inner.signals.retain(|_, s| !(matches!(s.kind, SignalKind::Pump | SignalKind::Dump) && now.saturating_sub(s.time_ms) > SPIKE_KEEP_MS));
+}
+
+/// The drop check of one symbol: cheap (only the latest candles), so it runs on every live update. A drop that is no longer a drop disappears.
+fn analyse_drops(inner: &mut Inner, symbol: &str) {
+    if !inner.config.sources.qfl {
+        return;
+    }
+    let fresh = {
+        let Some(buf) = inner.buffers.get(symbol) else { return };
+        analyse_drop(symbol, &inner.config.timeframe, &buf[buf.len().saturating_sub(DROP_TAIL)..], &inner.config.params)
+    };
+    match fresh {
+        Some(s) => {
+            inner.signals.insert(s.id.clone(), s);
+        }
+        None => inner.signals.retain(|_, s| !(s.symbol == symbol && s.kind == SignalKind::Drop)),
+    }
+}
+
+/// The long history that just arrived, plus the live candles that came in while it was loading (a live candle replaces the seed's last one when it is the same candle).
+fn merge_seed(mut seed: Vec<Candle>, live: &[Candle]) -> Vec<Candle> {
+    for c in live {
+        match seed.last() {
+            Some(l) if l.open_time == c.open_time => *seed.last_mut().unwrap() = *c,
+            Some(l) if c.open_time > l.open_time => seed.push(*c),
+            None => seed.push(*c),
+            _ => {}
+        }
+    }
+    if seed.len() > MAX_CANDLES {
+        let extra = seed.len() - MAX_CANDLES;
+        seed.drain(..extra);
+    }
+    seed
 }
 
 fn apply_bar(buf: &mut Vec<Candle>, c: Candle) {
@@ -283,6 +327,104 @@ fn set_phase(app: &AppHandle, inner: &Arc<Mutex<Inner>>, phase: &str, error: Opt
     emit_status(app, &g);
 }
 
+/// First pass: the recent candles of every symbol, many requests at once. Drops are live as soon as this is done.
+async fn fast_seed(app: &AppHandle, market: &Arc<Market>, inner: &Arc<Mutex<Inner>>, symbols: &[String], timeframe: &str) {
+    let mut results = stream::iter(symbols.iter().cloned())
+        .map(|sym| {
+            let m = market.clone();
+            let tf = timeframe.to_string();
+            async move {
+                let r = m.klines(&sym, &tf, FAST_CANDLES, None, None).await;
+                (sym, r)
+            }
+        })
+        .buffer_unordered(FAST_PARALLEL);
+    let mut done = 0usize;
+    while let Some((sym, r)) = results.next().await {
+        done += 1;
+        let mut g = inner.lock().unwrap();
+        match r {
+            Ok(rows) => {
+                let candles: Vec<Candle> = rows.iter().map(|k| Candle::new(k.time, k.open, k.high, k.low, k.close, k.volume)).collect();
+                g.buffers.insert(sym.clone(), candles);
+                analyse_drops(&mut g, &sym);
+            }
+            Err(e) => g.status.error = Some(format!("{sym}: {e}")),
+        }
+        g.status.seeded = done;
+        if done % 10 == 0 || done == symbols.len() {
+            emit_signals(app, &mut g, true);
+        }
+    }
+}
+
+/// Second pass, in the background while the live feed already runs: the long history of every symbol, for the QFL bases.
+async fn full_seed(app: &AppHandle, market: &Arc<Market>, inner: &Arc<Mutex<Inner>>, symbols: &[String], timeframe: &str) {
+    let total = symbols.len();
+    let mut results = stream::iter(symbols.iter().cloned())
+        .map(|sym| {
+            let m = market.clone();
+            let tf = timeframe.to_string();
+            async move {
+                let r = m.klines(&sym, &tf, SEED_CANDLES, None, None).await;
+                tokio::time::sleep(Duration::from_millis(FULL_PACE_MS)).await;
+                (sym, r)
+            }
+        })
+        .buffer_unordered(FULL_PARALLEL);
+    let mut done = 0usize;
+    while let Some((sym, r)) = results.next().await {
+        done += 1;
+        let mut g = inner.lock().unwrap();
+        match r {
+            Ok(rows) => {
+                let candles: Vec<Candle> = rows.iter().map(|k| Candle::new(k.time, k.open, k.high, k.low, k.close, k.volume)).collect();
+                let live = g.buffers.remove(&sym).unwrap_or_default();
+                g.buffers.insert(sym.clone(), merge_seed(candles, &live));
+                g.full.insert(sym.clone());
+                analyse_symbol(app, &mut g, &sym);
+            }
+            Err(e) => g.status.error = Some(format!("{sym}: {e}")),
+        }
+        g.status.phase = if done == total { "scanning live".into() } else { format!("scanning live · QFL history {done}/{total}") };
+        if done % 5 == 0 || done == total {
+            emit_signals(app, &mut g, true);
+        }
+    }
+}
+
+/// The live feed: ONE combined kline websocket for all symbols. Returns when the connection ends.
+async fn live_session(app: &AppHandle, market: &Arc<Market>, inner: &Arc<Mutex<Inner>>, symbols: &[String], timeframe: &str) -> Result<(), String> {
+    let streams: Vec<String> = symbols.iter().map(|s| format!("{}@kline_{}", s.to_lowercase(), timeframe)).collect();
+    let env: Env = market.env();
+    let url = format!("{}/stream?streams={}", env.ws_base(), streams.join("/"));
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.map_err(|e| format!("websocket: {e}"))?;
+    while let Some(msg) = ws.next().await {
+        let text = match msg {
+            Ok(Message::Text(t)) => t,
+            Ok(Message::Close(_)) | Err(_) => break,
+            _ => continue,
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        let Some(ev) = parse_kline_value(v.get("data").unwrap_or(&v)) else { continue };
+        let c = Candle::new(ev.bar.time, ev.bar.open, ev.bar.high, ev.bar.low, ev.bar.close, ev.bar.volume);
+        let mut g = inner.lock().unwrap();
+        apply_bar(g.buffers.entry(ev.symbol.clone()).or_default(), c);
+        g.status.updates += 1;
+        g.status.last_update_ms = now_ms();
+        // a drop is looked for on EVERY update: it is cheap and is exactly what must not wait
+        analyse_drops(&mut g, &ev.symbol);
+        // the heavy QFL analysis only once the long history is there, and not on every tick
+        let due = g.full.contains(&ev.symbol) && (ev.closed || g.last_run.get(&ev.symbol).map_or(true, |t| t.elapsed() >= Duration::from_secs(FULL_REFRESH_SECS)));
+        if due {
+            g.last_run.insert(ev.symbol.clone(), Instant::now());
+            analyse_symbol(app, &mut g, &ev.symbol);
+        }
+        emit_signals(app, &mut g, false);
+    }
+    Ok(())
+}
+
 async fn run(app: AppHandle, market: Arc<Market>, inner: Arc<Mutex<Inner>>, cfg: ScannerConfig) {
     let mut backoff = 2u64;
     loop {
@@ -300,66 +442,27 @@ async fn run(app: AppHandle, market: Arc<Market>, inner: Arc<Mutex<Inner>>, cfg:
             let mut g = inner.lock().unwrap();
             g.status.symbols = symbols.len();
             g.status.seeded = 0;
-            g.status.phase = "loading history".into();
+            g.full.clear();
+            g.status.phase = "loading recent candles".into();
             emit_status(&app, &g);
         }
 
-        // 2. seed every buffer (one polite request at a time)
-        for (i, sym) in symbols.iter().enumerate() {
-            match market.klines(sym, &cfg.timeframe, SEED_CANDLES, None, None).await {
-                Ok(rows) => {
-                    let candles: Vec<Candle> = rows.iter().map(|k| Candle::new(k.time, k.open, k.high, k.low, k.close, k.volume)).collect();
-                    let mut g = inner.lock().unwrap();
-                    g.buffers.insert(sym.clone(), candles);
-                    analyse_symbol(&app, &mut g, sym);
-                    g.status.seeded = i + 1;
-                    if i % 5 == 4 || i + 1 == symbols.len() {
-                        emit_signals(&app, &mut g, true);
-                    }
-                }
-                Err(e) => {
-                    let mut g = inner.lock().unwrap();
-                    g.status.error = Some(format!("{sym}: {e}"));
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(220)).await;
-        }
+        // 2. recent candles of every symbol, in parallel: drops are live after this
+        fast_seed(&app, &market, &inner, &symbols, &cfg.timeframe).await;
         {
             let mut g = inner.lock().unwrap();
             g.status.phase = "scanning live".into();
             emit_signals(&app, &mut g, true);
         }
 
-        // 3. one combined websocket for all symbols
-        let streams: Vec<String> = symbols.iter().map(|s| format!("{}@kline_{}", s.to_lowercase(), cfg.timeframe)).collect();
-        let env: Env = market.env();
-        let url = format!("{}/stream?streams={}", env.ws_base(), streams.join("/"));
-        match tokio_tungstenite::connect_async(&url).await {
-            Ok((mut ws, _)) => {
+        // 3. the live feed and the long history (for the QFL bases) at the same time
+        let (live, _) = tokio::join!(live_session(&app, &market, &inner, &symbols, &cfg.timeframe), full_seed(&app, &market, &inner, &symbols, &cfg.timeframe));
+        match live {
+            Ok(()) => {
                 backoff = 2;
-                while let Some(msg) = ws.next().await {
-                    let text = match msg {
-                        Ok(Message::Text(t)) => t,
-                        Ok(Message::Close(_)) | Err(_) => break,
-                        _ => continue,
-                    };
-                    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
-                    let Some(ev) = parse_kline_value(v.get("data").unwrap_or(&v)) else { continue };
-                    let c = Candle::new(ev.bar.time, ev.bar.open, ev.bar.high, ev.bar.low, ev.bar.close, ev.bar.volume);
-                    let mut g = inner.lock().unwrap();
-                    apply_bar(g.buffers.entry(ev.symbol.clone()).or_default(), c);
-                    g.status.updates += 1;
-                    g.status.last_update_ms = now_ms();
-                    let due = g.last_run.get(&ev.symbol).map_or(true, |t| t.elapsed() >= Duration::from_secs(4));
-                    if due {
-                        g.last_run.insert(ev.symbol.clone(), Instant::now());
-                        analyse_symbol(&app, &mut g, &ev.symbol);
-                    }
-                    emit_signals(&app, &mut g, false);
-                }
                 set_phase(&app, &inner, "reconnecting", None);
             }
-            Err(e) => set_phase(&app, &inner, "waiting to retry", Some(format!("websocket: {e}"))),
+            Err(e) => set_phase(&app, &inner, "waiting to retry", Some(e)),
         }
         tokio::time::sleep(Duration::from_secs(backoff)).await;
         backoff = (backoff * 2).min(60);
@@ -384,6 +487,20 @@ mod tests {
         assert_eq!(buf.len(), 3);
         apply_bar(&mut buf, c(100, 9.0)); // an old bar is ignored
         assert_eq!(buf.len(), 3);
+    }
+
+    #[test]
+    fn live_candles_that_came_in_during_the_long_load_are_kept() {
+        let seed: Vec<Candle> = (0..5).map(|i| c(i * 900, 100.0 + i as f64)).collect();
+        // the live feed re-sent the seed's last candle with a newer close and added two more
+        let live = vec![c(4 * 900, 150.0), c(5 * 900, 151.0), c(6 * 900, 152.0)];
+        let m = merge_seed(seed.clone(), &live);
+        assert_eq!(m.len(), 7);
+        assert_eq!(m[4].close, 150.0);
+        assert_eq!(m.last().unwrap().open_time, 6 * 900);
+        // older live candles never overwrite the seed
+        assert_eq!(merge_seed(seed.clone(), &[c(0, 1.0)]).len(), 5);
+        assert_eq!(merge_seed(seed, &[c(0, 1.0)])[0].close, 100.0);
     }
 
     #[test]
