@@ -437,9 +437,13 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
           <div className="muted">
             ≈ {notional.toFixed(2)} USDT · {usedPct.toFixed(1)}%
           </div>
-          <label className="quick-ladder-check" title="Spread the entry over several orders (same switch as in the panel)">
-            <input type="checkbox" checked={lad.on} onChange={(e) => toggleLadder(e.target.checked)} /> Ladder
-          </label>
+          <div className="quick-ladder-row">
+            <label className="quick-ladder-check" title="Spread the entry over several orders (same switch as in the panel)">
+              <input type="checkbox" checked={lad.on} onChange={(e) => toggleLadder(e.target.checked)} /> Ladder
+            </label>
+            <input type="range" min={MIN_RUNGS} max={MAX_RUNGS} step={1} value={lad.count} disabled={!lad.on} title="Number of orders in the ladder (same setting as in the panel)" onChange={(e) => setLad((l) => ({ ...l, count: Number(e.target.value) }))} />
+            <b>{lad.on ? rungs.length : lad.count}</b>
+          </div>
         </div>
       )}
       <div className="quick-panel" onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>

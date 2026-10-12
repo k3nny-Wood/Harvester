@@ -1737,3 +1737,19 @@ button.mini {
 .quick-ladder-check input {
   margin: 0;
 }
+
+.quick-ladder-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.quick-ladder-row input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  pointer-events: auto;
+}
+.quick-ladder-row b {
+  min-width: 12px;
+  text-align: right;
+}
