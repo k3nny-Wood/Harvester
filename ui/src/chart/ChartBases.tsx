@@ -1,41 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Vela } from '@luxalgo/vela';
 import { api } from '../api';
+import { useBases, DEFAULT_BASES, type BasesConfig } from '../basesConfig';
 import { useChart } from '../chartStore';
+import { intervalMs } from '../intervals';
 import type { BaseView } from '../types';
 
 const HOLDING = '#4fa3ff';
 const CRACKED = 'rgba(79, 163, 255, 0.38)';
 const LEVEL = '#e0a33d';
-const KEY = 'harvester.bases.v2';
-
-/** How the bases are found and which ones are drawn. Remembered between runs. */
-export interface BasesConfig {
-  on: boolean;
-  /** a base needs a pump of at least this many times the coin's normal candle move: higher = fewer, bigger bases */
-  factor: number;
-  /** a crack is a break this far below the base, percent */
-  crackPct: number;
-  /** draw the bases price already broke through */
-  showBroken: boolean;
-  /** only bases within this % of the price (0 = all) */
-  maxDistancePct: number;
-  /** draw at most this many, the ones nearest to the price (0 = all) */
-  maxCount: number;
-}
-
-export const DEFAULT_BASES: BasesConfig = { on: true, factor: 3, crackPct: 0.5, showBroken: false, maxDistancePct: 15, maxCount: 8 };
-
-function load(): BasesConfig {
-  try {
-    const raw = window.localStorage.getItem(KEY);
-    if (raw) return { ...DEFAULT_BASES, ...(JSON.parse(raw) as Partial<BasesConfig>) };
-  } catch {
-    /* use the defaults */
-  }
-  return DEFAULT_BASES;
-}
-
 /** What to draw for one base: a horizontal ray while it holds (with its crack level), a short dim line once price broke it. */
 export interface BaseShape {
   key: string;
@@ -58,13 +31,16 @@ export function visibleBases(bases: BaseView[], cfg: Pick<BasesConfig, 'showBrok
   return kept.filter((b) => nearest.includes(b));
 }
 
-export function baseShapes(symbol: string, timeframe: string, bases: BaseView[]): BaseShape[] {
+/** `lengthCandles` of 0 leaves the line a ray to the edge of the chart (no end time). */
+export function baseShapes(symbol: string, timeframe: string, bases: BaseView[], lengthCandles = 0): BaseShape[] {
+  const step = intervalMs(timeframe);
+  const end = (from: number) => (lengthCandles > 0 ? from + lengthCandles * step : undefined);
   const out: BaseShape[] = [];
   for (const b of bases) {
-    const id = `base:${symbol}:${timeframe}:${b.time}`;
+    const id = `base:${symbol}:${timeframe}:${b.time}:L${lengthCandles}`;
     if (b.crackTime == null) {
-      out.push({ key: `${id}:hold`, kind: 'holding', time: b.time, price: b.price });
-      out.push({ key: `${id}:level`, kind: 'level', time: b.confirmTime, price: b.crackLevel });
+      out.push({ key: `${id}:hold`, kind: 'holding', time: b.time, endTime: end(b.time), price: b.price });
+      out.push({ key: `${id}:level`, kind: 'level', time: b.confirmTime, endTime: end(b.time), price: b.crackLevel });
     } else {
       out.push({ key: `${id}:cracked:${b.crackTime}`, kind: 'cracked', time: b.time, endTime: b.crackTime, price: b.price });
     }
@@ -82,21 +58,11 @@ export function ChartBases({ chart }: { chart: Vela | null }) {
   const symbol = useChart((s) => s.symbol);
   const timeframe = useChart((s) => s.timeframe);
   const last = useChart((s) => s.markPrice);
-  const [cfg, setCfg] = useState<BasesConfig>(load);
+  const cfg = useBases((st) => st.cfg);
+  const change = useBases((st) => st.change);
   const [open, setOpen] = useState(false);
   const [bases, setBases] = useState<BaseView[]>([]);
   const ids = useRef(new Map<string, string>());
-
-  const change = (patch: Partial<BasesConfig>) =>
-    setCfg((c) => {
-      const next = { ...c, ...patch };
-      try {
-        window.localStorage.setItem(KEY, JSON.stringify(next));
-      } catch {
-        /* not remembered */
-      }
-      return next;
-    });
 
   // the detector runs in Rust over the latest 1000 candles; asked again when the settings change and every 20 s
   useEffect(() => {
@@ -129,18 +95,16 @@ export function ChartBases({ chart }: { chart: Vela | null }) {
       if (all.length) chart.drawings.removeMany(all);
       ids.current.clear();
     };
-  }, [chart, symbol, timeframe, cfg.on]);
+  }, [chart, symbol, timeframe, cfg.on, cfg.lengthCandles]);
 
   useEffect(() => {
     if (!chart) return;
-    const shapes = cfg.on ? baseShapes(symbol, timeframe, shown) : [];
+    const shapes = cfg.on ? baseShapes(symbol, timeframe, shown, cfg.lengthCandles) : [];
     for (const s of shapes) {
       if (ids.current.has(s.key)) continue;
       const style = s.kind === 'holding' ? { lineColor: HOLDING, lineWidth: 2, lineStyle: 'solid' as const } : s.kind === 'level' ? { lineColor: LEVEL, lineWidth: 1, lineStyle: 'dotted' as const } : { lineColor: CRACKED, lineWidth: 1, lineStyle: 'dashed' as const };
-      const d =
-        s.kind === 'cracked'
-          ? chart.drawings.add('trendline', { paneId: 'price', anchors: [{ time: s.time, price: s.price }, { time: s.endTime ?? s.time, price: s.price }], style })
-          : chart.drawings.add('hray', { paneId: 'price', anchors: [{ time: s.time, price: s.price }], style });
+      // a segment when it has an end (broken bases, or a limited length), otherwise a ray to the edge of the chart
+      const d = s.endTime != null ? chart.drawings.add('trendline', { paneId: 'price', anchors: [{ time: s.time, price: s.price }, { time: s.endTime, price: s.price }], style }) : chart.drawings.add('hray', { paneId: 'price', anchors: [{ time: s.time, price: s.price }], style });
       if (d) ids.current.set(s.key, d.id);
     }
     const wanted = new Set(shapes.map((s) => s.key));
@@ -150,7 +114,7 @@ export function ChartBases({ chart }: { chart: Vela | null }) {
         ids.current.delete(key);
       }
     }
-  }, [chart, shown, cfg.on, symbol, timeframe]);
+  }, [chart, shown, cfg.on, cfg.lengthCandles, symbol, timeframe]);
 
   const holding = shown.filter((b) => b.crackTime == null).length;
   return (
@@ -170,7 +134,7 @@ export function ChartBases({ chart }: { chart: Vela | null }) {
               Volatility factor <b>{cfg.factor}</b>
             </span>
             <input type="range" min={0.5} max={8} step={0.25} value={cfg.factor} onChange={(e) => change({ factor: Number(e.target.value) })} />
-            <small>A base needs a pump of this many times the coin's normal candle move. Higher = fewer, bigger bases (V2 trades with 1).</small>
+            <small>A base needs a pump of this many times the coin's normal candle move. Higher = fewer, bigger bases (V2 trades with 1). Applies to every chart.</small>
           </label>
           <label>
             <span>
@@ -190,6 +154,12 @@ export function ChartBases({ chart }: { chart: Vela | null }) {
               Draw at most <b>{cfg.maxCount === 0 ? 'all' : `${cfg.maxCount} nearest`}</b>
             </span>
             <input type="range" min={0} max={40} step={1} value={cfg.maxCount} onChange={(e) => change({ maxCount: Number(e.target.value) })} />
+          </label>
+          <label>
+            <span>
+              Line length <b>{cfg.lengthCandles === 0 ? 'to the edge' : `${cfg.lengthCandles} candles`}</b>
+            </span>
+            <input type="range" min={0} max={200} step={5} value={cfg.lengthCandles} onChange={(e) => change({ lengthCandles: Number(e.target.value) })} />
           </label>
           <label className="check">
             <input type="checkbox" checked={cfg.showBroken} onChange={(e) => change({ showBroken: e.target.checked })} /> Also draw broken bases (dim)

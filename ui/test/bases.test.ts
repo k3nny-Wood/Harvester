@@ -10,6 +10,7 @@ describe('base shapes', () => {
     const s = baseShapes('BTCUSDT', '15m', [holding, cracked]);
     expect(s.map((x) => x.kind)).toEqual(['holding', 'level', 'cracked']);
     expect(s[0]).toMatchObject({ time: 1000, price: 100 });
+    expect(s[0].endTime).toBeUndefined(); // a ray to the edge when no length is set
     expect(s[1]).toMatchObject({ time: 2000, price: 99.5 });
     expect(s[2]).toMatchObject({ time: 500, endTime: 3000, price: 90 });
   });
@@ -39,5 +40,15 @@ describe('base shapes', () => {
     const many = [mk(99), mk(90), mk(97), mk(80), mk(95)];
     const got = visibleBases(many, { showBroken: false, maxDistancePct: 0, maxCount: 2 }, 100).map((b) => b.price);
     expect(got).toEqual([99, 97]);
+  });
+
+  it('a limited length ends the line that many candles after the base, for the line and its crack level', () => {
+    const s = baseShapes('X', '15m', [holding], 30);
+    const end = 1000 + 30 * 900_000;
+    expect(s.map((x) => x.endTime)).toEqual([end, end]);
+  });
+
+  it('the length is part of the key, so changing it redraws the lines', () => {
+    expect(baseShapes('X', '15m', [holding], 30)[0].key).not.toBe(baseShapes('X', '15m', [holding], 60)[0].key);
   });
 });

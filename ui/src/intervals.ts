@@ -24,3 +24,11 @@ export function velaToInterval(tf: string): string {
 export function intervalToVela(interval: string): string {
   return TIMEFRAMES.find((x) => x.interval === interval)?.vela ?? '15';
 }
+
+/** Length of one candle of a Binance interval ("15m", "4h", "1d") in milliseconds. */
+export function intervalMs(interval: string): number {
+  const m = /^(\d+)(m|h|d|w)$/.exec(interval);
+  if (!m) return 900_000;
+  const unit = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 }[m[2] as 'm' | 'h' | 'd' | 'w'];
+  return Number(m[1]) * unit;
+}
