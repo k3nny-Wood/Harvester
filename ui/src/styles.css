@@ -26,6 +26,20 @@ body,
   font: 13px/1.4 'Segoe UI', system-ui, sans-serif;
 }
 
+/* The app is a fixed window of docked panels: the page itself must never scroll (nothing below the UI, no rubber-banding). Panels scroll
+   inside themselves. Anything that overflows the window (a popup near an edge) is clipped, not scrolled to. */
+html,
+body {
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+#root {
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
 button,
 select,
 input {
@@ -67,6 +81,7 @@ kbd {
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: hidden;
 }
 
 .topbar {
