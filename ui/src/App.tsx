@@ -9,13 +9,13 @@ import { TIMEFRAMES } from './intervals';
 import { LadderPanel } from './panels/LadderPanel';
 import { OrdersPanel } from './panels/OrdersPanel';
 import { PlaceholderPanel } from './panels/PlaceholderPanel';
-import { PortfolioPanel } from './panels/PortfolioPanel';
+import { OpenOrdersPanel, OrderHistoryPanel, PositionsPanel, TradeHistoryPanel } from './panels/AccountPanels';
 import { SignalsPanel } from './panels/SignalsPanel';
 import { SymbolsPanel } from './panels/SymbolsPanel';
 import { useApp } from './store';
 import { startTradingPoll } from './trade';
 
-const LAYOUT_KEY = 'harvester.layout.v5';
+const LAYOUT_KEY = 'harvester.layout.v6';
 
 interface PanelDef {
   id: string;
@@ -30,7 +30,10 @@ const PANELS: PanelDef[] = [
   { id: 'signals', title: 'Signals', component: 'signals' },
   { id: 'ladder', title: 'Ladder', component: 'ladder' },
   { id: 'orders', title: 'Orders', component: 'orders' },
-  { id: 'portfolio', title: 'Portfolio', component: 'portfolio' },
+  { id: 'positions', title: 'Positions', component: 'positions' },
+  { id: 'openorders', title: 'Open orders', component: 'openorders' },
+  { id: 'orderhistory', title: 'Order history', component: 'orderhistory' },
+  { id: 'tradehistory', title: 'Trade history', component: 'tradehistory' },
 ];
 
 const components = {
@@ -39,7 +42,10 @@ const components = {
   signals: () => <SignalsPanel />,
   ladder: () => <LadderPanel />,
   orders: () => <OrdersPanel />,
-  portfolio: () => <PortfolioPanel />,
+  positions: () => <PositionsPanel />,
+  openorders: () => <OpenOrdersPanel />,
+  orderhistory: () => <OrderHistoryPanel />,
+  tradehistory: () => <TradeHistoryPanel />,
   placeholder: (p: IDockviewPanelProps<{ note: string }>) => <PlaceholderPanel {...p} />,
 };
 
@@ -62,13 +68,17 @@ function buildDefaultLayout(dock: DockviewApi) {
   addPanel(dock, by('signals'), { referencePanel: chartId, direction: 'right' });
   addPanel(dock, by('orders'), { referencePanel: 'signals', direction: 'below' });
   addPanel(dock, by('ladder'), { referencePanel: 'orders', direction: 'within' });
-  addPanel(dock, by('portfolio'), { referencePanel: chartId, direction: 'below' });
+  addPanel(dock, by('positions'), { referencePanel: chartId, direction: 'below' });
+  addPanel(dock, by('openorders'), { referencePanel: 'positions', direction: 'within' });
+  addPanel(dock, by('orderhistory'), { referencePanel: 'positions', direction: 'within' });
+  addPanel(dock, by('tradehistory'), { referencePanel: 'positions', direction: 'within' });
+  dock.getPanel('positions')?.api.setActive();
   dock.getPanel('orders')?.api.setActive(); // the order form is what the trader needs in view
   dock.getPanel(chartId)?.api.setActive();
   try {
     dock.getPanel('symbols')?.api.setSize({ width: 280 });
     dock.getPanel('signals')?.api.setSize({ width: 450, height: 440 });
-    dock.getPanel('portfolio')?.api.setSize({ height: 190 });
+    dock.getPanel('positions')?.api.setSize({ height: 230 });
   } catch {
     /* sizes are a nicety */
   }
@@ -112,10 +122,18 @@ export function App() {
   const ladderPhase = useActiveChart((s) => s.ladder.phase) ?? 'idle';
   const env = useApp((s) => s.env);
   const setEnv = useApp((s) => s.setEnv);
+  const account = useApp((s) => s.account);
+  const openOrders = useApp((s) => s.orders);
   const toasts = useApp((s) => s.toasts);
   const dismiss = useApp((s) => s.dismissToast);
 
   useScannerEvents();
+  useEffect(() => {
+    const dock = dockRef.current;
+    if (!dock) return;
+    dock.getPanel('positions')?.api.setTitle(`Positions${account ? ` (${account.positions.length})` : ''}`);
+    dock.getPanel('openorders')?.api.setTitle(`Open orders${account ? ` (${openOrders.length})` : ''}`);
+  }, [account, openOrders.length, open]);
   useEffect(() => startTradingPoll(), []);
 
   useEffect(() => {
@@ -195,6 +213,19 @@ export function App() {
           ☰ Ladder <kbd>L</kbd>
         </button>
         <div className="spacer" />
+        {account && (
+          <div className="balances" title="Futures account (USDT)">
+            <span>
+              Wallet <b>{account.walletBalance.toFixed(2)}</b>
+            </span>
+            <span>
+              Available <b>{account.availableBalance.toFixed(2)}</b>
+            </span>
+            <span>
+              uPnL <b className={account.unrealizedPnl >= 0 ? 'up' : 'down'}>{account.unrealizedPnl.toFixed(2)}</b>
+            </span>
+          </div>
+        )}
         <button
           className={`env ${env}`}
           title="Switch between the testnet and live exchange"

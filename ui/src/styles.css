@@ -948,3 +948,76 @@ table.rungs tr.bad td {
 .of-summary {
   grid-template-columns: 1fr 1fr;
 }
+
+/* account tabs */
+.panel.tbl {
+  overflow: auto;
+}
+.balances {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.balances b {
+  color: var(--text);
+  margin-left: 3px;
+}
+.hist-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 2;
+}
+.hist-bar button {
+  padding: 1px 8px;
+  font-size: 11px;
+}
+.hist-bar button.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.hist-bar .spacer {
+  flex: 1;
+}
+.pf-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 11px;
+}
+.hist-bar + .pf-table thead th {
+  top: 33px;
+}
+button.mini {
+  padding: 0 6px;
+  font-size: 11px;
+}
+.panel.tbl .pf-table td,
+.panel.tbl .pf-table th {
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+.panel.tbl .pf-table td a {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.sym-link {
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+}
+.sym-link:hover {
+  text-decoration: underline;
+}

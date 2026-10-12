@@ -126,6 +126,45 @@ pub struct OpenOrder {
     pub conditional: bool,
 }
 
+/// One order from the account's history (any final or partial state).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderRecord {
+    pub order_id: i64,
+    pub symbol: String,
+    pub side: String,
+    #[serde(rename = "type")]
+    pub order_type: String,
+    pub status: String,
+    pub price: f64,
+    pub stop_price: f64,
+    pub avg_price: f64,
+    pub orig_qty: f64,
+    pub executed_qty: f64,
+    pub reduce_only: bool,
+    pub time: u64,
+    pub update_time: u64,
+    pub conditional: bool,
+}
+
+/// One fill from the account's trade history.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TradeRecord {
+    pub id: i64,
+    pub order_id: i64,
+    pub symbol: String,
+    pub side: String,
+    pub price: f64,
+    pub qty: f64,
+    pub quote_qty: f64,
+    pub realized_pnl: f64,
+    pub commission: f64,
+    pub commission_asset: String,
+    pub maker: bool,
+    pub time: u64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LeverageInfo {
@@ -285,6 +324,80 @@ pub fn parse_algo_orders(v: &Value) -> Vec<OpenOrder> {
             conditional: true,
         })
         .collect()
+}
+
+pub fn parse_order_history(v: &Value) -> Vec<OrderRecord> {
+    v.as_array()
+        .map(|a| {
+            a.iter()
+                .map(|o| OrderRecord {
+                    order_id: o["orderId"].as_i64().unwrap_or(0),
+                    symbol: text(&o["symbol"]),
+                    side: text(&o["side"]),
+                    order_type: text(&o["type"]),
+                    status: text(&o["status"]),
+                    price: num(&o["price"]),
+                    stop_price: num(&o["stopPrice"]),
+                    avg_price: num(&o["avgPrice"]),
+                    orig_qty: num(&o["origQty"]),
+                    executed_qty: num(&o["executedQty"]),
+                    reduce_only: o["reduceOnly"].as_bool().unwrap_or(false),
+                    time: o["time"].as_u64().unwrap_or(0),
+                    update_time: o["updateTime"].as_u64().unwrap_or(0),
+                    conditional: false,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Finished stop / take-profit orders from `/fapi/v1/allAlgoOrders`.
+pub fn parse_algo_history(v: &Value) -> Vec<OrderRecord> {
+    let arr = if v.is_array() { v.as_array().cloned().unwrap_or_default() } else { v["orders"].as_array().cloned().unwrap_or_default() };
+    arr.iter()
+        .map(|o| OrderRecord {
+            order_id: o["algoId"].as_i64().unwrap_or(0),
+            symbol: text(&o["symbol"]),
+            side: text(&o["side"]),
+            order_type: {
+                let t = text(&o["orderType"]);
+                if t.is_empty() { text(&o["type"]) } else { t }
+            },
+            status: text(&o["algoStatus"]),
+            price: num(&o["price"]),
+            stop_price: num(&o["triggerPrice"]),
+            avg_price: num(&o["actualPrice"]),
+            orig_qty: num(&o["quantity"]),
+            executed_qty: 0.0,
+            reduce_only: o["reduceOnly"].as_bool().unwrap_or(false) || matches!(&o["reduceOnly"], Value::String(s) if s == "true"),
+            time: o["createTime"].as_u64().unwrap_or(0),
+            update_time: o["updateTime"].as_u64().or_else(|| o["createTime"].as_u64()).unwrap_or(0),
+            conditional: true,
+        })
+        .collect()
+}
+
+pub fn parse_trade_history(v: &Value) -> Vec<TradeRecord> {
+    v.as_array()
+        .map(|a| {
+            a.iter()
+                .map(|t| TradeRecord {
+                    id: t["id"].as_i64().unwrap_or(0),
+                    order_id: t["orderId"].as_i64().unwrap_or(0),
+                    symbol: text(&t["symbol"]),
+                    side: text(&t["side"]),
+                    price: num(&t["price"]),
+                    qty: num(&t["qty"]),
+                    quote_qty: num(&t["quoteQty"]),
+                    realized_pnl: num(&t["realizedPnl"]),
+                    commission: num(&t["commission"]),
+                    commission_asset: text(&t["commissionAsset"]),
+                    maker: t["maker"].as_bool().unwrap_or(false),
+                    time: t["time"].as_u64().unwrap_or(0),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The highest initial leverage in a `leverageBracket` answer.
@@ -451,6 +564,25 @@ impl Trading {
         if let Ok(v) = self.signed(reqwest::Method::GET, "/fapi/v1/openAlgoOrders", params()).await {
             out.extend(parse_algo_orders(&v));
         }
+        Ok(out)
+    }
+
+    /// Order history of one symbol (newest first), stops and take-profits included. Binance requires the symbol.
+    pub async fn order_history(&self, symbol: &str, limit: u32) -> Result<Vec<OrderRecord>, String> {
+        let q = |l: u32| vec![("symbol".to_string(), symbol.to_string()), ("limit".to_string(), l.to_string())];
+        let mut out = parse_order_history(&self.signed(reqwest::Method::GET, "/fapi/v1/allOrders", q(limit.clamp(1, 500))).await?);
+        if let Ok(v) = self.signed(reqwest::Method::GET, "/fapi/v1/allAlgoOrders", q(limit.clamp(1, 100))).await {
+            out.extend(parse_algo_history(&v));
+        }
+        out.sort_by(|a, b| b.time.cmp(&a.time));
+        Ok(out)
+    }
+
+    /// Fills of one symbol (newest first).
+    pub async fn trade_history(&self, symbol: &str, limit: u32) -> Result<Vec<TradeRecord>, String> {
+        let v = self.signed(reqwest::Method::GET, "/fapi/v1/userTrades", vec![("symbol".to_string(), symbol.to_string()), ("limit".to_string(), limit.clamp(1, 1000).to_string())]).await?;
+        let mut out = parse_trade_history(&v);
+        out.sort_by(|a, b| b.time.cmp(&a.time).then(b.id.cmp(&a.id)));
         Ok(out)
     }
 
@@ -705,6 +837,16 @@ mod tests {
         assert!(o[0].conditional && o[0].order_id == 99 && o[0].stop_price == 2900.0 && o[0].order_type == "STOP_MARKET");
         let m = parse_max_leverage(&json!([{"symbol": "ETHUSDT", "brackets": [{"bracket": 1, "initialLeverage": 100}, {"bracket": 2, "initialLeverage": 50}]}]));
         assert_eq!(m, Some(100));
+    }
+
+    #[test]
+    fn parses_order_and_trade_history() {
+        let o = parse_order_history(&json!([{"orderId": 5, "symbol": "ETHUSDT", "side": "BUY", "type": "LIMIT", "status": "FILLED", "price": "3000", "avgPrice": "2999.5", "origQty": "0.5", "executedQty": "0.5", "reduceOnly": false, "time": 1700000000000u64, "updateTime": 1700000005000u64, "stopPrice": "0"}]));
+        assert_eq!((o[0].status.as_str(), o[0].avg_price, o[0].executed_qty), ("FILLED", 2999.5, 0.5));
+        let a = parse_algo_history(&json!([{"algoId": 9, "symbol": "ETHUSDT", "side": "SELL", "orderType": "STOP_MARKET", "algoStatus": "CANCELED", "triggerPrice": "2900", "quantity": "0.5", "createTime": 1700000100000u64}]));
+        assert!(a[0].conditional && a[0].status == "CANCELED" && a[0].stop_price == 2900.0);
+        let t = parse_trade_history(&json!([{"id": 11, "orderId": 5, "symbol": "ETHUSDT", "side": "BUY", "price": "2999.5", "qty": "0.5", "quoteQty": "1499.75", "realizedPnl": "0", "commission": "0.3", "commissionAsset": "USDT", "maker": true, "time": 1700000005000u64}]));
+        assert_eq!((t[0].qty, t[0].commission, t[0].maker), (0.5, 0.3, true));
     }
 
     #[test]

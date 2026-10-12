@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useActiveChart } from '../chartStore';
+import { openChart } from '../dock';
 import { snapToTick } from '../ladderMath';
 import { useApp } from '../store';
 import { orderFromForm, quantityFor, refreshTrading, submitOrder } from '../trade';
@@ -158,7 +159,9 @@ export function OrdersPanel() {
         </button>
       </div>
       <div className="of-sym">
-        <b>{symbol}</b>
+        <a className="sym-link" title="Bring up this symbol's chart" onClick={() => openChart(symbol)}>
+          {symbol}
+        </a>
         <span className="muted">
           last <b>{mark ? mark.toFixed(precision) : '…'}</b> · available <b>{available.toFixed(2)}</b> USDT
         </span>

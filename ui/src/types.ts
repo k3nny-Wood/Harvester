@@ -211,3 +211,35 @@ export interface OrderAck {
   price: number | null;
   conditional: boolean;
 }
+
+export interface OrderRecord {
+  orderId: number;
+  symbol: string;
+  side: Side;
+  type: string;
+  status: string;
+  price: number;
+  stopPrice: number;
+  avgPrice: number;
+  origQty: number;
+  executedQty: number;
+  reduceOnly: boolean;
+  time: number;
+  updateTime: number;
+  conditional: boolean;
+}
+
+export interface TradeRecord {
+  id: number;
+  orderId: number;
+  symbol: string;
+  side: Side;
+  price: number;
+  qty: number;
+  quoteQty: number;
+  realizedPnl: number;
+  commission: number;
+  commissionAsset: string;
+  maker: boolean;
+  time: number;
+}
