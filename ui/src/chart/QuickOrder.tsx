@@ -9,6 +9,8 @@ import { refreshTrading } from '../trade';
 import type { OrderAck, OrderRequest, Side } from '../types';
 import { getProjector } from './projector';
 
+const TAG_W = 104;
+
 type Which = 'entry' | 'tp' | 'sl';
 
 interface Quick {
@@ -277,13 +279,20 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
   };
 
   const colorE = long ? '#2e9b6f' : '#d0454b';
-  const line = (which: Which, y: number | null, color: string, label: string) =>
+  const line = (which: Which, y: number | null, color: string, label: string, tag: string) =>
     y == null ? null : (
       <g key={which}>
         <line x1={offX} x2={offX + plotW} y1={y} y2={y} stroke={color} strokeWidth={drag === which ? 2.4 : 1.4} strokeDasharray={which === 'entry' ? undefined : '6 4'} />
         <line className="quick-hit" x1={offX} x2={offX + plotW} y1={y} y2={y} stroke="transparent" strokeWidth={14} onPointerDown={(e) => startDrag(e, which)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={() => setDrag(null)}>
           <title>Drag to move</title>
         </line>
+        <g className="line-tag drag" transform={`translate(${offX + plotW - TAG_W - 2}, ${y - 9})`} onPointerDown={(e) => startDrag(e, which)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={() => setDrag(null)}>
+          <rect width={TAG_W} height={18} rx={3} fill="#0f1620" stroke={color} strokeWidth={drag === which ? 2 : 1} />
+          <text x={TAG_W / 2} y={12.5} textAnchor="middle" fill={color}>
+            {tag}
+          </text>
+          <title>Grab to move</title>
+        </g>
         <text x={offX + 8} y={y - 4} className="trade-label" fill={color}>
           {label}
         </text>
@@ -311,9 +320,9 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
       <svg className="trade-svg">
         {yE != null && yT != null && clampY(yE) != null && <rect x={offX} width={plotW} y={Math.min(clampY(yE)!, clampY(yT)!)} height={Math.abs(clampY(yE)! - clampY(yT)!)} fill="rgba(46, 155, 111, 0.10)" />}
         {yE != null && yS != null && <rect x={offX} width={plotW} y={Math.min(clampY(yE)!, clampY(yS)!)} height={Math.abs(clampY(yE)! - clampY(yS)!)} fill="rgba(208, 69, 75, 0.10)" />}
-        {line('tp', yT, '#2e9b6f', `TP ${formatPrice(q.tp, precision)} (${fromEntry(q.tp)}%)`)}
-        {line('sl', yS, '#d0454b', `SL ${formatPrice(q.sl, precision)} (${fromEntry(q.sl)}%)`)}
-        {line('entry', yE, colorE, `${long ? 'LONG' : 'SHORT'} ${kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'} @ ${formatPrice(q.entry, precision)}`)}
+        {line('tp', yT, '#2e9b6f', `TP ${formatPrice(q.tp, precision)} (${fromEntry(q.tp)}%)`, 'TAKE PROFIT')}
+        {line('sl', yS, '#d0454b', `SL ${formatPrice(q.sl, precision)} (${fromEntry(q.sl)}%)`, 'STOP LOSS')}
+        {line('entry', yE, colorE, `${long ? 'LONG' : 'SHORT'} ${kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'} @ ${formatPrice(q.entry, precision)}`, `${long ? 'LONG' : 'SHORT'} ${kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'}`)}
       </svg>
       <div className="quick-panel" onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
         <div className="quick-title">

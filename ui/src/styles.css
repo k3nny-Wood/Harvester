@@ -1606,7 +1606,7 @@ button.mini {
 .quick-panel {
   position: absolute;
   top: 44px;
-  right: 76px;
+  left: 64px;
   width: 290px;
   max-height: calc(100% - 56px);
   overflow-y: auto;
@@ -1681,4 +1681,18 @@ button.mini {
 .quick-actions .primary.sell {
   background: #d0454b;
   color: #fff;
+}
+
+/* the box at the right end of a chart line: its name, and the handle to drag an order with */
+.line-tag {
+  pointer-events: auto;
+}
+.line-tag.drag {
+  cursor: ns-resize;
+}
+.line-tag text {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
 }

@@ -10,10 +10,16 @@ import { fitMenu, type MenuPlacement } from '../menuFit';
 import { closeOrder, maxPct, notionalOfForm, pctFromNotional, sizeFromPct } from '../sizing';
 import { useLiveMarks } from '../liveMarks';
 import { orderFromForm, refreshTrading, submitOrder } from '../trade';
+import { orderTag } from './lineTags';
 import { getProjector } from './projector';
+
+/** Width of the box at the right end of a line: its name, and the handle to drag the order with. */
+const TAG_W = 104;
 
 interface Line {
   key: string;
+  /** the box's text: what this line is */
+  tag?: string;
   y: number;
   color: string;
   label: string;
@@ -144,6 +150,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
       if (!at) continue;
       lines.push({
         key: `o${o.orderId}`,
+        tag: orderTag(o),
         y: at.y,
         pinned: at.pinned,
         price: p,
@@ -165,6 +172,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
       if (!at) continue;
       lines.push({
         key: `h${h.id}`,
+        tag: `HELD ${h.request.side} LIMIT`,
         y: at.y,
         pinned: at.pinned,
         price: hp,
@@ -185,9 +193,9 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
       const lv = pos.leverage || account?.leverages?.[symbol] || 0;
       const initial = lv > 0 ? (Math.abs(pos.amount) * pos.entryPrice) / lv : 0;
       const roe = initial > 0 ? `  ROE ${pnl >= 0 ? '+' : ''}${((pnl / initial) * 100).toFixed(2)}%` : '';
-      if (ye != null) lines.push({ key: 'pos', y: ye, color: '#3b8fd6', label: `${pos.amount > 0 ? 'LONG' : 'SHORT'} ${pos.amount} @ ${formatPrice(pos.entryPrice, precision)}  PNL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}${roe}`, dashed: false });
+      if (ye != null) lines.push({ key: 'pos', tag: pos.amount > 0 ? 'LONG' : 'SHORT', y: ye, color: '#3b8fd6', label: `${pos.amount > 0 ? 'LONG' : 'SHORT'} ${pos.amount} @ ${formatPrice(pos.entryPrice, precision)}  PNL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}${roe}`, dashed: false });
       const yl = pos.liquidationPrice > 0 ? yOf(pos.liquidationPrice) : null;
-      if (yl != null) lines.push({ key: 'liq', y: yl, color: '#e0a33d', label: `LIQ ${formatPrice(pos.liquidationPrice, precision)}`, dashed: true });
+      if (yl != null) lines.push({ key: 'liq', tag: 'LIQUIDATION', y: yl, color: '#e0a33d', label: `LIQ ${formatPrice(pos.liquidationPrice, precision)}`, dashed: true });
     }
   }
   // the parts of the chart where a limit order would be refused (percent-price band), as shaded zones with the edge price
@@ -384,7 +392,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
               <line
                 className="order-hit"
                 x1={offX}
-                x2={offX + plotW - 90}
+                x2={offX + plotW - TAG_W - 30}
                 y1={l.y}
                 y2={l.y}
                 stroke="transparent"
@@ -397,13 +405,29 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
                 <title>{l.heldId != null ? 'Drag to move this held order (it is kept on this computer)' : 'Drag to move this order'}</title>
               </line>
             )}
-            <text x={l.pinned ? offX + plotW - 90 : offX + 8} y={l.y - 4} textAnchor={l.pinned ? 'end' : 'start'} className="trade-label" fill={l.color}>
+            {l.tag && (
+              <g
+                className={l.orderId != null || l.heldId != null ? 'line-tag drag' : 'line-tag'}
+                transform={`translate(${offX + plotW - TAG_W - 2}, ${l.y - 9})`}
+                onPointerDown={(e) => startDrag(e, l)}
+                onPointerMove={moveDrag}
+                onPointerUp={(e) => void endDrag(e)}
+                onPointerCancel={() => setDrag(null)}
+              >
+                <rect width={TAG_W} height={18} rx={3} fill="#0f1620" stroke={l.color} strokeWidth={l.dragging ? 2 : 1} />
+                <text x={TAG_W / 2} y={12.5} textAnchor="middle" fill={l.color}>
+                  {l.tag}
+                </text>
+                <title>{l.orderId != null || l.heldId != null ? 'Grab to move this order up or down' : l.tag}</title>
+              </g>
+            )}
+            <text x={l.pinned ? offX + plotW - TAG_W - 8 : offX + 8} y={l.y - 4} textAnchor={l.pinned ? 'end' : 'start'} className="trade-label" fill={l.color}>
               {l.label}
             </text>
             {l.heldId != null && (
               <g
                 className="cancel-x"
-                transform={`translate(${offX + plotW - 70}, ${l.y})`}
+                transform={`translate(${offX + plotW - TAG_W - 16}, ${l.y})`}
                 onClick={() =>
                   void api
                     .heldCancel(l.heldId!)
@@ -421,7 +445,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
             {l.orderId != null && (
               <g
                 className="cancel-x"
-                transform={`translate(${offX + plotW - 70}, ${l.y})`}
+                transform={`translate(${offX + plotW - TAG_W - 16}, ${l.y})`}
                 onClick={() =>
                   void api
                     .cancelOrder(symbol, l.orderId!, l.conditional)
