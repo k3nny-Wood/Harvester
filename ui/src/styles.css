@@ -1702,7 +1702,7 @@ button.mini {
   position: absolute;
   /* the box itself lets clicks through to whatever is under it; only the slider is grabbable */
   pointer-events: none;
-  background: #0f1620;
+  background: rgba(15, 22, 32, 0.45);
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 3px 6px 4px;
