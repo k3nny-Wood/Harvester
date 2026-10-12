@@ -25,6 +25,7 @@ export const api = {
   placeOrder: (order: OrderRequest) => invoke<OrderAck>('place_order', { order }),
   placeOrders: (orders: OrderRequest[]) => invoke<Array<{ Ok: OrderAck } | { Err: string }>>('place_orders', { orders }),
   heldList: () => invoke<HeldOrder[]>('held_list'),
+  moveToHeld: (symbol: string, orderId: number, price: number) => invoke<OrderAck>('move_to_held', { symbol, orderId, price }),
   heldCancel: (id: string) => invoke<boolean>('held_cancel', { id }),
   heldMove: (id: string, price: number) => invoke<void>('held_move', { id, price }),
   cancelOrder: (symbol: string, orderId: number, conditional = false) => invoke<void>('cancel_order', { symbol, orderId, conditional }),

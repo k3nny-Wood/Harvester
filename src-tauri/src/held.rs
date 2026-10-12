@@ -212,6 +212,36 @@ pub async fn place_many_or_hold(trading: &Arc<Trading>, store: &HeldStore, reqs:
     Ok(results.into_iter().map(|r| r.unwrap_or_else(|| Err("not sent".into()))).collect())
 }
 
+/// Take an order that is resting on Binance and move it beyond the price band: it is held on this computer at `new_price` and cancelled on
+/// the exchange. The held copy is made FIRST, so a failure never loses the order: if the cancel is refused (it filled in the meantime) the
+/// held copy is removed again and the error is returned.
+pub async fn move_to_held(trading: &Arc<Trading>, store: &HeldStore, symbol: &str, order_id: i64, new_price: f64) -> Result<OrderAck, String> {
+    let open = trading.open_orders(Some(symbol)).await?;
+    let o = open.into_iter().find(|o| o.order_id == order_id && !o.conditional).ok_or("That order is no longer open on the exchange.")?;
+    if o.order_type != "LIMIT" {
+        return Err(format!("Only limit orders can be held here, this one is a {}.", o.order_type));
+    }
+    let filters = trading.market().symbol_filters(symbol).await?;
+    let mark = trading.market().mark_price(symbol).await?;
+    let rounded = harvester_core::decimal::to_f64(filters.round_price(new_price));
+    if !outside_band(rounded, mark, &filters) {
+        return Err("That price is inside Binance's range: move the order normally.".into());
+    }
+    let remaining = o.orig_qty - o.executed_qty;
+    if !(remaining > 0.0) {
+        return Err("Nothing is left of that order to move.".into());
+    }
+    let side = if o.side == "BUY" { crate::trading::Side::Buy } else { crate::trading::Side::Sell };
+    let req = OrderRequest { symbol: symbol.to_string(), side, order_type: OrderType::Limit, quantity: remaining, price: Some(rounded), stop_price: None, post_only: false, reduce_only: o.reduce_only, client_id: None };
+    let (qty, _, _) = crate::trading::prepare(&req, &filters, rounded, trading.max_notional())?;
+    let held = store.add(trading.env(), OrderRequest { quantity: harvester_core::decimal::to_f64(qty), ..req })?;
+    if let Err(e) = trading.cancel(symbol, order_id, false).await {
+        store.cancel(&held.id);
+        return Err(format!("The order could not be cancelled on Binance (it may have filled): {e}"));
+    }
+    Ok(held_ack(&held, Some(rounded)))
+}
+
 /// The watcher: every few seconds, send every waiting order whose price the band has reached.
 pub fn start(app: AppHandle, trading: Arc<Trading>, store: Arc<HeldStore>) {
     tauri::async_runtime::spawn(async move {

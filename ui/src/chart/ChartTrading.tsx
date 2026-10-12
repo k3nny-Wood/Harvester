@@ -5,7 +5,7 @@ import type { OpenOrder } from '../types';
 import { useChart, useChartId } from '../chartStore';
 import { formatPrice, snapToTick } from '../ladderMath';
 import { useApp } from '../store';
-import { clampToBand, priceBand } from '../priceBand';
+import { priceBand } from '../priceBand';
 import { orderFromForm, refreshTrading, submitOrder } from '../trade';
 import { getProjector } from './projector';
 
@@ -145,7 +145,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
         price: p,
         color: o.side === 'BUY' ? BUY : SELL,
         label: dragging
-          ? `${o.side} ${o.type.replace(/_/g, ' ')} ${o.origQty} → ${formatPrice(p, precision)}${mark > 0 ? `  (${((p / mark - 1) * 100).toFixed(2)}% from last)` : ''}  · release to move`
+          ? `${o.side} ${o.type.replace(/_/g, ' ')} ${o.origQty} → ${formatPrice(p, precision)}${mark > 0 ? `  (${((p / mark - 1) * 100).toFixed(2)}% from last)` : ''}  · ${!o.conditional && band && (p > band.high || p < band.low) ? 'beyond Binance\'s range: release to hold it here instead' : 'release to move'}`
           : `${at.pinned === 'up' ? '▲ ' : at.pinned === 'down' ? '▼ ' : ''}${o.side} ${o.type.replace(/_/g, ' ')} ${o.origQty} @ ${formatPrice(p, precision)}${o.conditional && o.price ? ` (trigger ${formatPrice(o.stopPrice, precision)})` : ''}`,
         orderId: o.orderId,
         conditional: o.conditional,
@@ -218,9 +218,8 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
       setDrag({ ...drag, to: raw });
       return;
     }
-    // a limit price outside the exchange's band is refused, so the line stops at the edge; stop triggers are free to go anywhere
-    const isStop = useApp.getState().orders.some((x) => x.orderId === drag.orderId && x.conditional === drag.conditional && x.conditional);
-    setDrag({ ...drag, to: isStop ? raw : clampToBand(raw, band) });
+    // a limit order can be dragged anywhere: beyond Binance's range it is cancelled there and kept here instead (a held order)
+    setDrag({ ...drag, to: raw });
   };
   const endDrag = async (e: React.PointerEvent) => {
     const d = drag;
@@ -247,6 +246,17 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
     }
     const o: OpenOrder | undefined = useApp.getState().orders.find((x) => x.orderId === d.orderId && x.conditional === d.conditional);
     if (!o) return;
+    // beyond the exchange's range: cancel it on Binance and keep it on this computer until the range reaches it
+    if (!o.conditional && band && (d.to > band.high || d.to < band.low)) {
+      try {
+        const ack = await api.moveToHeld(o.symbol, o.orderId, d.to);
+        toast(`Moved ${o.side} LIMIT to ${formatPrice(ack.price ?? d.to, precision)}: it was cancelled on Binance and is held on this computer until the price comes within range (Harvester must be open).`, 'info');
+      } catch (err) {
+        toast(`Could not hold the order: ${err}`, 'warn');
+      }
+      void refreshTrading();
+      return;
+    }
     const delta = d.to - (o.price || o.stopPrice);
     const price = o.conditional ? (o.price ? o.price + delta : undefined) : d.to;
     const stopPrice = o.conditional ? o.stopPrice + delta : undefined;

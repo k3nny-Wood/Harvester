@@ -107,6 +107,12 @@ fn held_list(state: State<'_, AppState>) -> Vec<HeldOrder> {
     state.held.list(state.trading.env())
 }
 
+/// Move a limit order that rests on Binance to a price beyond its range: it is held on this computer and cancelled on the exchange.
+#[tauri::command]
+async fn move_to_held(state: State<'_, AppState>, symbol: String, order_id: i64, price: f64) -> Result<OrderAck, String> {
+    held::move_to_held(&state.trading, &state.held, &symbol, order_id, price).await
+}
+
 #[tauri::command]
 fn held_cancel(state: State<'_, AppState>, id: String) -> bool {
     state.held.cancel(&id)
@@ -237,7 +243,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
             qfl_zones, smc_zones_cmd, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
-            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
+            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");
