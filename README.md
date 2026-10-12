@@ -48,8 +48,7 @@ Every chart tab has a **Pine** button (top left of the chart) and a `/` quick pi
 The **Bases** button (top left of every chart, next to Pine) draws the QFL bases of the symbol and timeframe: a bright line running right from
 the candle where a base formed, with its crack level dotted below it. The gear opens the settings: **volatility factor** (how big a pump must be
 to make a base; higher = fewer, bigger bases), crack %, only bases within N% of the price, at most N nearest bases, how many candles a line runs to the
-right (0 = a ray to the edge), **merging** (bases within N% of each other become one thicker line starting at the oldest), and whether to also draw broken
-bases (dim, ending at the crack). The settings are shared by every chart. Resting the pointer on a **signal thumbnail** opens a larger chart with the bases
+right (0 = a ray to the edge), **merging** (bases within N% of each other become one thicker line starting at the oldest), and whether broken bases stay on the chart (they do by default: dim, ending at the crack; the distance and count limits only thin out bases that still hold). The settings are shared by every chart. Resting the pointer on a **signal thumbnail** opens a larger chart with the bases
 (merged, nearest first) and the signal's own base highlighted. The defaults (factor 3.5,
 15% of price, 8 nearest, 30 candles) keep the chart readable; V2 itself trades with factor 1.
 
