@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import { useActiveChart } from '../chartStore';
+import { openChart, showSymbol } from '../dock';
 import { useApp } from '../store';
 
 function compact(n: number): string {
@@ -12,8 +14,7 @@ function compact(n: number): string {
 export function SymbolsPanel() {
   const symbols = useApp((s) => s.symbols);
   const setSymbols = useApp((s) => s.setSymbols);
-  const current = useApp((s) => s.symbol);
-  const setSymbol = useApp((s) => s.setSymbol);
+  const current = useActiveChart((s) => s.symbol) ?? '';
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -48,7 +49,13 @@ export function SymbolsPanel() {
       {error && <div className="warn pad">{error}</div>}
       <div className="symbol-list">
         {rows.map((s) => (
-          <button key={s.symbol} className={`symbol-row${s.symbol === current ? ' active' : ''}`} onClick={() => setSymbol(s.symbol)}>
+          <button
+            key={s.symbol}
+            className={`symbol-row${s.symbol === current ? ' active' : ''}`}
+            title="Click: show in this chart. Ctrl+click or double-click: open in a new tab"
+            onClick={(e) => (e.ctrlKey ? openChart(s.symbol, undefined, true) : showSymbol(s.symbol))}
+            onDoubleClick={() => openChart(s.symbol, undefined, true)}
+          >
             <span className="sym">{s.symbol.replace('USDT', '')}</span>
             <span className="px">{s.lastPrice}</span>
             <span className={s.changePercent24h >= 0 ? 'up' : 'down'}>{s.changePercent24h.toFixed(2)}%</span>

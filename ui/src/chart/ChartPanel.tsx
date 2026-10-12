@@ -1,28 +1,67 @@
 import { useEffect, useRef, useState } from 'react';
+import type { IDockviewPanelProps } from 'dockview-react';
 import { Vela } from '@luxalgo/vela';
 import { api, onKline } from '../api';
+import { ChartContext, chartRegistry, createChartStore, useChart, type ChartStore } from '../chartStore';
+import { getDock } from '../dock';
 import { intervalToVela } from '../intervals';
 import { useApp } from '../store';
 import { DRAWING_GROUPS } from './drawingTools';
-import { HarvesterProvider } from './provider';
 import { LadderOverlay } from './LadderOverlay';
+import { HarvesterProvider } from './provider';
 
-declare global {
-  interface Window {
-    __velaChart?: Vela;
-  }
+interface ChartParams {
+  symbol?: string;
+  timeframe?: string;
 }
 
-export function ChartPanel() {
+/** One chart tab: its own store (symbol, timeframe, ladder draft), its own Vela instance. */
+export function ChartPanel(props: IDockviewPanelProps<ChartParams>) {
+  const id = props.api.id;
+  const [store] = useState<ChartStore>(() => createChartStore(props.params?.symbol ?? 'BTCUSDT', props.params?.timeframe ?? '15m'));
+  const setActive = useApp((s) => s.setActiveChart);
+
+  useEffect(() => {
+    chartRegistry.set(id, store);
+    if (props.api.isActive || !useApp.getState().activeChartId) setActive(id);
+    const sub = props.api.onDidActiveChange((e) => e.isActive && setActive(id));
+    // keep the tab title and the saved layout in step with what the chart shows
+    const unsub = store.subscribe((s, prev) => {
+      if (s.symbol !== prev.symbol || s.timeframe !== prev.timeframe) {
+        props.api.setTitle(`${s.symbol} ${s.timeframe}`);
+        try {
+          getDock()?.getPanel(id)?.update({ params: { symbol: s.symbol, timeframe: s.timeframe } });
+        } catch {
+          /* the title is what matters */
+        }
+      }
+    });
+    props.api.setRenderer('always');
+    return () => {
+      sub.dispose();
+      unsub();
+      chartRegistry.delete(id);
+      if (useApp.getState().activeChartId === id) setActive([...chartRegistry.keys()][0] ?? '');
+    };
+  }, [id, store, props.api, setActive]);
+
+  return (
+    <ChartContext.Provider value={{ id, store }}>
+      <ChartBody />
+    </ChartContext.Provider>
+  );
+}
+
+function ChartBody() {
   const ref = useRef<HTMLDivElement>(null);
   const [chart, setChart] = useState<Vela | null>(null);
-  const symbol = useApp((s) => s.symbol);
-  const timeframe = useApp((s) => s.timeframe);
-  const setFilters = useApp((s) => s.setFilters);
-  const setMarkPrice = useApp((s) => s.setMarkPrice);
+  const symbol = useChart((s) => s.symbol);
+  const timeframe = useChart((s) => s.timeframe);
+  const setFilters = useChart((s) => s.setFilters);
+  const setMarkPrice = useChart((s) => s.setMarkPrice);
   const initial = useRef({ symbol, timeframe });
 
-  // One Vela instance for the panel's lifetime; the market is switched in place.
+  // One Vela instance for the tab's lifetime; the market is switched in place.
   useEffect(() => {
     const container = ref.current;
     if (!container) return;
@@ -39,7 +78,6 @@ export function ChartPanel() {
     c.data.registerProvider('binance', new HarvesterProvider());
     c.drawings.setStayMode(true);
     c.drawings.setSnapMode('weak');
-    window.__velaChart = c;
     setChart(c);
     return () => {
       setChart(null);

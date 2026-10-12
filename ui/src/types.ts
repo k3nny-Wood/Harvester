@@ -78,3 +78,64 @@ export interface LadderPreview {
   totalNotional: number;
   averageEntry: number;
 }
+
+export type SignalKind = 'crack' | 'near' | 'drop';
+
+export interface ScoreParts {
+  structure: number;
+  volume: number;
+  magnitude: number;
+  pivot: number;
+  stabilising: number;
+}
+
+export interface Signal {
+  id: string;
+  symbol: string;
+  timeframe: string;
+  kind: SignalKind;
+  timeMs: number;
+  price: number;
+  base: number | null;
+  crackLevel: number | null;
+  distancePct: number | null;
+  dropPct: number;
+  volRatio: number;
+  donchPos: number | null;
+  score: number;
+  parts: ScoreParts;
+  reasons: string[];
+  /** [time, open, high, low, close] */
+  thumb: Array<[number, number, number, number, number]>;
+}
+
+export interface ScannerStatus {
+  running: boolean;
+  phase: string;
+  timeframe: string;
+  symbols: number;
+  seeded: number;
+  updates: number;
+  lastUpdateMs: number;
+  crackCount: number;
+  nearCount: number;
+  dropCount: number;
+  error: string | null;
+}
+
+export interface SignalParams {
+  qfl: { volatilityFactor: number; crackPct: number; useManual: boolean; manualMovePct: number };
+  freshBars: number;
+  nearPct: number;
+  dropWindow: number;
+  dropMinPct: number;
+  dropMinMultiple: number;
+  donchLen: number;
+  thumbBars: number;
+}
+
+export interface ScannerConfig {
+  timeframe: string;
+  universe: number;
+  params: SignalParams;
+}

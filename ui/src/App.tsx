@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { DockviewReact, type DockviewApi, type DockviewReadyEvent, type IDockviewPanelProps } from 'dockview-react';
-import { api, inTauri } from './api';
+import { api, inTauri, onScannerStatus, onSignalNew, onSignals } from './api';
+import { activeChartStore, useActiveChart } from './chartStore';
 import { ChartPanel } from './chart/ChartPanel';
+import { newChartId, openChart, setDock } from './dock';
 import { TIMEFRAMES } from './intervals';
 import { LadderPanel } from './panels/LadderPanel';
 import { PlaceholderPanel } from './panels/PlaceholderPanel';
+import { SignalsPanel } from './panels/SignalsPanel';
 import { SymbolsPanel } from './panels/SymbolsPanel';
 import { useApp } from './store';
 
-const LAYOUT_KEY = 'harvester.layout.v1';
+const LAYOUT_KEY = 'harvester.layout.v2';
 
 interface PanelDef {
   id: string;
@@ -19,58 +22,94 @@ interface PanelDef {
 
 /** Every panel the trader can open from the View menu. Closed panels can always be brought back. */
 const PANELS: PanelDef[] = [
-  { id: 'chart', title: 'Chart', component: 'chart' },
   { id: 'symbols', title: 'Symbols', component: 'symbols' },
+  { id: 'signals', title: 'Signals', component: 'signals' },
   { id: 'ladder', title: 'Ladder', component: 'ladder' },
-  { id: 'signals', title: 'Signals', component: 'placeholder', note: 'QFL base cracks and drop-scanner signals, scored by structure, appear here.' },
-  { id: 'orders', title: 'Orders', component: 'placeholder', note: 'Open orders, with cancel and edit, appear here once trading is connected.' },
+  { id: 'orders', title: 'Orders', component: 'placeholder', note: 'Order entry and open orders arrive with the trading milestone.' },
   { id: 'portfolio', title: 'Portfolio', component: 'placeholder', note: 'Positions, balances and trade history appear here once trading is connected.' },
 ];
 
 const components = {
-  chart: () => <ChartPanel />,
+  chart: (p: IDockviewPanelProps<{ symbol?: string; timeframe?: string }>) => <ChartPanel {...p} />,
   symbols: () => <SymbolsPanel />,
+  signals: () => <SignalsPanel />,
   ladder: () => <LadderPanel />,
   placeholder: (p: IDockviewPanelProps<{ note: string }>) => <PlaceholderPanel {...p} />,
 };
 
-function addPanel(api: DockviewApi, def: PanelDef, position?: Parameters<DockviewApi['addPanel']>[0]['position']) {
-  if (api.getPanel(def.id)) return;
-  api.addPanel({ id: def.id, title: def.title, component: def.component, params: { note: def.note }, position });
+type Position = Parameters<DockviewApi['addPanel']>[0]['position'];
+
+function addPanel(dock: DockviewApi, def: PanelDef, position?: Position) {
+  if (dock.getPanel(def.id)) return;
+  dock.addPanel({ id: def.id, title: def.title, component: def.component, params: { note: def.note }, position });
 }
 
+/**
+ * Default layout: symbols on the left, the chart tabs in the middle with the portfolio below, and a right-hand column
+ * with the Signals section on top and the Ladder / Orders tabs underneath.
+ */
 function buildDefaultLayout(dock: DockviewApi) {
   const by = (id: string) => PANELS.find((p) => p.id === id)!;
-  addPanel(dock, by('chart'));
-  addPanel(dock, by('symbols'), { referencePanel: 'chart', direction: 'left' });
-  addPanel(dock, by('signals'), { referencePanel: 'symbols', direction: 'within' });
-  addPanel(dock, by('ladder'), { referencePanel: 'chart', direction: 'right' });
+  const chartId = newChartId();
+  dock.addPanel({ id: chartId, title: 'BTCUSDT 15m', component: 'chart', params: { symbol: 'BTCUSDT', timeframe: '15m' } });
+  addPanel(dock, by('symbols'), { referencePanel: chartId, direction: 'left' });
+  addPanel(dock, by('signals'), { referencePanel: chartId, direction: 'right' });
+  addPanel(dock, by('ladder'), { referencePanel: 'signals', direction: 'below' });
   addPanel(dock, by('orders'), { referencePanel: 'ladder', direction: 'within' });
-  addPanel(dock, by('portfolio'), { referencePanel: 'chart', direction: 'below' });
-  dock.getPanel('symbols')?.api.setActive();
+  addPanel(dock, by('portfolio'), { referencePanel: chartId, direction: 'below' });
   dock.getPanel('ladder')?.api.setActive();
+  dock.getPanel(chartId)?.api.setActive();
   try {
-    dock.getPanel('symbols')?.api.setSize({ width: 300 });
-    dock.getPanel('ladder')?.api.setSize({ width: 340 });
-    dock.getPanel('portfolio')?.api.setSize({ height: 200 });
+    dock.getPanel('symbols')?.api.setSize({ width: 280 });
+    dock.getPanel('signals')?.api.setSize({ width: 400, height: 520 });
+    dock.getPanel('portfolio')?.api.setSize({ height: 190 });
   } catch {
     /* sizes are a nicety */
   }
+}
+
+/** Keep the app store in step with what the Rust scanner reports. */
+function useScannerEvents() {
+  useEffect(() => {
+    if (!inTauri) return;
+    const { setSignals, setScanner, setScannerConfig, toast } = useApp.getState();
+    void api.scannerSignals().then(setSignals).catch(() => undefined);
+    void api.scannerStatus().then(setScanner).catch(() => undefined);
+    void api.scannerConfig().then(setScannerConfig).catch(() => undefined);
+    const offs: Array<() => void> = [];
+    let stopped = false;
+    const keep = (p: Promise<() => void>) => void p.then((u) => (stopped ? u() : offs.push(u)));
+    keep(onSignals(setSignals));
+    keep(onScannerStatus(setScanner));
+    keep(
+      onSignalNew((s) => {
+        toast(`CRACK ${s.symbol} ${s.timeframe} · score ${s.score}`, 'signal');
+      }),
+    );
+    // the status carries the config's timeframe; refresh the full config when the scanner restarts
+    keep(onScannerStatus(() => void api.scannerConfig().then(setScannerConfig).catch(() => undefined)));
+    return () => {
+      stopped = true;
+      offs.forEach((o) => o());
+    };
+  }, []);
 }
 
 export function App() {
   const dockRef = useRef<DockviewApi | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [open, setOpen] = useState<Set<string>>(new Set());
-  const symbol = useApp((s) => s.symbol);
-  const timeframe = useApp((s) => s.timeframe);
-  const setTimeframe = useApp((s) => s.setTimeframe);
-  const markPrice = useApp((s) => s.markPrice);
-  const precision = useApp((s) => s.filters?.pricePrecision ?? 2);
+  const symbol = useActiveChart((s) => s.symbol) ?? '';
+  const timeframe = useActiveChart((s) => s.timeframe) ?? '15m';
+  const markPrice = useActiveChart((s) => s.markPrice) ?? 0;
+  const precision = useActiveChart((s) => s.filters?.pricePrecision) ?? 2;
+  const ladderPhase = useActiveChart((s) => s.ladder.phase) ?? 'idle';
   const env = useApp((s) => s.env);
   const setEnv = useApp((s) => s.setEnv);
-  const ladderPhase = useApp((s) => s.ladder.phase);
-  const patchLadder = useApp((s) => s.patchLadder);
+  const toasts = useApp((s) => s.toasts);
+  const dismiss = useApp((s) => s.dismissToast);
+
+  useScannerEvents();
 
   useEffect(() => {
     if (inTauri) void api.environment().then(setEnv);
@@ -81,12 +120,13 @@ export function App() {
   const onReady = (event: DockviewReadyEvent) => {
     const dock = event.api;
     dockRef.current = dock;
+    setDock(dock);
     let restored = false;
     try {
       const raw = localStorage.getItem(LAYOUT_KEY);
       if (raw) {
         dock.fromJSON(JSON.parse(raw));
-        restored = !!dock.getPanel('chart');
+        restored = dock.panels.some((p) => p.id.startsWith('chart-'));
       }
     } catch {
       restored = false;
@@ -111,7 +151,7 @@ export function App() {
     if (!dock) return;
     const existing = dock.getPanel(def.id);
     if (existing) existing.api.close();
-    else addPanel(dock, def, dock.getPanel('chart') ? { referencePanel: 'chart', direction: 'right' } : undefined);
+    else addPanel(dock, def, { referencePanel: useApp.getState().activeChartId || dock.panels[0]?.id, direction: 'right' });
   };
 
   const resetLayout = () => {
@@ -121,6 +161,8 @@ export function App() {
     buildDefaultLayout(dock);
     setMenuOpen(false);
   };
+
+  const store = () => activeChartStore()?.getState();
 
   return (
     <div className="app">
@@ -134,12 +176,15 @@ export function App() {
         </div>
         <div className="tfs">
           {TIMEFRAMES.map((t) => (
-            <button key={t.interval} className={t.interval === timeframe ? 'active' : ''} onClick={() => setTimeframe(t.interval)}>
+            <button key={t.interval} className={t.interval === timeframe ? 'active' : ''} onClick={() => store()?.setTimeframe(t.interval)}>
               {t.label}
             </button>
           ))}
         </div>
-        <button className={`tool${ladderPhase !== 'idle' ? ' active' : ''}`} title="Draw a ladder of orders on the chart (L)" onClick={() => patchLadder({ phase: ladderPhase === 'idle' ? 'start' : 'idle' })}>
+        <button className="tool" title="Open this symbol in a new chart tab" onClick={() => openChart(symbol || 'BTCUSDT', timeframe, true)}>
+          + Chart
+        </button>
+        <button className={`tool${ladderPhase !== 'idle' ? ' active' : ''}`} title="Draw a ladder of orders on the chart (L)" onClick={() => store()?.patchLadder({ phase: ladderPhase === 'idle' ? 'start' : 'idle' })}>
           ☰ Ladder <kbd>L</kbd>
         </button>
         <div className="spacer" />
@@ -175,6 +220,13 @@ export function App() {
       <main className="dock">
         <DockviewReact className="dockview-theme-abyss" components={components} onReady={onReady} />
       </main>
+      <div className="toasts">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast ${t.tone}`} onClick={() => dismiss(t.id)}>
+            {t.text}
+          </div>
+        ))}
+      </div>
       {!inTauri && <div className="browser-warning">Running outside the Harvester window: market data is unavailable. Start it with <code>pnpm dev</code>.</div>}
     </div>
   );

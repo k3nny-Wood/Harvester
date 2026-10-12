@@ -1,14 +1,14 @@
 import { formatPrice } from '../ladderMath';
-import { ladderSide, useApp } from '../store';
+import { activeChartStore, initialLadder, ladderSide, useActiveChart, type LadderDraft } from '../chartStore';
 
 /** The numbers behind the ladder drawn on the chart: every rung as it would be sent to the exchange. */
 export function LadderPanel() {
-  const d = useApp((s) => s.ladder);
-  const patch = useApp((s) => s.patchLadder);
-  const reset = useApp((s) => s.resetLadder);
-  const precision = useApp((s) => s.filters?.pricePrecision ?? 2);
-  const qtyPrecision = useApp((s) => s.filters?.quantityPrecision ?? 3);
-  const symbol = useApp((s) => s.symbol);
+  const d = useActiveChart((s) => s.ladder) ?? initialLadder;
+  const precision = useActiveChart((s) => s.filters?.pricePrecision) ?? 2;
+  const qtyPrecision = useActiveChart((s) => s.filters?.quantityPrecision) ?? 3;
+  const symbol = useActiveChart((s) => s.symbol) ?? '';
+  const patch = (p: Partial<LadderDraft>) => activeChartStore()?.getState().patchLadder(p);
+  const reset = () => activeChartStore()?.getState().resetLadder();
   const p = d.preview;
 
   if (d.phase === 'idle') {

@@ -1,17 +1,22 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod market;
+mod scanner;
 mod stream;
 
 use harvester_core::filters::SymbolFilters;
 use harvester_core::ladder::{build_ladder, LadderPreview, LadderSpec};
+use harvester_core::signals::Signal;
 use market::{Env, Kline, Market, SymbolQuote};
+use scanner::{Scanner, ScannerConfig, ScannerStatus};
+use std::sync::Arc;
 use stream::Streams;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 struct AppState {
-    market: Market,
+    market: Arc<Market>,
     streams: Streams,
+    scanner: Scanner,
 }
 
 #[tauri::command]
@@ -56,11 +61,40 @@ async fn preview_ladder(state: State<'_, AppState>, spec: LadderSpec, reference_
     Ok(build_ladder(&spec, &filters, reference_price))
 }
 
+#[tauri::command]
+fn scanner_signals(state: State<'_, AppState>) -> Vec<Signal> {
+    state.scanner.signals()
+}
+
+#[tauri::command]
+fn scanner_status(state: State<'_, AppState>) -> ScannerStatus {
+    state.scanner.status()
+}
+
+#[tauri::command]
+fn scanner_config(state: State<'_, AppState>) -> ScannerConfig {
+    state.scanner.config()
+}
+
+/// Restart the scanner with a new configuration (timeframe, universe size, thresholds).
+#[tauri::command]
+fn scanner_configure(app: AppHandle, state: State<'_, AppState>, config: ScannerConfig) {
+    state.scanner.start(app, state.market.clone(), config);
+}
+
 fn main() {
     let env = Env::from_name(&std::env::var("HARVESTER_ENV").unwrap_or_default());
     tauri::Builder::default()
-        .manage(AppState { market: Market::new(env), streams: Streams::default() })
-        .invoke_handler(tauri::generate_handler![environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder])
+        .manage(AppState { market: Arc::new(Market::new(env)), streams: Streams::default(), scanner: Scanner::default() })
+        .setup(|app| {
+            let state = app.state::<AppState>();
+            state.scanner.start(app.handle().clone(), state.market.clone(), ScannerConfig::default());
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
+            scanner_signals, scanner_status, scanner_config, scanner_configure
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");
 }

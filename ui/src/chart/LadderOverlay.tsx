@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import type { Vela } from '@luxalgo/vela';
 import { api } from '../api';
 import { formatPrice, rawRungPrices, snapToTick } from '../ladderMath';
-import { ladderSide, useApp, type LadderDraft } from '../store';
+import { ladderSide, useChart, useChartId, type LadderDraft } from '../chartStore';
+import { useApp } from '../store';
 import type { LadderSpec } from '../types';
 import { getProjector } from './projector';
 
@@ -43,12 +44,13 @@ interface Geometry {
  * validated rungs come from the Rust core.
  */
 export function LadderOverlay({ chart, host }: { chart: Vela | null; host: RefObject<HTMLDivElement | null> }) {
-  const d = useApp((s) => s.ladder);
-  const patch = useApp((s) => s.patchLadder);
-  const reset = useApp((s) => s.resetLadder);
-  const symbol = useApp((s) => s.symbol);
-  const filters = useApp((s) => s.filters);
-  const markPrice = useApp((s) => s.markPrice);
+  const chartId = useChartId();
+  const d = useChart((s) => s.ladder);
+  const patch = useChart((s) => s.patchLadder);
+  const reset = useChart((s) => s.resetLadder);
+  const symbol = useChart((s) => s.symbol);
+  const filters = useChart((s) => s.filters);
+  const markPrice = useChart((s) => s.markPrice);
   const rootRef = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
   const [hover, setHover] = useState<{ y: number; price: number } | null>(null);
@@ -97,12 +99,13 @@ export function LadderOverlay({ chart, host }: { chart: Vela | null; host: RefOb
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) return;
+      if (useApp.getState().activeChartId !== chartId) return; // only the focused chart reacts
       if (e.key === 'Escape') reset();
       if ((e.key === 'l' || e.key === 'L') && !e.ctrlKey && !e.metaKey) patch({ phase: 'start' });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [patch, reset]);
+  }, [patch, reset, chartId]);
 
   // Exact rungs from the Rust core, debounced while the trader drags / slides.
   const spec = useMemo(() => (d.phase === 'armed' || d.phase === 'end' ? buildSpec(symbol, d) : null), [symbol, d]);
@@ -256,12 +259,12 @@ function cardLeft(x: number, plotLeft: number, plotWidth: number): number {
 }
 
 function LadderCard({ style, color, precision }: { style: React.CSSProperties; color: string; precision: number }) {
-  const d = useApp((s) => s.ladder);
-  const patch = useApp((s) => s.patchLadder);
-  const reset = useApp((s) => s.resetLadder);
-  const symbol = useApp((s) => s.symbol);
+  const d = useChart((s) => s.ladder);
+  const patch = useChart((s) => s.patchLadder);
+  const reset = useChart((s) => s.resetLadder);
+  const symbol = useChart((s) => s.symbol);
   const side = ladderSide(d);
-  const qtyPrecision = useApp((s) => s.filters?.quantityPrecision ?? 3);
+  const qtyPrecision = useChart((s) => s.filters?.quantityPrecision ?? 3);
   const p = d.preview;
   const invalid = p ? p.rungs.filter((r) => !r.valid).length : 0;
   return (

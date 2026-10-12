@@ -24,9 +24,8 @@ fn num(v: &Value) -> f64 {
     v.as_str().and_then(|s| s.parse().ok()).or_else(|| v.as_f64()).unwrap_or(0.0)
 }
 
-/// Parse one `kline` websocket message.
-pub fn parse_kline_event(text: &str) -> Option<KlineEvent> {
-    let v: Value = serde_json::from_str(text).ok()?;
+/// Parse one `kline` event (the object Binance sends, or the `data` of a combined-stream message).
+pub fn parse_kline_value(v: &Value) -> Option<KlineEvent> {
     let k = v.get("k")?;
     Some(KlineEvent {
         symbol: v.get("s").or_else(|| k.get("s"))?.as_str()?.to_string(),
@@ -34,6 +33,11 @@ pub fn parse_kline_event(text: &str) -> Option<KlineEvent> {
         bar: Kline { time: k.get("t")?.as_u64()?, open: num(&k["o"]), high: num(&k["h"]), low: num(&k["l"]), close: num(&k["c"]), volume: num(&k["v"]) },
         closed: k.get("x").and_then(|x| x.as_bool()).unwrap_or(false),
     })
+}
+
+/// Parse one `kline` websocket message.
+pub fn parse_kline_event(text: &str) -> Option<KlineEvent> {
+    parse_kline_value(&serde_json::from_str::<Value>(text).ok()?)
 }
 
 #[derive(Default)]
