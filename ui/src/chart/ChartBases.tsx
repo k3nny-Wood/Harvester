@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Vela } from '@luxalgo/vela';
 import { api } from '../api';
+import { mergeBases } from '../bases';
 import { useBases, DEFAULT_BASES, type BasesConfig } from '../basesConfig';
 import { useChart } from '../chartStore';
 import { intervalMs } from '../intervals';
@@ -16,6 +17,8 @@ export interface BaseShape {
   time: number;
   endTime?: number;
   price: number;
+  /** how many bases were merged into this line */
+  count?: number;
 }
 
 /** The bases worth drawing under the settings: broken ones only if asked for, only those near the price, and at most `maxCount`. */
@@ -37,9 +40,10 @@ export function baseShapes(symbol: string, timeframe: string, bases: BaseView[],
   const end = (from: number) => (lengthCandles > 0 ? from + lengthCandles * step : undefined);
   const out: BaseShape[] = [];
   for (const b of bases) {
-    const id = `base:${symbol}:${timeframe}:${b.time}:L${lengthCandles}`;
+    // the price is part of the key: a merged line moves when another base joins it
+    const id = `base:${symbol}:${timeframe}:${b.time}:${b.price}:L${lengthCandles}:N${b.count ?? 1}`;
     if (b.crackTime == null) {
-      out.push({ key: `${id}:hold`, kind: 'holding', time: b.time, endTime: end(b.time), price: b.price });
+      out.push({ key: `${id}:hold`, kind: 'holding', time: b.time, endTime: end(b.time), price: b.price, count: b.count ?? 1 });
       out.push({ key: `${id}:level`, kind: 'level', time: b.confirmTime, endTime: end(b.time), price: b.crackLevel });
     } else {
       out.push({ key: `${id}:cracked:${b.crackTime}`, kind: 'cracked', time: b.time, endTime: b.crackTime, price: b.price });
@@ -85,7 +89,9 @@ export function ChartBases({ chart }: { chart: Vela | null }) {
     };
   }, [symbol, timeframe, cfg.on, cfg.factor, cfg.crackPct]);
 
-  const shown = useMemo(() => visibleBases(bases, cfg, last), [bases, cfg, last]);
+  // similar bases are merged first, then the filters pick what to draw
+  const merged = useMemo(() => mergeBases(bases, cfg.mergePct), [bases, cfg.mergePct]);
+  const shown = useMemo(() => visibleBases(merged, cfg, last), [merged, cfg, last]);
 
   // another market (or switched off): take our lines off the chart before the next ones are drawn
   useEffect(() => {
@@ -102,7 +108,7 @@ export function ChartBases({ chart }: { chart: Vela | null }) {
     const shapes = cfg.on ? baseShapes(symbol, timeframe, shown, cfg.lengthCandles) : [];
     for (const s of shapes) {
       if (ids.current.has(s.key)) continue;
-      const style = s.kind === 'holding' ? { lineColor: HOLDING, lineWidth: 2, lineStyle: 'solid' as const } : s.kind === 'level' ? { lineColor: LEVEL, lineWidth: 1, lineStyle: 'dotted' as const } : { lineColor: CRACKED, lineWidth: 1, lineStyle: 'dashed' as const };
+      const style = s.kind === 'holding' ? { lineColor: HOLDING, lineWidth: Math.min(4, 2 + ((s.count ?? 1) - 1)), lineStyle: 'solid' as const } : s.kind === 'level' ? { lineColor: LEVEL, lineWidth: 1, lineStyle: 'dotted' as const } : { lineColor: CRACKED, lineWidth: 1, lineStyle: 'dashed' as const };
       // a segment when it has an end (broken bases, or a limited length), otherwise a ray to the edge of the chart
       const d = s.endTime != null ? chart.drawings.add('trendline', { paneId: 'price', anchors: [{ time: s.time, price: s.price }, { time: s.endTime, price: s.price }], style }) : chart.drawings.add('hray', { paneId: 'price', anchors: [{ time: s.time, price: s.price }], style });
       if (d) ids.current.set(s.key, d.id);
@@ -157,6 +163,13 @@ export function ChartBases({ chart }: { chart: Vela | null }) {
           </label>
           <label>
             <span>
+              Merge bases within <b>{cfg.mergePct === 0 ? 'off' : `${cfg.mergePct}%`}</b>
+            </span>
+            <input type="range" min={0} max={3} step={0.1} value={cfg.mergePct} onChange={(e) => change({ mergePct: Number(e.target.value) })} />
+            <small>Bases at nearly the same price are one level: they are drawn as a single, thicker line starting at the oldest.</small>
+          </label>
+          <label>
+            <span>
               Line length <b>{cfg.lengthCandles === 0 ? 'to the edge' : `${cfg.lengthCandles} candles`}</b>
             </span>
             <input type="range" min={0} max={200} step={5} value={cfg.lengthCandles} onChange={(e) => change({ lengthCandles: Number(e.target.value) })} />
@@ -165,7 +178,7 @@ export function ChartBases({ chart }: { chart: Vela | null }) {
             <input type="checkbox" checked={cfg.showBroken} onChange={(e) => change({ showBroken: e.target.checked })} /> Also draw broken bases (dim)
           </label>
           <div className="muted">
-            {bases.length} found, {shown.length} drawn
+            {bases.length} found, {merged.filter((b) => (b.count ?? 1) > 1).length} merged levels, {shown.length} drawn
           </div>
           <button onClick={() => change({ ...DEFAULT_BASES, on: cfg.on })}>Reset</button>
         </div>

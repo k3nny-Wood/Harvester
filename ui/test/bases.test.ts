@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { mergeBases, previewLines } from '../src/bases';
 import { baseShapes, visibleBases } from '../src/chart/ChartBases';
 import type { BaseView } from '../src/types';
 
@@ -50,5 +51,51 @@ describe('base shapes', () => {
 
   it('the length is part of the key, so changing it redraws the lines', () => {
     expect(baseShapes('X', '15m', [holding], 30)[0].key).not.toBe(baseShapes('X', '15m', [holding], 60)[0].key);
+  });
+
+  it('merges holding bases at nearly the same price into one that starts at the oldest', () => {
+    const b = (price: number, time: number): BaseView => ({ price, time, confirmTime: time + 10, crackTime: null, crackLevel: price * 0.995 });
+    const merged = mergeBases([b(100, 3000), b(100.3, 1000), b(100.4, 2000), b(120, 500)], 0.5);
+    expect(merged).toHaveLength(2);
+    const near = merged.find((m) => Math.abs(m.price - 100.2333) < 0.01)!;
+    expect(near.count).toBe(3);
+    expect(near.time).toBe(1000);
+    expect(near.confirmTime).toBe(1010);
+    expect(merged.find((m) => m.price === 120)!.count).toBe(1);
+  });
+
+  it('does not chain a slowly rising run of bases into one line, and leaves broken bases alone', () => {
+    const b = (price: number, time: number): BaseView => ({ price, time, confirmTime: time + 1, crackTime: null, crackLevel: price });
+    const run = [b(100, 1), b(100.4, 2), b(100.8, 3), b(101.2, 4)];
+    expect(mergeBases(run, 0.5).map((m) => m.count)).toEqual([2, 2]);
+    const broken: BaseView = { ...cracked, price: 100.1 };
+    const out = mergeBases([b(100, 1), broken], 0.5);
+    expect(out).toHaveLength(2);
+    expect(out.find((m) => m.crackTime != null)!.count).toBe(1);
+    // tolerance 0 means no merging at all
+    expect(mergeBases(run, 0)).toHaveLength(4);
+  });
+
+  it('the preview labels merged levels and marks the own base', () => {
+    const candles = [{ time: 100 }, { time: 200 }, { time: 300 }];
+    const bases: BaseView[] = [
+      { price: 50, time: 200, confirmTime: 300, crackTime: null, crackLevel: 49.75, count: 3 },
+      { price: 40, time: 100, confirmTime: 200, crackTime: null, crackLevel: 39.8, count: 1 },
+      { price: 30, time: 100, confirmTime: 100, crackTime: 250, crackLevel: 29.85, count: 1 },
+    ];
+    const lines = previewLines(candles, bases, 50.05, (p) => p.toFixed(2));
+    const labels = lines.map((l) => l.label).filter(Boolean);
+    expect(labels).toEqual(['this base 50.00 ×3', '40.00']);
+    // the broken base is not drawn; a crack level line follows each base that holds
+    expect(lines).toHaveLength(4);
+    expect(lines[0].from).toBe(1);
+  });
+
+  it('draws the signal own base even when price already broke it, but no other broken base', () => {
+    const candles = [{ time: 100 }, { time: 200 }, { time: 300 }];
+    const ownBroken: BaseView = { price: 50, time: 100, confirmTime: 200, crackTime: 250, crackLevel: 49.75 };
+    const otherBroken: BaseView = { price: 70, time: 100, confirmTime: 200, crackTime: 250, crackLevel: 69.65 };
+    const lines = previewLines(candles, [ownBroken, otherBroken], 50.02, (p) => p.toFixed(1));
+    expect(lines.map((l) => l.label).filter(Boolean)).toEqual(['this base 50.0']);
   });
 });

@@ -319,4 +319,6 @@ export interface BaseView {
   /** the first candle that cracked it; null while it still holds */
   crackTime: number | null;
   crackLevel: number;
+  /** how many bases at nearly the same price were merged into this one (1 = just itself) */
+  count?: number;
 }

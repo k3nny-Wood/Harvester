@@ -15,11 +15,13 @@ export interface BasesConfig {
   maxCount: number;
   /** how many candles a line runs to the right of its base (0 = no limit: a ray to the edge of the chart) */
   lengthCandles: number;
+  /** bases within this % of each other are merged into one line (0 = never merge) */
+  mergePct: number;
 }
 
-export const DEFAULT_BASES: BasesConfig = { on: true, factor: 3.5, crackPct: 0.5, showBroken: false, maxDistancePct: 15, maxCount: 8, lengthCandles: 30 };
+export const DEFAULT_BASES: BasesConfig = { on: true, factor: 3.5, crackPct: 0.5, showBroken: false, maxDistancePct: 15, maxCount: 8, lengthCandles: 30, mergePct: 0.5 };
 
-const KEY = 'harvester.bases.v4';
+const KEY = 'harvester.bases.v5';
 
 function load(): BasesConfig {
   try {

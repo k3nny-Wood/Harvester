@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { alertSettings, playChime, updateAlerts } from '../alerts';
 import { api } from '../api';
+import { WithBasePreview } from '../components/BasePreview';
 import { Thumb } from '../components/Thumb';
 import { openChart } from '../dock';
 import { TIMEFRAMES } from '../intervals';
@@ -169,7 +170,9 @@ function SignalCard({ s, now }: { s: Signal; now: number }) {
   const open = () => openChart(s.symbol, s.timeframe);
   return (
     <div className={`sig-card ${s.kind}`}>
-      <Thumb candles={s.thumb} base={s.base} crackLevel={s.crackLevel} onClick={open} title={`Open ${s.symbol} ${s.timeframe} chart`} />
+      <WithBasePreview signal={s}>
+        <Thumb candles={s.thumb} base={s.base} crackLevel={s.crackLevel} onClick={open} title={`Open ${s.symbol} ${s.timeframe} chart`} />
+      </WithBasePreview>
       <div className="sig-body">
         <div className="sig-top">
           <button className="sig-sym" onClick={open} title="Open the chart">

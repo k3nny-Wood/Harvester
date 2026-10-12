@@ -256,14 +256,11 @@ pub fn base_views(candles: &[Candle], params: &QflParams, max: usize) -> Vec<Bas
         .bases
         .iter()
         .map(|b| {
-            let crack = r.cracks.iter().find(|k| (k.base_price - b.price).abs() < f64::EPSILON && k.bar_index > b.confirm_index);
-            BaseView {
-                price: b.price,
-                time: b.time,
-                confirm_time: candles.get(b.confirm_index).map_or(b.time, |c| c.open_time),
-                crack_time: crack.map(|k| k.time),
-                crack_level: b.price * (1.0 - params.crack_pct),
-            }
+            // The detector only follows the newest base, so a base that was replaced before price fell through it has no crack record.
+            // Look at the candles themselves: the first one after the confirmation whose low is below the crack level.
+            let level = b.price * (1.0 - params.crack_pct);
+            let crack_time = candles.iter().skip(b.confirm_index + 1).find(|c| c.low <= level).map(|c| c.open_time);
+            BaseView { price: b.price, time: b.time, confirm_time: candles.get(b.confirm_index).map_or(b.time, |c| c.open_time), crack_time, crack_level: level }
         })
         .collect();
     if out.len() > max {
@@ -358,6 +355,19 @@ pub(crate) mod tests {
         assert!(last.confirm_time > last.time);
         // the cap keeps the newest bases
         assert!(base_views(&c, &params, 1).len() <= 1);
+    }
+
+    #[test]
+    fn a_base_that_was_replaced_before_price_fell_through_it_is_still_marked_cracked() {
+        let c = series();
+        let params = QflParams::default();
+        let v = base_views(&c, &params, 10);
+        // every base whose crack level the candles later traded below must carry a crack time, and none that held may
+        for b in &v {
+            let confirm = c.iter().position(|x| x.open_time == b.confirm_time).unwrap();
+            let broke = c.iter().skip(confirm + 1).any(|x| x.low <= b.crack_level);
+            assert_eq!(b.crack_time.is_some(), broke, "base {}", b.price);
+        }
     }
 
     #[test]
