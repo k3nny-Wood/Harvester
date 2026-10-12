@@ -1696,3 +1696,21 @@ button.mini {
   letter-spacing: 0.02em;
   pointer-events: none;
 }
+
+/* the amount slider under the entry box (F / D setup) */
+.quick-amount {
+  position: absolute;
+  pointer-events: auto;
+  background: #0f1620;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 6px 4px;
+  font-size: 10px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  z-index: 44;
+}
+.quick-amount input[type='range'] {
+  width: 100%;
+  margin: 0;
+}

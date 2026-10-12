@@ -367,6 +367,22 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
         )}
         {line('entry', yE, colorE, `${long ? 'LONG' : 'SHORT'} ${kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'} @ ${formatPrice(q.entry, precision)}`, `${long ? 'LONG' : 'SHORT'} ${kind === 'STOP' ? 'STOP-LIMIT' : 'LIMIT'}`)}
       </svg>
+      {yE != null && (
+        <div
+          className="quick-amount"
+          style={{ left: offX + plotW - TAG_W - 2, top: yE + 12 + 48 > offY + plotH ? yE - 62 : yE + 12, width: TAG_W }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <input type="range" min={0} max={Math.max(1, sliderMax)} step={0.5} value={usedPct} disabled={!(wallet > 0)} title="Drag to change the amount (% of the account used as margin)" onChange={(e) => setPct(Number(e.target.value))} />
+          <div>
+            {qty > 0 ? qty.toFixed(filters?.quantityPrecision ?? 3) : '0'} {symbol.replace('USDT', '')}
+          </div>
+          <div className="muted">
+            ≈ {notional.toFixed(2)} USDT · {usedPct.toFixed(1)}%
+          </div>
+        </div>
+      )}
       <div className="quick-panel" onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
         <div className="quick-title">
           <b className={long ? 'up' : 'down'}>
