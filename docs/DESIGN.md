@@ -84,7 +84,7 @@ pause, caches per symbol for 6 hours and emits `lab-progress`. Differences from 
 | 7 | Pine Script: per-chart workspace (PineTS in a web worker), 8 built-in + 138 community scripts (everget, MIT/GPL-3.0), `/` quick picker, editor, live plot values; every script is run by the test suite | done |
 | 8 | Lab panel: shared-account QFL ladder backtest (`harvester-core::lab`), luck test, eight start dates, stressed costs; candles downloaded politely and cached (`src-tauri/src/lab.rs`) | done (QFL ladder; no short side, no trailing sell) |
 | 9 | ML trade finder (ONNX via `ort`), clearly marked experimental: ML signals, trade-plan overlay (entry -> target arrow, stop), plan card, bracket placement (entry, then reduce-only stop-loss and take-profit) | done |
-| 10 | Installer (NSIS), settings, documentation, CI | |
+| 10 | Installer (NSIS, per-user, models + DirectML.dll bundled; `pnpm bundle`), documentation | done (settings screen, CI, code signing not yet) |
 | 11 | Sound alerts, percent-price band on the chart, user-data websocket (`userstream.rs`) instead of 3 s polling | done |
 
 ## Principles

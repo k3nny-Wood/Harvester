@@ -15,7 +15,11 @@ Prerequisites: Rust (stable), Node 20+, pnpm 9, WebView2 (included with Windows 
 pnpm install
 pnpm dev          # opens the Harvester window
 pnpm test         # cargo tests + UI tests
+pnpm bundle       # release build + Windows installer (NSIS, per-user): target/release/bundle/nsis/Harvester_*_x64-setup.exe
 ```
+
+The installer ships the ML models (`models/15m`) and the ONNX Runtime's `DirectML.dll` next to the exe. API keys are read from a `.env` file in the folder
+Harvester is started from (or any parent); an installed copy needs its own `.env` next to `harvester.exe`.
 
 `HARVESTER_ENV=live` selects the live exchange (default: testnet). Market data needs no API key. To trade, copy `.env.example` to `.env`
 and fill in the testnet keys (`BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`). Live trading needs separate `BINANCE_LIVE_*` keys.
