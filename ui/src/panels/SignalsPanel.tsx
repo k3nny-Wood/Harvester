@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { alertSettings, playChime, updateAlerts } from '../alerts';
+import { DEFAULT_MOVERS, useMovers, windowLabel } from '../moversConfig';
 import { api } from '../api';
 import { WithBasePreview } from '../components/BasePreview';
 import { Thumb } from '../components/Thumb';
@@ -8,7 +9,7 @@ import { TIMEFRAMES } from '../intervals';
 import { useApp } from '../store';
 import type { Signal, SignalKind } from '../types';
 
-const KIND_LABEL: Record<SignalKind, string> = { crack: 'CRACK', near: 'WATCH', drop: 'DROP' };
+const KIND_LABEL: Record<SignalKind, string> = { pump: 'PUMP', dump: 'DUMP', crack: 'CRACK', near: 'WATCH', drop: 'DROP' };
 const UNIVERSES = [20, 40, 80, 150];
 
 function ago(ms: number, now: number): string {
@@ -32,11 +33,19 @@ export function SignalsPanel() {
   const status = useApp((s) => s.scanner);
   const config = useApp((s) => s.scannerConfig);
   const setConfig = useApp((s) => s.setScannerConfig);
-  const [kinds, setKinds] = useState<Record<SignalKind, boolean>>({ crack: true, drop: true, near: true });
+  const [kinds, setKinds] = useState<Record<SignalKind, boolean>>({ pump: true, dump: true, crack: true, drop: true, near: true });
   const [minScore, setMinScore] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [alerts, setAlerts] = useState(alertSettings.current);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [moversOpen, setMoversOpen] = useState(false);
+  const movers = useMovers((s) => s.params);
+  const changeMovers = useMovers((s) => s.change);
+  const setRule = useMovers((s) => s.setRule);
+  // the backend starts with its own defaults: tell it what was saved, and again whenever it changes
+  useEffect(() => {
+    void api.moversConfigure(movers).catch(() => undefined);
+  }, [movers]);
   const changeAlerts = (patch: Parameters<typeof updateAlerts>[0]) => setAlerts(updateAlerts(patch));
 
   useEffect(() => {
@@ -46,21 +55,21 @@ export function SignalsPanel() {
 
   const rows = useMemo(() => signals.filter((s) => kinds[s.kind] && s.score >= minScore), [signals, kinds, minScore]);
   const fresh = status && status.lastUpdateMs > 0 && now - status.lastUpdateMs < 30_000;
-  const sources = config?.sources ?? { qfl: true };
+  const sources = config?.sources ?? { qfl: true, movers: true };
 
   const restart = (patch: Partial<{ timeframe: string; universe: number }>) => {
     if (!config) return;
     void api.scannerConfigure({ ...config, ...patch });
   };
 
-  const toggleSource = (key: 'qfl') => {
+  const toggleSource = (key: 'qfl' | 'movers') => {
     if (!config) return;
     const next = { ...sources, [key]: !sources[key] };
     setConfig({ ...config, sources: next });
     void api.scannerSources(next);
   };
 
-  const count = (k: SignalKind) => (k === 'crack' ? status?.crackCount : k === 'drop' ? status?.dropCount : status?.nearCount) ?? 0;
+  const count = (k: SignalKind) => (k === 'pump' ? status?.pumpCount : k === 'dump' ? status?.dumpCount : k === 'crack' ? status?.crackCount : k === 'drop' ? status?.dropCount : status?.nearCount) ?? 0;
 
   return (
     <div className="panel signals">
@@ -91,6 +100,13 @@ export function SignalsPanel() {
           <button className={`src${sources.qfl ? ' on' : ''}`} onClick={() => toggleSource('qfl')} title="QFL base cracks, drops and watches (rule based)">
             <i /> QFL
           </button>
+          <button className={`src${sources.movers ? ' on' : ''}`} onClick={() => toggleSource('movers')} title="Sudden pumps and dumps across every perpetual (live price stream)">
+            <i /> Movers
+          </button>
+          <button className="src" onClick={() => setMoversOpen((v) => !v)} title="Pump / dump settings">
+            ⚙
+          </button>
+          {sources.movers && status?.moverState && <span className="muted">{status.moverState}</span>}
         </div>
 
         <div className="sig-controls">
@@ -108,7 +124,7 @@ export function SignalsPanel() {
               </option>
             ))}
           </select>
-          {(['crack', 'drop', 'near'] as const).map((k) => (
+          {(['pump', 'dump', 'crack', 'drop', 'near'] as const).map((k) => (
             <button key={k} className={`chip ${k}${kinds[k] ? ' on' : ''}`} onClick={() => setKinds((v) => ({ ...v, [k]: !v[k] }))} title={`Show / hide ${KIND_LABEL[k].toLowerCase()} entries`}>
               {KIND_LABEL[k]} {count(k)}
             </button>
@@ -122,10 +138,36 @@ export function SignalsPanel() {
             Alert settings {alertsOpen ? '▴' : '▾'}
           </button>
         </div>
+        {moversOpen && (
+          <div className="alert-box">
+            <div className="muted">A sudden move is reported when the price changes by at least this much within the window AND by several times what that coin normally moves in that long.</div>
+            {movers.rules.map((r, i) => (
+              <label key={r.secs} className="minscore">
+                In {windowLabel(r.secs)}: at least <b>{r.minPct}%</b>
+                <input type="range" min={0.5} max={15} step={0.5} value={r.minPct} onChange={(e) => setRule(i, Number(e.target.value))} />
+              </label>
+            ))}
+            <label className="minscore">
+              Times its normal move <b>{movers.normalMultiple}x</b>
+              <input type="range" min={2} max={15} step={0.5} value={movers.normalMultiple} onChange={(e) => changeMovers({ normalMultiple: Number(e.target.value) })} />
+            </label>
+            <label className="minscore">
+              Min 24h volume <b>${(movers.minQuoteVolume / 1e6).toFixed(1)}M</b>
+              <input type="range" min={0} max={50} step={0.5} value={movers.minQuoteVolume / 1e6} onChange={(e) => changeMovers({ minQuoteVolume: Number(e.target.value) * 1e6 })} />
+            </label>
+            <label className="minscore">
+              Quiet for <b>{Math.round(movers.cooldownSecs / 60)} min</b> after a report
+              <input type="range" min={1} max={60} step={1} value={movers.cooldownSecs / 60} onChange={(e) => changeMovers({ cooldownSecs: Number(e.target.value) * 60 })} />
+            </label>
+            <button className="chip" onClick={() => changeMovers(DEFAULT_MOVERS)}>
+              Reset
+            </button>
+          </div>
+        )}
         {alertsOpen && (
           <div className="alert-box">
             <div className="alert-kinds">
-              {(['crack', 'drop', 'near'] as const).map((k) => (
+              {(['pump', 'dump', 'crack', 'drop', 'near'] as const).map((k) => (
                 <label key={k}>
                   <input type="checkbox" checked={alerts.kinds[k]} onChange={() => changeAlerts({ kinds: { ...alerts.kinds, [k]: !alerts.kinds[k] } })} /> {KIND_LABEL[k]}
                 </label>

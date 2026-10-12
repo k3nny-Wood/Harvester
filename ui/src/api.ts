@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Account, HeldEvent, HeldOrder, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
+import type { Account, MoverParams, HeldEvent, HeldOrder, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
 
 /** True when running inside the Tauri shell (false in a plain browser, e.g. `vite` on its own). */
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -24,6 +24,8 @@ export const api = {
   openOrders: (symbol?: string) => invoke<OpenOrder[]>('open_orders', { symbol: symbol ?? null }),
   placeOrder: (order: OrderRequest) => invoke<OrderAck>('place_order', { order }),
   placeOrders: (orders: OrderRequest[]) => invoke<Array<{ Ok: OrderAck } | { Err: string }>>('place_orders', { orders }),
+  moversConfig: () => invoke<MoverParams>('movers_config'),
+  moversConfigure: (params: MoverParams) => invoke<void>('movers_configure', { params }),
   heldList: () => invoke<HeldOrder[]>('held_list'),
   moveToHeld: (symbol: string, orderId: number, price: number) => invoke<OrderAck>('move_to_held', { symbol, orderId, price }),
   heldCancel: (id: string) => invoke<boolean>('held_cancel', { id }),

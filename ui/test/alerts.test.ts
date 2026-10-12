@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { chimeNotes, shouldAlert, type AlertSettings } from '../src/alerts';
 import type { Signal } from '../src/types';
 
-const base: AlertSettings = { sound: true, minScore: 60, kinds: { crack: true, drop: false, near: false }, volume: 0.5 };
+const base: AlertSettings = { sound: true, minScore: 60, kinds: { crack: true, drop: false, near: false, pump: true, dump: true }, volume: 0.5 };
 const sig = (p: Partial<Signal>) => ({ kind: 'crack', score: 70, side: null, ...p }) as Signal;
 
 describe('signal alerts', () => {
@@ -23,5 +23,20 @@ import { pollInterval } from '../src/trade';
 describe('trading poll', () => {
   it('slows down while the user-data stream is connected', () => {
     expect(pollInterval(true)).toBeGreaterThan(pollInterval(false));
+  });
+});
+
+describe('pump and dump alerts', () => {
+  it('a pump chimes upwards and a dump downwards', () => {
+    const up = chimeNotes({ kind: 'pump', score: 80 } as Signal);
+    const down = chimeNotes({ kind: 'dump', score: 80 } as Signal);
+    expect(up[1]).toBeGreaterThan(up[0]);
+    expect(down[1]).toBeLessThan(down[0]);
+  });
+
+  it('they follow the same kind and score rules as other signals', () => {
+    expect(shouldAlert({ kind: 'pump', score: 70 } as Signal, base)).toBe(true);
+    expect(shouldAlert({ kind: 'dump', score: 50 } as Signal, base)).toBe(false);
+    expect(shouldAlert({ kind: 'dump', score: 90 } as Signal, { ...base, kinds: { ...base.kinds, dump: false } })).toBe(false);
   });
 });

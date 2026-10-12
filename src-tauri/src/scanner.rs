@@ -22,12 +22,21 @@ const MAX_CANDLES: usize = 700;
 const SEED_CANDLES: u32 = 500;
 /// A triggered crack or drop stays in the list this long after it was last seen.
 const KEEP_MS: u64 = 6 * 3600 * 1000;
+/// A sudden pump or dump stays this long.
+const SPIKE_KEEP_MS: u64 = 2 * 3600 * 1000;
 
 /// Which signal sources are on. Each can be switched off independently.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Sources {
     pub qfl: bool,
+    /// sudden pumps and dumps from the all-symbol price stream (`movers.rs`)
+    #[serde(default = "yes")]
+    pub movers: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,7 +51,7 @@ pub struct ScannerConfig {
 }
 
 fn default_sources() -> Sources {
-    Sources { qfl: true }
+    Sources { qfl: true, movers: true }
 }
 
 impl Default for ScannerConfig {
@@ -64,6 +73,10 @@ pub struct ScannerStatus {
     pub crack_count: usize,
     pub near_count: usize,
     pub drop_count: usize,
+    pub pump_count: usize,
+    pub dump_count: usize,
+    /// the pump / dump watcher: warming up, or how many coins it watches
+    pub mover_state: String,
     pub error: Option<String>,
 }
 
@@ -90,9 +103,10 @@ fn now_ms() -> u64 {
 
 fn rank(k: SignalKind) -> u8 {
     match k {
-        SignalKind::Crack => 0,
-        SignalKind::Drop => 1,
-        SignalKind::Near => 2,
+        SignalKind::Pump | SignalKind::Dump => 0,
+        SignalKind::Crack => 1,
+        SignalKind::Drop => 2,
+        SignalKind::Near => 3,
     }
 }
 
@@ -109,6 +123,8 @@ fn refresh_counts(inner: &mut Inner) {
     inner.status.crack_count = c;
     inner.status.near_count = n;
     inner.status.drop_count = d;
+    inner.status.pump_count = count(SignalKind::Pump);
+    inner.status.dump_count = count(SignalKind::Dump);
 }
 
 fn emit_status(app: &AppHandle, inner: &Inner) {
@@ -148,6 +164,7 @@ fn analyse_symbol(app: &AppHandle, inner: &mut Inner, symbol: &str) {
         }
     }
     inner.signals.retain(|_, s| !(s.kind == SignalKind::Crack && now.saturating_sub(s.time_ms) > KEEP_MS));
+    inner.signals.retain(|_, s| !(matches!(s.kind, SignalKind::Pump | SignalKind::Dump) && now.saturating_sub(s.time_ms) > SPIKE_KEEP_MS));
 }
 
 fn apply_bar(buf: &mut Vec<Candle>, c: Candle) {
@@ -183,9 +200,16 @@ impl Scanner {
         let mut g = self.inner.lock().unwrap();
         g.config.sources = sources;
         if !sources.qfl {
-            g.signals.clear();
+            g.signals.retain(|_, s| matches!(s.kind, SignalKind::Pump | SignalKind::Dump));
+        }
+        if !sources.movers {
+            g.signals.retain(|_, s| !matches!(s.kind, SignalKind::Pump | SignalKind::Dump));
         }
         emit_signals(app, &mut g, true);
+    }
+
+    pub fn injector(&self) -> Injector {
+        Injector { inner: self.inner.clone() }
     }
 
     pub fn stop(&self) {
@@ -202,13 +226,53 @@ impl Scanner {
         self.stop();
         {
             let mut g = self.inner.lock().unwrap();
+            // a restart (another timeframe or universe) keeps the sudden moves already seen
+            let spikes: Vec<(String, Signal)> = g.signals.iter().filter(|(_, s)| matches!(s.kind, SignalKind::Pump | SignalKind::Dump)).map(|(k, s)| (k.clone(), s.clone())).collect();
+            let mover_state = g.status.mover_state.clone();
             *g = Inner { config: config.clone(), ..Default::default() };
-            g.status = ScannerStatus { running: true, phase: "loading symbols".into(), timeframe: config.timeframe.clone(), ..Default::default() };
+            for (k, s) in spikes {
+                g.announced.insert(k.clone());
+                g.signals.insert(k, s);
+            }
+            g.status = ScannerStatus { running: true, phase: "loading symbols".into(), timeframe: config.timeframe.clone(), mover_state, ..Default::default() };
             emit_status(&app, &g);
         }
         let inner = self.inner.clone();
         let task = tauri::async_runtime::spawn(async move { run(app, market, inner, config).await });
         *self.task.lock().unwrap() = Some(task);
+    }
+}
+
+/// A handle the pump / dump watcher uses to put its signals into the scanner's list and report its state.
+#[derive(Clone)]
+pub struct Injector {
+    inner: Arc<Mutex<Inner>>,
+}
+
+impl Injector {
+    /// Add a sudden-move signal (ignored while the Movers source is off) and tell the UI.
+    pub fn add(&self, app: &AppHandle, signal: Signal) {
+        let mut g = self.inner.lock().unwrap();
+        if !g.config.sources.movers {
+            return;
+        }
+        if g.announced.insert(signal.id.clone()) {
+            let _ = app.emit("signal-new", signal.clone());
+        }
+        g.signals.insert(signal.id.clone(), signal);
+        emit_signals(app, &mut g, true);
+    }
+
+    pub fn set_state(&self, app: &AppHandle, state: String) {
+        let mut g = self.inner.lock().unwrap();
+        if g.status.mover_state != state {
+            g.status.mover_state = state;
+            emit_status(app, &g);
+        }
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.inner.lock().unwrap().config.sources.movers
     }
 }
 

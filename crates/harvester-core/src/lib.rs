@@ -6,6 +6,7 @@ pub mod filters;
 pub mod held;
 pub mod lab;
 pub mod ladder;
+pub mod movers;
 pub mod candle;
 pub mod qfl;
 pub mod smc;

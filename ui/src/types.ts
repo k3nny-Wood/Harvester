@@ -81,7 +81,7 @@ export interface LadderPreview {
   averageEntry: number;
 }
 
-export type SignalKind = 'crack' | 'near' | 'drop';
+export type SignalKind = 'crack' | 'near' | 'drop' | 'pump' | 'dump';
 
 export interface ScoreParts {
   structure: number;
@@ -122,6 +122,10 @@ export interface ScannerStatus {
   crackCount: number;
   nearCount: number;
   dropCount: number;
+  pumpCount: number;
+  dumpCount: number;
+  /** the pump / dump watcher: warming up, or how many coins it watches */
+  moverState: string;
   error: string | null;
 }
 
@@ -138,6 +142,23 @@ export interface SignalParams {
 
 export interface Sources {
   qfl: boolean;
+  movers: boolean;
+}
+
+/** One window of the pump / dump watcher: a move this big (%) within this many seconds counts. */
+export interface WindowRule {
+  secs: number;
+  minPct: number;
+}
+
+export interface MoverParams {
+  rules: WindowRule[];
+  /** a move must be this many times the coin's normal move for the window */
+  normalMultiple: number;
+  /** ignore coins with less 24 h quote volume (USDT) than this */
+  minQuoteVolume: number;
+  cooldownSecs: number;
+  warmupSecs: number;
 }
 
 export interface ScannerConfig {

@@ -11,6 +11,7 @@
 //! the MarketScanner research; treat it as a hypothesis, not a guarantee).
 
 use crate::candle::{atr_pct, Candle};
+use crate::movers::{window_label, Spike};
 use crate::qfl::{detect_filtered, BaseRangeFilter, QflParams};
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +21,10 @@ pub enum SignalKind {
     Crack,
     Near,
     Drop,
+    /// a sudden rise of price (see `movers`)
+    Pump,
+    /// a sudden fall of price
+    Dump,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,6 +152,44 @@ fn stabilising(candles: &[Candle]) -> (f64, Option<&'static str>) {
         (6.0, Some("The latest fall is smaller than the one before"))
     } else {
         (0.0, None)
+    }
+}
+
+fn fmt_money(v: f64) -> String {
+    if v >= 1e9 {
+        format!("{:.2}B", v / 1e9)
+    } else if v >= 1e6 {
+        format!("{:.1}M", v / 1e6)
+    } else {
+        format!("{:.0}K", v / 1e3)
+    }
+}
+
+/// The signal for a sudden move. `candles` are recent 1-minute candles of the symbol, for the thumbnail (may be empty).
+pub fn spike_signal(spike: &Spike, candles: &[Candle], thumb_bars: usize) -> Signal {
+    let pump = spike.is_pump();
+    let reasons = vec![
+        format!("{:+.1}% in {} ({:.1}x its typical move for that long)", spike.change_pct, window_label(spike.window_secs), spike.multiple),
+        format!("From {:.6} to {:.6}", spike.from_price, spike.price),
+        format!("24h volume {} USDT", fmt_money(spike.quote_volume)),
+    ];
+    Signal {
+        id: format!("{}:spike:{}", spike.symbol, spike.time_ms),
+        symbol: spike.symbol.clone(),
+        timeframe: "1m".to_string(),
+        kind: if pump { SignalKind::Pump } else { SignalKind::Dump },
+        time_ms: spike.time_ms,
+        price: spike.price,
+        base: None,
+        crack_level: None,
+        distance_pct: Some(spike.change_pct),
+        drop_pct: if pump { 0.0 } else { -spike.change_pct },
+        vol_ratio: 1.0,
+        donch_pos: None,
+        score: (40.0 + spike.multiple * 6.0).round().clamp(0.0, 100.0) as u8,
+        parts: ScoreParts { structure: 0.0, volume: 0.0, magnitude: 0.0, pivot: 0.0, stabilising: 0.0 },
+        reasons,
+        thumb: thumb(candles, thumb_bars),
     }
 }
 
@@ -373,5 +416,22 @@ mod tests {
                 assert!(s.score <= 100);
             }
         }
+    }
+
+    #[test]
+    fn a_spike_becomes_a_pump_or_dump_signal_with_a_score_from_how_unusual_it_is() {
+        let up = Spike { symbol: "ABCUSDT".into(), time_ms: 1_700_000_000_000, window_secs: 300, change_pct: 4.2, from_price: 1.0, price: 1.042, multiple: 6.0, quote_volume: 82e6 };
+        let s = spike_signal(&up, &[], 60);
+        assert_eq!(s.kind, SignalKind::Pump);
+        assert_eq!(s.timeframe, "1m");
+        assert_eq!(s.score, 76);
+        assert!(s.reasons[0].contains("+4.2% in 5m") && s.reasons[0].contains("6.0x"));
+        assert!(s.reasons[2].contains("82.0M"));
+        assert!(s.id.starts_with("ABCUSDT:spike:"));
+        let down = Spike { change_pct: -3.1, multiple: 30.0, ..up.clone() };
+        let d = spike_signal(&down, &[], 60);
+        assert_eq!(d.kind, SignalKind::Dump);
+        assert_eq!(d.score, 100, "the score stays within 0..100");
+        assert!((d.drop_pct - 3.1).abs() < 1e-9);
     }
 }

@@ -1562,3 +1562,27 @@ button.mini {
   padding: 2px 4px;
   color: inherit;
 }
+
+/* sudden pumps and dumps */
+.chip.on.pump {
+  border-color: var(--up);
+  color: var(--up);
+}
+.chip.on.dump {
+  border-color: var(--down);
+  color: var(--down);
+}
+.sig-card.pump {
+  border-left-color: var(--up);
+}
+.sig-card.dump {
+  border-left-color: var(--down);
+}
+.kind.pump {
+  background: var(--up);
+  color: #fff;
+}
+.kind.dump {
+  background: var(--down);
+  color: #fff;
+}

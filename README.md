@@ -121,3 +121,7 @@ ui                      React + dockview + Vela
 Harvester is AGPL-3.0-or-later. It uses Vela (Apache-2.0, requires the "Charting by Vela" attribution),
 PineTS and the Vela PineTS addon (AGPL-3.0), dockview (MIT), Tauri (MIT / Apache-2.0).
 Not financial advice: you trade at your own risk.
+
+## Pump / dump scanner
+
+The Signals panel has a **Movers** source (on by default) that watches every USDT perpetual on one live price stream (mainnet) and reports sudden moves as `PUMP` / `DUMP` entries, with a 1-minute thumbnail, sound alert and click-to-open-chart like any other signal. A move counts when it reaches the window's minimum % (1.5% in 1 min, 3% in 5 min, 5% in 15 min) AND is several times (default 5x) what that coin normally moves in that long; thin coins (< $3M 24h volume) are ignored, and a coin stays quiet for 10 min after a report. All of it is adjustable with the cog next to Movers. It needs about 3 minutes after start to learn each coin's normal movement.
