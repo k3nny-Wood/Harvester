@@ -7,6 +7,7 @@ import { getDock } from '../dock';
 import { intervalToVela } from '../intervals';
 import { useApp } from '../store';
 import { DRAWING_GROUPS } from './drawingTools';
+import { ChartFills } from './ChartFills';
 import { ChartTrading } from './ChartTrading';
 import { LadderOverlay } from './LadderOverlay';
 import { pushLayerData } from './projector';
@@ -133,6 +134,7 @@ function ChartBody() {
   return (
     <div className="chart-shell">
       <div ref={ref} className="chart-host" />
+      <ChartFills chart={chart} />
       <ChartTrading chart={chart} host={ref} />
       <LadderOverlay chart={chart} host={ref} />
     </div>

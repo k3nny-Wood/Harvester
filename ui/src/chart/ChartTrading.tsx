@@ -15,6 +15,9 @@ interface Line {
   orderId?: number;
   conditional?: boolean;
   dashed: boolean;
+  /** the price is above (up) or below (down) the visible range: drawn at that edge with an arrow */
+  pinned?: 'up' | 'down';
+  price?: number;
 }
 
 interface MenuState {
@@ -98,19 +101,28 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
   if (info && root) {
     const rect = root.getBoundingClientRect();
     const offY = info.plotRect.top - rect.top;
-    const yOf = (p: number) => {
+    const topPrice = info.proj.pxToPoint(0, 0, 'price').price;
+    const bottomPrice = info.proj.pxToPoint(0, info.proj.height, 'price').price;
+    const pinnedCount = { up: 0, down: 0 };
+    /** y of a price inside the plot; for a price outside the visible range, a stacked slot at the nearest edge. */
+    const place = (p: number): { y: number; pinned?: 'up' | 'down' } | null => {
+      if (p > topPrice) return { y: offY + 12 + 18 * pinnedCount.up++, pinned: 'up' };
+      if (p < bottomPrice) return { y: offY + info.proj.height - 12 - 18 * pinnedCount.down++, pinned: 'down' };
       const y = info.proj.yOf(p, 'price');
-      return y == null ? null : offY + y;
+      return y == null ? null : { y: offY + y };
     };
+    const yOf = (p: number) => place(p)?.y ?? null;
     for (const o of orders.filter((o) => o.symbol === symbol)) {
       const p = o.price || o.stopPrice;
-      const y = p ? yOf(p) : null;
-      if (y == null) continue;
+      const at = p ? place(p) : null;
+      if (!at) continue;
       lines.push({
         key: `o${o.orderId}`,
-        y,
+        y: at.y,
+        pinned: at.pinned,
+        price: p,
         color: o.side === 'BUY' ? BUY : SELL,
-        label: `${o.side} ${o.type.replace('_', ' ')} ${o.origQty} @ ${formatPrice(p, precision)}`,
+        label: `${at.pinned === 'up' ? '▲ ' : at.pinned === 'down' ? '▼ ' : ''}${o.side} ${o.type.replace(/_/g, ' ')} ${o.origQty} @ ${formatPrice(p, precision)}${o.conditional && o.price ? ` (trigger ${formatPrice(o.stopPrice, precision)})` : ''}`,
         orderId: o.orderId,
         conditional: o.conditional,
         dashed: o.type !== 'LIMIT',
@@ -141,8 +153,8 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
       <svg className="trade-svg">
         {lines.map((l) => (
           <g key={l.key}>
-            <line x1={offX} x2={offX + plotW} y1={l.y} y2={l.y} stroke={l.color} strokeWidth={1.2} strokeDasharray={l.dashed ? '5 4' : undefined} opacity={0.9} />
-            <text x={offX + 8} y={l.y - 4} className="trade-label" fill={l.color}>
+            <line x1={offX} x2={offX + plotW} y1={l.y} y2={l.y} stroke={l.color} strokeWidth={l.pinned ? 0.8 : 1.2} strokeDasharray={l.pinned ? '2 5' : l.dashed ? '5 4' : undefined} opacity={l.pinned ? 0.55 : 0.9} />
+            <text x={l.pinned ? offX + plotW - 90 : offX + 8} y={l.y - 4} textAnchor={l.pinned ? 'end' : 'start'} className="trade-label" fill={l.color}>
               {l.label}
             </text>
             {l.orderId != null && (
