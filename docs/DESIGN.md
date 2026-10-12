@@ -19,7 +19,9 @@ Open source (AGPL-3.0-or-later), Windows first, testnet by default.
 ## Layout
 
 ```
-crates/harvester-core   pure logic, no I/O: decimals, symbol filters, ladder builder (+ QFL, scanner, risk next)
+crates/harvester-core   pure logic, no I/O: decimals, symbol filters, ladder builder, QFL detector, signals, ML features + trade plans
+crates/harvester-ml     ONNX inference (`ort`): scaler, model config, long / short predictors
+models                  models/15m/*.onnx and model_config_*.json (found next to the exe or in the project)
 src-tauri               the app: Binance REST + websocket feeds, Tauri commands/events
 ui                      React + dockview + Vela
 docs                    this file
@@ -42,6 +44,18 @@ The Rust side owns every feed and every calculation; the UI renders and listens.
 Buy ladder when the range runs down from its start, sell ladder when it runs up (switchable).
 Placing the orders needs the signed trading API and comes with the trading milestone.
 
+## ML signals and trade plans
+
+`harvester-core::ml` holds the 38-feature calculation (`BatchIndicators`, ported from MarketScanner) and `plan.rs`:
+`evaluate(candles, params, predict)` asks the model for a long and a short probability, applies the RSI reversal filter and the minimum
+confidence, and builds a `TradePlan` (stop from the recent swing / ATR clamped to 0.5-8 %, target at 2R). `harvester-ml` loads the ONNX models.
+The scanner evaluates ML on the last closed 15 m candle of each scanned symbol and emits `Signal { kind: Ml, side, probability, plan }`.
+
+Placing a plan (`trading::place_bracket`): the stop and the target are checked to be on the right sides of the entry, the entry order goes out,
+and a watcher waits until the entry is no longer open, reads the position and places a reduce-only STOP_MARKET and TAKE_PROFIT_MARKET for its
+size. Exits cannot be sent first because the exchange refuses reduce-only orders without a position. The outcome is reported as a `bracket`
+event. `harvester-core::filters::validate_order` applies the percent-price band to limit prices only, as Binance does.
+
 ## Roadmap
 
 | # | Milestone | Status |
@@ -54,7 +68,7 @@ Placing the orders needs the signed trading API and comes with the trading miles
 | 6 | The ladder tool places real orders (draw start/end, slider, preview, place) | done |
 | 7 | Pine Script: per-chart workspace (PineTS in a web worker), 8 built-in + 138 community scripts (everget, MIT/GPL-3.0), `/` quick picker, editor, live plot values; every script is run by the test suite | done |
 | 8 | Lab panel: the backtest workbench (shared-account simulator, luck test, start-date test, stressed costs) | |
-| 9 | ML trade finder (ONNX via `ort`), clearly marked experimental | |
+| 9 | ML trade finder (ONNX via `ort`), clearly marked experimental: ML signals, trade-plan overlay (entry -> target arrow, stop), plan card, bracket placement (entry, then reduce-only stop-loss and take-profit) | done |
 | 10 | Installer (NSIS), settings, documentation, CI | |
 
 ## Principles
