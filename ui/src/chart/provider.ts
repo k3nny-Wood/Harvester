@@ -2,6 +2,7 @@ import type { DataProvider, OHLCV } from '@luxalgo/vela';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { api, onKline } from '../api';
 import { TIMEFRAMES, velaToInterval } from '../intervals';
+import { fetchBars } from './history';
 
 /** Feeds Vela from the Rust core: history over a command, live bars over `kline` events. */
 export class HarvesterProvider implements DataProvider {
@@ -21,8 +22,9 @@ export class HarvesterProvider implements DataProvider {
   }
 
   async getBars(ticker: string, timeframe: string, range: { from?: number; to?: number; limit?: number }): Promise<OHLCV[]> {
-    const rows = await api.klines(ticker, velaToInterval(timeframe), Math.min(1500, Math.max(10, range.limit ?? 500)), range.from, range.to);
-    return rows.map((r) => ({ time: r.time, open: r.open, high: r.high, low: r.low, close: r.close, volume: r.volume }));
+    const interval = velaToInterval(timeframe);
+    // any size of window: pieces of 1500 are joined, so zooming out or panning back never leaves a gap
+    return fetchBars(async (limit, from, to) => (await api.klines(ticker, interval, limit, from, to)).map((r) => ({ time: r.time, open: r.open, high: r.high, low: r.low, close: r.close, volume: r.volume })), range);
   }
 
   subscribe(ticker: string, timeframe: string, onBar: (bar: OHLCV) => void): () => void {

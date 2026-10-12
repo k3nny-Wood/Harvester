@@ -8,7 +8,8 @@ import { createPineBridge } from '../pine/chartPine';
 import { createPineStore, usePineStore } from '../pine/pineStore';
 import { ChartContext, chartRegistry, createChartStore, useChart, useChartId, usePine, type ChartStore } from '../chartStore';
 import { getDock } from '../dock';
-import { intervalToVela } from '../intervals';
+import { intervalMs, intervalToVela } from '../intervals';
+import { deeperTarget, START_BARS } from './history';
 import { useApp } from '../store';
 import { DRAWING_GROUPS } from './drawingTools';
 import { ChartBases } from './ChartBases';
@@ -94,7 +95,7 @@ function ChartBody() {
       timeframe: intervalToVela(initial.current.timeframe),
       live: true,
       theme: 'dark',
-      bars: 400,
+      bars: START_BARS,
       drawings: { toolbar: true, groups: DRAWING_GROUPS },
       volume: true,
       currentPriceLine: true,
@@ -139,9 +140,37 @@ function ChartBody() {
     return () => window.removeEventListener('keydown', onKey);
   }, [chartId]);
 
+  // Older candles on demand: Vela holds a fixed depth, so when panning or zooming out reaches the oldest bar the chart is
+  // reloaded deeper (the view stays where it is) until the exchange has nothing older.
+  const depth = useRef({ oldest: 0, loaded: START_BARS, genesis: false, loading: false });
+  const timeframeRef = useRef(timeframe);
+  timeframeRef.current = timeframe;
   useEffect(() => {
     if (!chart) return;
-    void chart.setMarket({ symbol: `binance:${symbol}`, timeframe: intervalToVela(timeframe) });
+    const d = depth.current;
+    const done = chart.on('history:complete', (e: { reason: string; oldestTime: number; barsLoaded: number }) => {
+      d.oldest = e.oldestTime;
+      d.loaded = e.barsLoaded;
+      d.genesis = e.reason === 'genesis';
+      d.loading = false;
+    });
+    const moved = chart.on('viewport:changed', (v: { from: number; to: number }) => {
+      if (d.loading || d.genesis) return;
+      const target = deeperTarget(v, d.oldest, d.loaded, intervalMs(timeframeRef.current), Date.now());
+      if (target == null) return;
+      d.loading = true;
+      window.setTimeout(() => (d.loading = false), 30_000); // never stay stuck if a load never reports back
+      void chart.setMarket({ bars: target, visibleRange: { from: v.from, to: v.to } }).catch(() => (d.loading = false));
+    });
+    return () => {
+      [done, moved].forEach((o) => typeof o === 'function' && o());
+    };
+  }, [chart]);
+
+  useEffect(() => {
+    if (!chart) return;
+    depth.current = { oldest: 0, loaded: START_BARS, genesis: false, loading: false };
+    void chart.setMarket({ symbol: `binance:${symbol}`, timeframe: intervalToVela(timeframe), bars: START_BARS });
     pushLayerData(chart, 'ticker-watermark', { symbol, enabled: true });
   }, [chart, symbol, timeframe]);
 
