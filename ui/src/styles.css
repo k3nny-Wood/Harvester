@@ -1700,7 +1700,8 @@ button.mini {
 /* the amount slider under the entry box (F / D setup) */
 .quick-amount {
   position: absolute;
-  pointer-events: auto;
+  /* the box itself lets clicks through to whatever is under it; only the slider is grabbable */
+  pointer-events: none;
   background: #0f1620;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -1713,6 +1714,7 @@ button.mini {
 .quick-amount input[type='range'] {
   width: 100%;
   margin: 0;
+  pointer-events: auto;
 }
 
 .quick-check {
