@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Account, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
+import type { Account, Side, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
 
 /** True when running inside the Tauri shell (false in a plain browser, e.g. `vite` on its own). */
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -17,6 +17,7 @@ export const api = {
   scannerSignals: () => invoke<Signal[]>('scanner_signals'),
   scannerStatus: () => invoke<ScannerStatus>('scanner_status'),
   scannerConfig: () => invoke<ScannerConfig>('scanner_config'),
+  scannerSources: (sources: Sources) => invoke<void>('scanner_sources', { sources }),
   scannerConfigure: (config: ScannerConfig) => invoke<void>('scanner_configure', { config }),
   tradingStatus: () => invoke<TradingStatus>('trading_status'),
   account: () => invoke<Account>('account_overview'),
@@ -28,6 +29,8 @@ export const api = {
   tradeHistory: (symbol: string, limit = 200) => invoke<TradeRecord[]>('trade_history', { symbol, limit }),
   modifyOrder: (symbol: string, orderId: number, conditional: boolean, price?: number, stopPrice?: number) =>
     invoke<OrderAck>('modify_order', { symbol, orderId, conditional, price: price ?? null, stopPrice: stopPrice ?? null }),
+  placeBracket: (plan: { symbol: string; side: Side; quantity: number; entryPrice?: number; stop: number; target: number }) =>
+    invoke<OrderAck>('place_bracket', { plan: { ...plan, entryPrice: plan.entryPrice ?? null } }),
   symbolLeverage: (symbol: string) => invoke<LeverageInfo>('symbol_leverage', { symbol }),
   cancelAll: (symbol: string) => invoke<void>('cancel_all_orders', { symbol }),
   closePosition: (symbol: string, fraction = 1) => invoke<OrderAck>('close_position', { symbol, fraction }),
@@ -49,4 +52,8 @@ export function onSignalNew(handler: (s: Signal) => void): Promise<UnlistenFn> {
 
 export function onScannerStatus(handler: (s: ScannerStatus) => void): Promise<UnlistenFn> {
   return listen<ScannerStatus>('scanner-status', (ev) => handler(ev.payload));
+}
+
+export function onBracket(handler: (e: { symbol: string; ok: boolean; message: string }) => void): Promise<UnlistenFn> {
+  return listen<{ symbol: string; ok: boolean; message: string }>('bracket', (ev) => handler(ev.payload));
 }

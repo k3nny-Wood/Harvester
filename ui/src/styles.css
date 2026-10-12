@@ -1209,3 +1209,156 @@ button.mini {
 .pine-picker-item button:hover {
   border-color: var(--accent);
 }
+
+/* ML signals */
+.sig-sources {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.sig-sources .src {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  border-radius: 10px;
+  color: var(--muted);
+}
+.sig-sources .src i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4a5a70;
+}
+.sig-sources .src.on {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.sig-sources .src.on i {
+  background: var(--up);
+  box-shadow: 0 0 5px var(--up);
+}
+.chip.on.ml {
+  border-color: #8a7bd8;
+  color: #b3a8f0;
+}
+.sig-card.ml.long {
+  border-left-color: var(--up);
+}
+.sig-card.ml.short {
+  border-left-color: var(--down);
+}
+.kind.side.long {
+  background: var(--up);
+  color: #fff;
+}
+.kind.side.short {
+  background: var(--down);
+  color: #fff;
+}
+.kind.ml {
+  background: #5c4fb0;
+  color: #fff;
+}
+.sig-age a {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+/* trade plan overlay */
+.plan-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.plan-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.plan-label {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: #0b0f15;
+  stroke-width: 3px;
+}
+.plan-card {
+  position: absolute;
+  right: 74px;
+  top: 40px;
+  width: 262px;
+  background: rgba(17, 23, 34, 0.96);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  pointer-events: auto;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  z-index: 35;
+}
+.plan-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.plan-head .icon-btn {
+  margin-left: auto;
+}
+.plan-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.plan-seg button {
+  padding: 3px 6px;
+  font-size: 11px;
+}
+.plan-seg button.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.plan-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.plan-card input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.plan-sum {
+  display: grid;
+  gap: 2px;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.plan-sum > div {
+  display: flex;
+  justify-content: space-between;
+}
+.plan-sum span {
+  color: var(--muted);
+}
+.plan-actions {
+  margin-top: 4px;
+}
+.plan-actions button {
+  width: 100%;
+  padding: 7px;
+}
+.plan-note {
+  font-size: 11px;
+}

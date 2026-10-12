@@ -79,7 +79,19 @@ export interface LadderPreview {
   averageEntry: number;
 }
 
-export type SignalKind = 'crack' | 'near' | 'drop';
+export type SignalKind = 'crack' | 'near' | 'drop' | 'ml';
+
+/** A trade plan: entry, stop and target (from an ML signal; the trader can move the stop and the target). */
+export interface TradePlan {
+  side: Side;
+  entry: number;
+  stop: number;
+  target: number;
+  riskPct: number;
+  rewardPct: number;
+  rr: number;
+  entryTime: number;
+}
 
 export interface ScoreParts {
   structure: number;
@@ -105,6 +117,9 @@ export interface Signal {
   score: number;
   parts: ScoreParts;
   reasons: string[];
+  side?: Side | null;
+  probability?: number | null;
+  plan?: TradePlan | null;
   /** [time, open, high, low, close] */
   thumb: Array<[number, number, number, number, number]>;
 }
@@ -120,6 +135,8 @@ export interface ScannerStatus {
   crackCount: number;
   nearCount: number;
   dropCount: number;
+  mlCount: number;
+  mlStatus: string;
   error: string | null;
 }
 
@@ -134,10 +151,16 @@ export interface SignalParams {
   thumbBars: number;
 }
 
+export interface Sources {
+  qfl: boolean;
+  ml: boolean;
+}
+
 export interface ScannerConfig {
   timeframe: string;
   universe: number;
   params: SignalParams;
+  sources: Sources;
 }
 
 export interface TradingStatus {

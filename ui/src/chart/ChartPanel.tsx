@@ -12,6 +12,7 @@ import { intervalToVela } from '../intervals';
 import { useApp } from '../store';
 import { DRAWING_GROUPS } from './drawingTools';
 import { ChartFills } from './ChartFills';
+import { ChartPlan } from './ChartPlan';
 import { ChartTrading } from './ChartTrading';
 import { LadderOverlay } from './LadderOverlay';
 import { pushLayerData } from './projector';
@@ -186,6 +187,7 @@ function ChartBody() {
       <PinePanel open={pineOpen} onClose={() => setPineOpen(false)} />
       <PinePicker open={pickerOpen} onClose={() => setPickerOpen(false)} />
       <ChartFills chart={chart} />
+      <ChartPlan chart={chart} host={ref} />
       <ChartTrading chart={chart} host={ref} />
       <LadderOverlay chart={chart} host={ref} />
     </div>

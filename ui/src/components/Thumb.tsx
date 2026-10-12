@@ -5,6 +5,8 @@ interface Props {
   candles: Array<[number, number, number, number, number]>;
   base?: number | null;
   crackLevel?: number | null;
+  /** extra horizontal lines, e.g. an ML plan's entry, stop and target */
+  levels?: Array<{ price: number; color: string; dash?: number[] }>;
   width?: number;
   height?: number;
   onClick?: () => void;
@@ -12,7 +14,7 @@ interface Props {
 }
 
 /** A small candlestick picture of a signal: the base (blue), the crack level (amber, dashed) and the last price. */
-export function Thumb({ candles, base, crackLevel, width = 116, height = 68, onClick, title }: Props) {
+export function Thumb({ candles, base, crackLevel, levels, width = 116, height = 68, onClick, title }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -29,7 +31,7 @@ export function Thumb({ candles, base, crackLevel, width = 116, height = 68, onC
 
     let lo = Math.min(...candles.map((c) => c[3]));
     let hi = Math.max(...candles.map((c) => c[2]));
-    for (const level of [base, crackLevel]) {
+    for (const level of [base, crackLevel, ...(levels ?? []).map((l) => l.price)]) {
       if (level != null && level > 0) {
         lo = Math.min(lo, level);
         hi = Math.max(hi, level);
@@ -55,6 +57,7 @@ export function Thumb({ candles, base, crackLevel, width = 116, height = 68, onC
     };
     line(base, '#4f8fdd', []);
     line(crackLevel, '#e0a33d', [4, 3]);
+    levels?.forEach((l) => line(l.price, l.color, l.dash ?? []));
 
     candles.forEach((c, i) => {
       const x = 4 + i * slot + slot / 2;
@@ -71,7 +74,7 @@ export function Thumb({ candles, base, crackLevel, width = 116, height = 68, onC
     const last = candles[candles.length - 1][4];
     g.fillStyle = '#f0b90b';
     g.fillRect(width - 5, y(last) - 1.5, 5, 3);
-  }, [candles, base, crackLevel, width, height]);
+  }, [candles, base, crackLevel, levels, width, height]);
 
   return <canvas ref={ref} className="thumb" style={{ width, height }} onClick={onClick} title={title} />;
 }

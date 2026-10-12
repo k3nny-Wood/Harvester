@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { DockviewReact, type DockviewApi, type DockviewReadyEvent, type IDockviewPanelProps } from 'dockview-react';
-import { api, inTauri, onScannerStatus, onSignalNew, onSignals } from './api';
+import { api, inTauri, onBracket, onScannerStatus, onSignalNew, onSignals } from './api';
 import { ConfirmHost, confirmDialog } from './confirm';
 import { activeChartStore, useActiveChart } from './chartStore';
 import { ChartPanel } from './chart/ChartPanel';
@@ -96,10 +96,11 @@ function useScannerEvents() {
     let stopped = false;
     const keep = (p: Promise<() => void>) => void p.then((u) => (stopped ? u() : offs.push(u)));
     keep(onSignals(setSignals));
+    keep(onBracket((e) => toast(e.message, e.ok ? 'info' : 'warn')));
     keep(onScannerStatus(setScanner));
     keep(
       onSignalNew((s) => {
-        toast(`CRACK ${s.symbol} ${s.timeframe} · score ${s.score}`, 'signal');
+        toast(s.kind === 'ml' ? `ML ${s.side === 'BUY' ? 'LONG' : 'SHORT'} ${s.symbol} · ${s.score}%` : `CRACK ${s.symbol} ${s.timeframe} · score ${s.score}`, 'signal');
       }),
     );
     // the status carries the config's timeframe; refresh the full config when the scanner restarts

@@ -18,6 +18,7 @@ use serde_json::Value;
 use sha2::Sha256;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
+use tauri::{AppHandle, Emitter};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -193,6 +194,44 @@ pub struct Account {
     pub available_balance: f64,
     pub unrealized_pnl: f64,
     pub positions: Vec<Position>,
+}
+
+/// A trade plan to place: the entry, and the stop-loss and take-profit that are attached once the entry has filled.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BracketRequest {
+    pub symbol: String,
+    pub side: Side,
+    pub quantity: f64,
+    /// None = enter at market; Some(price) = a limit order resting at that price
+    #[serde(default)]
+    pub entry_price: Option<f64>,
+    pub stop: f64,
+    pub target: f64,
+}
+
+/// What happened to the exits of a bracket (sent to the UI as the `bracket` event).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BracketEvent {
+    pub symbol: String,
+    pub ok: bool,
+    pub message: String,
+}
+
+/// The stop and the target must sit on the correct sides of the entry.
+pub fn validate_bracket(side: Side, entry: f64, stop: f64, target: f64) -> Result<(), String> {
+    let ok = match side {
+        Side::Buy => stop < entry && entry < target,
+        Side::Sell => target < entry && entry < stop,
+    };
+    if ok {
+        Ok(())
+    } else if side == Side::Buy {
+        Err(format!("For a long, the stop ({stop}) must be below the entry ({entry}) and the target ({target}) above it."))
+    } else {
+        Err(format!("For a short, the target ({target}) must be below the entry ({entry}) and the stop ({stop}) above it."))
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -718,6 +757,70 @@ impl Trading {
         }
     }
 
+    /// Place the entry of a trade plan and, once it has filled, its stop-loss and take-profit.
+    ///
+    /// The exits cannot be placed first: they are reduce-only and the exchange refuses them without a position. So the
+    /// entry goes out now and a watcher (running inside Harvester) waits for it to finish, then protects the position that
+    /// actually exists. If Harvester is closed before a resting entry fills, no exits are placed - the UI says so.
+    pub async fn place_bracket(self: &Arc<Self>, app: AppHandle, req: BracketRequest) -> Result<OrderAck, String> {
+        let reference = match req.entry_price {
+            Some(p) => p,
+            None => self.reference_price(&req.symbol).await?,
+        };
+        validate_bracket(req.side, reference, req.stop, req.target)?;
+        let entry = OrderRequest {
+            symbol: req.symbol.clone(),
+            side: req.side,
+            order_type: if req.entry_price.is_some() { OrderType::Limit } else { OrderType::Market },
+            quantity: req.quantity,
+            price: req.entry_price,
+            stop_price: None,
+            post_only: false,
+            reduce_only: false,
+            client_id: None,
+        };
+        let ack = self.place(entry).await?;
+        let me = self.clone();
+        let (entry_id, limit_entry) = (ack.order_id, req.entry_price.is_some());
+        tauri::async_runtime::spawn(async move {
+            let ev = me.attach_exits(&req, entry_id, limit_entry).await;
+            let _ = app.emit("bracket", ev);
+        });
+        Ok(ack)
+    }
+
+    async fn attach_exits(&self, req: &BracketRequest, entry_id: i64, limit_entry: bool) -> BracketEvent {
+        let fail = |m: String| BracketEvent { symbol: req.symbol.clone(), ok: false, message: m };
+        let patience = if limit_entry { 4 * 3600 } else { 90 };
+        let started = std::time::Instant::now();
+        // wait until the entry order is no longer open (filled or cancelled)
+        loop {
+            match self.open_orders(Some(&req.symbol)).await {
+                Ok(open) if !open.iter().any(|o| o.order_id == entry_id && !o.conditional) => break,
+                Ok(_) | Err(_) => {}
+            }
+            if started.elapsed().as_secs() > patience {
+                return fail(format!("The {} entry has not filled yet: no stop-loss / take-profit were placed. Place them by hand when it fills.", req.symbol));
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+        let position = match self.account().await {
+            Ok(a) => a.positions.into_iter().find(|p| p.symbol == req.symbol),
+            Err(e) => return fail(format!("Could not read the position to protect it: {e}")),
+        };
+        let Some(pos) = position.filter(|p| (p.amount > 0.0) == (req.side == Side::Buy) && p.amount != 0.0) else {
+            return fail(format!("The {} entry order is gone but no position opened (cancelled or rejected): no exits placed.", req.symbol));
+        };
+        let exit_side = if req.side == Side::Buy { Side::Sell } else { Side::Buy };
+        let exit = |t: OrderType, trigger: f64| OrderRequest { symbol: req.symbol.clone(), side: exit_side, order_type: t, quantity: pos.amount.abs(), price: None, stop_price: Some(trigger), post_only: false, reduce_only: true, client_id: None };
+        let sl = self.place(exit(OrderType::StopMarket, req.stop)).await;
+        let tp = self.place(exit(OrderType::TakeProfitMarket, req.target)).await;
+        match (sl, tp) {
+            (Ok(_), Ok(_)) => BracketEvent { symbol: req.symbol.clone(), ok: true, message: format!("{}: entry filled, stop-loss {} and take-profit {} are in place for {}", req.symbol, req.stop, req.target, pos.amount.abs()) },
+            (a, b) => fail(format!("{}: the position is open but an exit failed - stop-loss: {}; take-profit: {}. Protect it by hand.", req.symbol, a.map(|_| "ok".to_string()).unwrap_or_else(|e| e), b.map(|_| "ok".to_string()).unwrap_or_else(|e| e))),
+        }
+    }
+
     /// Cancel one order. A stop / take-profit (`conditional`) is cancelled by its algo id.
     pub async fn cancel(&self, symbol: &str, order_id: i64, conditional: bool) -> Result<(), String> {
         if conditional {
@@ -898,6 +1001,15 @@ mod tests {
         assert!(o[0].conditional && o[0].order_id == 99 && o[0].stop_price == 2900.0 && o[0].order_type == "STOP_MARKET");
         let m = parse_max_leverage(&json!([{"symbol": "ETHUSDT", "brackets": [{"bracket": 1, "initialLeverage": 100}, {"bracket": 2, "initialLeverage": 50}]}]));
         assert_eq!(m, Some(100));
+    }
+
+    #[test]
+    fn a_bracket_needs_the_stop_and_target_on_the_right_sides() {
+        assert!(validate_bracket(Side::Buy, 100.0, 98.0, 104.0).is_ok());
+        assert!(validate_bracket(Side::Sell, 100.0, 102.0, 96.0).is_ok());
+        assert!(validate_bracket(Side::Buy, 100.0, 101.0, 104.0).is_err()); // stop above a long's entry
+        assert!(validate_bracket(Side::Buy, 100.0, 98.0, 99.0).is_err()); // target below a long's entry
+        assert!(validate_bracket(Side::Sell, 100.0, 98.0, 96.0).is_err()); // stop below a short's entry
     }
 
     #[test]

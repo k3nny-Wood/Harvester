@@ -115,7 +115,8 @@ pub fn validate_order(o: &OrderCheck, f: &SymbolFilters, reference_price: f64) -
                 if p > f.max_price {
                     errors.push(format!("Price {p} is above the maximum price {}.", f.max_price));
                 }
-                if reference_price > 0.0 {
+                // Binance's percent-price rule is about LIMIT prices; the trigger (and the limit leg) of a stop / take-profit is not held to it
+                if reference_price > 0.0 && o.stop_price.is_none() {
                     let (lower, upper, pf) = band(to_f64(p));
                     if pf > upper {
                         errors.push(format!("Price is above the +{:.2}% limit ({:.*}).", (f.multiplier_up - 1.0) * 100.0, f.price_precision as usize, upper));
@@ -126,13 +127,6 @@ pub fn validate_order(o: &OrderCheck, f: &SymbolFilters, reference_price: f64) -
                 }
             }
             _ => errors.push("A non-market order needs a price.".to_string()),
-        }
-    }
-
-    if let (Some(sp), true) = (o.stop_price, reference_price > 0.0) {
-        let (lower, upper, s) = band(to_f64(sp));
-        if s > upper || s < lower {
-            errors.push(format!("Stop price {sp} is outside the allowed trigger band."));
         }
     }
 
@@ -212,6 +206,19 @@ mod tests {
         // no price on a limit order
         let none = OrderCheck { quantity: Some(parse("1.000").unwrap()), ..Default::default() };
         assert!(validate_order(&none, &f, 3000.0).errors.iter().any(|e| e.contains("needs a price")));
+    }
+
+    #[test]
+    fn the_percent_band_holds_limit_prices_but_not_stop_triggers() {
+        let f = eth();
+        // a limit 10% above the market breaks the +5% band ...
+        let limit = OrderCheck { price: Some(parse("3300.00").unwrap()), quantity: Some(parse("1.000").unwrap()), ..Default::default() };
+        assert!(!validate_order(&limit, &f, 3000.0).ok);
+        // ... but a stop / take-profit trigger 10% away is fine, as is a stop-limit's limit leg
+        let trigger = OrderCheck { stop_price: Some(parse("3300.00").unwrap()), quantity: Some(parse("1.000").unwrap()), is_market: true, ..Default::default() };
+        assert!(validate_order(&trigger, &f, 3000.0).ok);
+        let stop_limit = OrderCheck { stop_price: Some(parse("3300.00").unwrap()), price: Some(parse("3310.00").unwrap()), quantity: Some(parse("1.000").unwrap()), ..Default::default() };
+        assert!(validate_order(&stop_limit, &f, 3000.0).ok);
     }
 
     #[test]
