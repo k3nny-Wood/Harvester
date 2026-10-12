@@ -5,6 +5,7 @@ import type { OpenOrder } from '../types';
 import { useChart, useChartId } from '../chartStore';
 import { formatPrice, snapToTick } from '../ladderMath';
 import { useApp } from '../store';
+import { clampToBand, priceBand } from '../priceBand';
 import { orderFromForm, refreshTrading, submitOrder } from '../trade';
 import { getProjector } from './projector';
 
@@ -61,6 +62,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
   const mark = useChart((s) => s.markPrice);
   const precision = filters?.pricePrecision ?? 2;
   const canTrade = !!trading?.hasCredentials;
+  const band = filters ? priceBand(mark, filters.multiplierDown, filters.multiplierUp, filters.tickSize) : null;
 
   useEffect(() => {
     if (!chart) return;
@@ -153,6 +155,22 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
       if (yl != null) lines.push({ key: 'liq', y: yl, color: '#e0a33d', label: `LIQ ${formatPrice(pos.liquidationPrice, precision)}`, dashed: true });
     }
   }
+  // the parts of the chart where a limit order would be refused (percent-price band), as shaded zones with the edge price
+  const zones: Array<{ y: number; h: number; label: string; edgeY: number }> = [];
+  if (info && root && band) {
+    const rect = root.getBoundingClientRect();
+    const offY = info.plotRect.top - rect.top;
+    const topP = info.proj.pxToPoint(0, 0, 'price').price;
+    const botP = info.proj.pxToPoint(0, info.proj.height, 'price').price;
+    if (band.high < topP) {
+      const edge = Math.max(0, info.proj.yOf(band.high, 'price') ?? 0);
+      zones.push({ y: offY, h: edge, edgeY: offY + edge, label: `limit orders above ${formatPrice(band.high, precision)} are refused` });
+    }
+    if (band.low > botP) {
+      const edge = Math.min(info.proj.height, info.proj.yOf(band.low, 'price') ?? info.proj.height);
+      zones.push({ y: offY + edge, h: info.proj.height - edge, edgeY: offY + edge, label: `limit orders below ${formatPrice(band.low, precision)} are refused` });
+    }
+  }
   const plotW = info?.proj.width ?? 0;
   const offX = info && root ? info.plotRect.left - root.getBoundingClientRect().left : 0;
 
@@ -167,8 +185,11 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
   };
   const moveDrag = (e: React.PointerEvent) => {
     if (!drag) return;
-    const p = priceAt(e.clientY);
-    if (p != null && p > 0) setDrag({ ...drag, to: p });
+    const raw = priceAt(e.clientY);
+    if (raw == null || raw <= 0) return;
+    // a limit price outside the exchange's band is refused, so the line stops at the edge; stop triggers are free to go anywhere
+    const isStop = useApp.getState().orders.some((x) => x.orderId === drag.orderId && x.conditional === drag.conditional && x.conditional);
+    setDrag({ ...drag, to: isStop ? raw : clampToBand(raw, band) });
   };
   const endDrag = async (e: React.PointerEvent) => {
     const d = drag;
@@ -214,6 +235,15 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
   return (
     <div ref={rootRef} className="trade-layer">
       <svg className="trade-svg">
+        {zones.map((z, i) => (
+          <g key={`z${i}`} className="band-zone">
+            <rect x={offX} y={z.y} width={plotW} height={Math.max(0, z.h)} />
+            <line x1={offX} x2={offX + plotW} y1={z.edgeY} y2={z.edgeY} />
+            <text x={offX + plotW - 90} y={i === 0 ? z.edgeY - 4 : z.edgeY + 12} textAnchor="end">
+              {z.label}
+            </text>
+          </g>
+        ))}
         {lines.map((l) => (
           <g key={l.key}>
             <line x1={offX} x2={offX + plotW} y1={l.y} y2={l.y} stroke={l.color} strokeWidth={l.dragging ? 2.4 : l.pinned ? 0.8 : 1.2} strokeDasharray={l.pinned ? '2 5' : l.dashed ? '5 4' : undefined} opacity={l.pinned ? 0.55 : 0.9} />
