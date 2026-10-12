@@ -35,3 +35,30 @@ describe('order size from the menu slider', () => {
     expect(maxPct(0, 3, 5000)).toBe(0);
   });
 });
+
+import { closeOrder, floorToStep } from '../src/sizing';
+
+describe('closing a share of the holdings', () => {
+  it('rounds down to the step, never up', () => {
+    expect(floorToStep(3487.55, 0.1)).toBeCloseTo(3487.5, 9);
+    expect(floorToStep(0.00999, 0.001)).toBeCloseTo(0.009, 9);
+    expect(floorToStep(5, 0)).toBe(5);
+    expect(floorToStep(0.3, 0.1)).toBeCloseTo(0.3, 9); // no float drift below the step
+  });
+
+  it('a long is closed by selling, a short by buying back, always reduce-only', () => {
+    expect(closeOrder(6975.3, 50, 0.1)).toEqual({ side: 'SELL', quantity: 3487.6, reduceOnly: true });
+    expect(closeOrder(-120, 25, 1)).toEqual({ side: 'BUY', quantity: 30, reduceOnly: true });
+  });
+
+  it('100% is exactly the position, so the exchange never sees more than is held', () => {
+    expect(closeOrder(6975.3, 100, 1)?.quantity).toBe(6975.3);
+    expect(closeOrder(6975.3, 99.9, 1)!.quantity).toBeLessThanOrEqual(6975.3);
+  });
+
+  it('no position, no share, or a share below one step gives no order', () => {
+    expect(closeOrder(0, 50, 0.1)).toBeNull();
+    expect(closeOrder(5, 0, 0.1)).toBeNull();
+    expect(closeOrder(0.05, 10, 0.1)).toBeNull();
+  });
+});

@@ -49,6 +49,17 @@ Right-click on a chart for: buy / sell limit at that price, start a ladder from 
 the account (wallet balance) used as margin, with the margin and the position value in USDT beside it (position = margin x the form's leverage), and a box where you can type the
 position value instead. The slider and the Orders panel share one size, so what you set in one shows in the other; it stops at the safety cap on one order (`MAX_ORDER_NOTIONAL`).
 
+## Selling (or buying back) a share of your holdings
+
+When you hold a position in a symbol, two places let you close a percentage of it with a **reduce-only limit order** on the closing side (sell a long, buy back a short):
+
+- the **right-click menu** has a "Close N% of your long / short" slider (5-100%) showing the quantity and its value, and a "Sell N% of holdings here" / "Buy back N% of holdings here"
+  button that places the order at the price you clicked;
+- the **Orders panel** has a "% position" size mode (enabled when you hold the symbol): the slider is the share of the position, the side and reduce-only are set for you.
+
+The quantity is rounded DOWN to the exchange's step and 100% is exactly the position, so the exchange never sees more than you hold. A closing order beyond Binance's price band is held on
+this computer like any other limit order.
+
 ## Held orders: limit orders outside Binance's price band
 
 Binance refuses a LIMIT order whose price is too far from the market (the percent-price filter, about 5% either way for most coins). Harvester no longer

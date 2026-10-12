@@ -2,6 +2,7 @@ import { api, inTauri, onAccountChanged, onHeldChanged, onUserStream } from './a
 import { activeChartStore } from './chartStore';
 import { confirmDialog } from './confirm';
 import { useApp } from './store';
+import { closeOrder } from './sizing';
 import type { OrderRequest, Side } from './types';
 
 /** Refresh the account, positions and open orders from the exchange. */
@@ -74,7 +75,8 @@ export function startTradingPoll(): () => void {
 }
 
 /** Quantity for the order form's size setting at a given price. */
-export function quantityFor(price: number, sizeMode: 'usdt' | 'qty' | 'pct', size: number, balance: number, leverage: number): number {
+export function quantityFor(price: number, sizeMode: 'usdt' | 'qty' | 'pct' | 'pos', size: number, balance: number, leverage: number, positionAmount = 0): number {
+  if (sizeMode === 'pos') return Math.abs(positionAmount) * (size > 0 ? Math.min(size, 100) : 0) / 100;
   if (!(price > 0) || !(size > 0)) return 0;
   if (sizeMode === 'qty') return size;
   if (sizeMode === 'usdt') return size / price;
@@ -118,6 +120,17 @@ export function orderFromForm(price?: number, side?: Side): { order: OrderReques
   const limitPrice = hasLimit ? price ?? (Number(f.price) || stopPrice || chart.markPrice) : undefined;
   const ref = limitPrice ?? stopPrice ?? chart.markPrice;
   const lev = Number(f.leverage) || 1;
+  // a share of the holdings: the closing side, reduce-only, never more than is held
+  if (f.sizeMode === 'pos') {
+    const pos = app.account?.positions.find((p) => p.symbol === chart.symbol && p.amount !== 0);
+    if (!pos) return `You hold no ${chart.symbol} position to close.`;
+    const c = closeOrder(pos.amount, Number(f.size), Number(chart.filters?.stepSize) || 0);
+    if (!c) return 'That share of the position is below the smallest order size.';
+    return {
+      order: { symbol: chart.symbol, side: c.side, type, quantity: c.quantity, price: limitPrice, stopPrice, postOnly: f.postOnly && hasLimit && type === 'LIMIT', reduceOnly: true },
+      notional: c.quantity * ref,
+    };
+  }
   const qty = quantityFor(ref, f.sizeMode, Number(f.size), app.account?.availableBalance ?? 0, lev);
   if (!(qty > 0)) return 'Enter a size greater than zero.';
   return {

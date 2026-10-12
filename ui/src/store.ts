@@ -10,7 +10,8 @@ export interface OrderForm {
   price: string;
   /** trigger price of a stop / take-profit (empty = a default near the market) */
   stopPrice: string;
-  sizeMode: 'usdt' | 'qty' | 'pct';
+  /** 'pos' = a percentage of the position held in the symbol (closes it: the closing side, reduce-only) */
+  sizeMode: 'usdt' | 'qty' | 'pct' | 'pos';
   size: string;
   reduceOnly: boolean;
   postOnly: boolean;

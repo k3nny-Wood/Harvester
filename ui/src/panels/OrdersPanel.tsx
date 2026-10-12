@@ -4,6 +4,7 @@ import { useActiveChart } from '../chartStore';
 import { openChart } from '../dock';
 import { snapToTick } from '../ladderMath';
 import { useApp } from '../store';
+import { closeOrder } from '../sizing';
 import { orderFromForm, quantityFor, refreshTrading, submitOrder } from '../trade';
 import type { OrderKind } from '../types';
 
@@ -97,7 +98,8 @@ export function OrdersPanel() {
   const limitPrice = needsLimit(t) ? Number(form.price) || (needsTrigger(t) ? Number(form.stopPrice) : base) || base : base;
   const refPrice = needsTrigger(t) ? Number(form.stopPrice) || base : limitPrice;
   const available = account?.availableBalance ?? 0;
-  const qty = quantityFor(refPrice, form.sizeMode, Number(form.size), available, lev);
+  const position = account?.positions.find((p) => p.symbol === symbol && p.amount !== 0);
+  const qty = form.sizeMode === 'pos' ? (closeOrder(position?.amount ?? 0, Number(form.size), Number(filters?.stepSize) || 0)?.quantity ?? 0) : quantityFor(refPrice, form.sizeMode, Number(form.size), available, lev);
   const notional = qty * refPrice;
   const margin = notional / Math.max(1, lev);
   const maker = t === 'LIMIT' && form.postOnly;
@@ -145,8 +147,8 @@ export function OrdersPanel() {
     await submitOrder(order, `${env === 'live' ? 'LIVE ORDER - real money.\n\n' : ''}${lines.join('\n')}\n\nPlace it?`);
   };
 
-  const sizeMax = form.sizeMode === 'pct' ? 100 : form.sizeMode === 'usdt' ? Math.max(100, Math.floor(available * Math.max(1, lev))) : Math.max(0.001, (available * Math.max(1, lev)) / Math.max(refPrice, 1e-9));
-  const sizeStep = form.sizeMode === 'pct' ? 1 : form.sizeMode === 'usdt' ? 1 : Number(filters?.stepSize) || 0.001;
+  const sizeMax = form.sizeMode === 'pct' || form.sizeMode === 'pos' ? 100 : form.sizeMode === 'usdt' ? Math.max(100, Math.floor(available * Math.max(1, lev))) : Math.max(0.001, (available * Math.max(1, lev)) / Math.max(refPrice, 1e-9));
+  const sizeStep = form.sizeMode === 'pct' || form.sizeMode === 'pos' ? 1 : form.sizeMode === 'usdt' ? 1 : Number(filters?.stepSize) || 0.001;
 
   return (
     <div className="panel order-entry">
@@ -215,21 +217,30 @@ export function OrdersPanel() {
 
       <div className="of-sizemode">
         <span>Size in</span>
-        {(['usdt', 'qty', 'pct'] as const).map((m) => (
-          <button key={m} className={form.sizeMode === m ? 'on' : ''} onClick={() => patch({ sizeMode: m, size: m === 'pct' ? '10' : m === 'usdt' ? '100' : String(qty ? qty.toFixed(qtyPrecision) : '0.01') })}>
-            {m === 'usdt' ? 'USDT' : m === 'qty' ? 'Quantity' : '% balance'}
+        {(['usdt', 'qty', 'pct', 'pos'] as const).map((m) => (
+          <button
+            key={m}
+            className={form.sizeMode === m ? 'on' : ''}
+            disabled={m === 'pos' && !position}
+            title={m === 'pos' ? (position ? 'A share of the position you hold: the order closes it (sell a long, buy back a short), reduce-only' : `You hold no ${symbol} position`) : undefined}
+            onClick={() => {
+              if (m === 'pos' && position) patch({ sizeMode: m, size: '50', side: position.amount > 0 ? 'SELL' : 'BUY', reduceOnly: true });
+              else patch({ sizeMode: m, size: m === 'pct' ? '10' : m === 'usdt' ? '100' : String(qty ? qty.toFixed(qtyPrecision) : '0.01') });
+            }}
+          >
+            {m === 'usdt' ? 'USDT' : m === 'qty' ? 'Quantity' : m === 'pct' ? '% balance' : '% position'}
           </button>
         ))}
       </div>
       <SliderField
-        label={form.sizeMode === 'pct' ? 'Margin used' : form.sizeMode === 'usdt' ? 'Order value' : 'Quantity'}
+        label={form.sizeMode === 'pct' ? 'Margin used' : form.sizeMode === 'pos' ? 'Share of your position' : form.sizeMode === 'usdt' ? 'Order value' : 'Quantity'}
         value={Number(form.size)}
-        min={form.sizeMode === 'pct' ? 1 : 0}
+        min={form.sizeMode === 'pct' || form.sizeMode === 'pos' ? 1 : 0}
         max={sizeMax}
         step={sizeStep}
         digits={form.sizeMode === 'qty' ? qtyPrecision : 2}
-        suffix={form.sizeMode === 'pct' ? '% of balance' : form.sizeMode === 'usdt' ? 'USDT' : symbol.replace('USDT', '')}
-        sub={`≈ ${qty ? qty.toFixed(qtyPrecision) : 0} ${symbol.replace('USDT', '')}  ·  ${notional.toFixed(2)} USDT`}
+        suffix={form.sizeMode === 'pct' ? '% of balance' : form.sizeMode === 'pos' ? '% of position' : form.sizeMode === 'usdt' ? 'USDT' : symbol.replace('USDT', '')}
+        sub={form.sizeMode === 'pos' && position ? `${position.amount > 0 ? 'sells' : 'buys back'} ${qty ? qty.toFixed(qtyPrecision) : 0} of your ${position.amount > 0 ? 'long' : 'short'} ${Math.abs(position.amount)} ${symbol.replace('USDT', '')}  ·  ≈ ${notional.toFixed(2)} USDT  ·  reduce-only` : `≈ ${qty ? qty.toFixed(qtyPrecision) : 0} ${symbol.replace('USDT', '')}  ·  ${notional.toFixed(2)} USDT`}
         onChange={(v) => patch({ size: String(v) })}
       />
 

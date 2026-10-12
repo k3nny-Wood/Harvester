@@ -6,7 +6,7 @@ import { useChart, useChartId } from '../chartStore';
 import { formatPrice, snapToTick } from '../ladderMath';
 import { useApp } from '../store';
 import { priceBand } from '../priceBand';
-import { maxPct, notionalOfForm, pctFromNotional, sizeFromPct } from '../sizing';
+import { closeOrder, maxPct, notionalOfForm, pctFromNotional, sizeFromPct } from '../sizing';
 import { orderFromForm, refreshTrading, submitOrder } from '../trade';
 import { getProjector } from './projector';
 
@@ -290,6 +290,21 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
   const overCap = cap > 0 && notional > cap;
   const setSizeFromPct = (pct: number) => patchForm({ sizeMode: 'usdt', size: sizeFromPct(pct, wallet, lev).notional.toFixed(2) });
 
+  // holdings: close a share of the position with a reduce-only limit order at the clicked price (sell a long, buy back a short)
+  const [closePct, setClosePct] = useState(50);
+  const holding = account?.positions.find((p) => p.symbol === symbol && p.amount !== 0);
+  const closing = holding ? closeOrder(holding.amount, closePct, Number(filters?.stepSize) || 0) : null;
+  const closeAt = async (price: number) => {
+    if (!holding || !closing) return;
+    setMenu(null);
+    const env = useApp.getState().env;
+    const verb = closing.side === 'SELL' ? 'Sell' : 'Buy back';
+    await submitOrder(
+      { symbol, side: closing.side, type: 'LIMIT', quantity: closing.quantity, price, reduceOnly: true },
+      `${env === 'live' ? 'LIVE ORDER - real money.\n\n' : ''}${verb} ${closing.quantity.toFixed(filters?.quantityPrecision ?? 3)} ${symbol} (${closePct}% of your ${holding.amount > 0 ? 'long' : 'short'}) @ ${formatPrice(price, precision)}\nReduce-only limit, about ${(closing.quantity * price).toFixed(2)} USDT. Place it?`,
+    );
+  };
+
   const placeAt = async (side: 'BUY' | 'SELL', price: number) => {
     setMenu(null);
     const built = orderFromForm(price, side);
@@ -402,6 +417,26 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
           >
             ✎ Use this price in the order form
           </button>
+          {holding && closing && (
+            <div className="ctx-size ctx-close">
+              <div className="ctx-size-row">
+                <span>Close</span>
+                <b>
+                  {closePct}% of your {holding.amount > 0 ? 'long' : 'short'}
+                </b>
+              </div>
+              <input type="range" min={5} max={100} step={5} value={closePct} onChange={(e) => setClosePct(Number(e.target.value))} title="Share of the position this order closes" />
+              <div className="ctx-size-row muted">
+                <span>
+                  {closing.side === 'SELL' ? 'sells' : 'buys back'} {closing.quantity.toFixed(filters?.quantityPrecision ?? 3)} of {Math.abs(holding.amount)}
+                </span>
+                <span>≈ ${(closing.quantity * menu.price).toFixed(2)}</span>
+              </div>
+              <button disabled={!canTrade} title={canTrade ? 'Reduce-only limit order at this price' : trading?.message} onClick={() => void closeAt(menu.price)}>
+                <span className={closing.side === 'SELL' ? 'down' : 'up'}>{closing.side === 'SELL' ? '▼' : '▲'}</span> {closing.side === 'SELL' ? 'Sell' : 'Buy back'} {closePct}% of holdings here
+              </button>
+            </div>
+          )}
           <div className="ctx-size">
             <div className="ctx-size-row">
               <span>Size</span>
