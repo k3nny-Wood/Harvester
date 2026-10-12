@@ -57,6 +57,13 @@ crack %, **merge bases within N%**, only holding zones within N% of the price, a
 edge) and whether broken zones stay. The defaults (factor 3.5, merge 0.5%, 15% of price, 8 nearest, 30 candles) keep the chart readable; V2 itself
 trades with factor 1. Resting the pointer on a **signal thumbnail** opens a larger chart with the zones and the signal's own base highlighted.
 
+## Smart Money zones on the chart
+
+The **SMC** button (next to Bases) draws fair value gaps, order blocks and breaker blocks, ported from MarketScanner's `smc` module with its rules
+unchanged. Green boxes are expected support, red ones expected resistance; a zone shrinks as price taps into it and disappears once it is used up.
+The gear chooses the kinds, the smallest gap, how many of each (newest) and how far the boxes run to the right. They are patterns, not signals: whether
+they add anything to the QFL ladder is a question for the Lab (see `docs/`).
+
 ## Lab (backtest)
 
 View > Lab. It downloads recent public 15 m candles for the busiest perpetuals (rate limited, cached for 6 hours in the temp folder),

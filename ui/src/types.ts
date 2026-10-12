@@ -329,3 +329,19 @@ export interface BaseZone {
   /** how many times price came back to the zone and held it */
   touches: number;
 }
+
+/** A Smart Money zone: a fair value gap, an order block or a breaker block. */
+export interface SmcZone {
+  kind: 'fvg' | 'orderBlock' | 'breaker';
+  /** true = expected support, false = expected resistance */
+  bullish: boolean;
+  time: number;
+  confirmTime: number;
+  /** what is left of the zone after price tapped into it */
+  low: number;
+  high: number;
+  fullLow: number;
+  fullHigh: number;
+  partiallyMitigated: boolean;
+  sizePct: number;
+}

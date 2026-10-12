@@ -13,6 +13,7 @@ import { useApp } from '../store';
 import { DRAWING_GROUPS } from './drawingTools';
 import { ChartBases } from './ChartBases';
 import { ChartFills } from './ChartFills';
+import { ChartSmc } from './ChartSmc';
 import { ChartTrading } from './ChartTrading';
 import { LadderOverlay } from './LadderOverlay';
 import { pushLayerData } from './projector';
@@ -188,6 +189,7 @@ function ChartBody() {
       <PinePicker open={pickerOpen} onClose={() => setPickerOpen(false)} />
       <ChartFills chart={chart} />
       <ChartBases chart={chart} />
+      <ChartSmc chart={chart} />
       <ChartTrading chart={chart} host={ref} />
       <LadderOverlay chart={chart} host={ref} />
     </div>

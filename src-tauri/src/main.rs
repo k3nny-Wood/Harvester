@@ -10,6 +10,7 @@ mod trading;
 use harvester_core::filters::SymbolFilters;
 use harvester_core::ladder::{build_ladder, LadderPreview, LadderSpec};
 use harvester_core::qfl::{base_zones, BaseZone, QflParams};
+use harvester_core::smc::{smc_zones, SmcParams, SmcZone};
 use harvester_core::signals::Signal;
 use harvester_core::lab::{LabConfig, LabReport};
 use lab::{Lab, LabRequest};
@@ -174,6 +175,15 @@ async fn qfl_zones(state: State<'_, AppState>, symbol: String, interval: String,
     Ok(base_zones(&candles, &params, merge_pct.unwrap_or(0.5).clamp(0.0, 5.0), 60))
 }
 
+/// Smart Money zones (fair value gaps, order blocks, breaker blocks) of a symbol / timeframe for the chart to draw.
+#[tauri::command]
+async fn smc_zones_cmd(state: State<'_, AppState>, symbol: String, interval: String, min_fvg_pct: Option<f64>, max_each: Option<usize>) -> Result<Vec<SmcZone>, String> {
+    let rows = state.market.klines(&symbol, &interval, 1000, None, None).await?;
+    let candles: Vec<harvester_core::candle::Candle> = rows.iter().map(|k| harvester_core::candle::Candle::new(k.time, k.open, k.high, k.low, k.close, k.volume)).collect();
+    let params = SmcParams { min_fvg_size_pct: min_fvg_pct.unwrap_or(0.5).clamp(0.05, 10.0), ..SmcParams::default() };
+    Ok(smc_zones(&candles, &params, max_each.unwrap_or(6).clamp(1, 60)))
+}
+
 /// The Lab's starting configuration (the V2 live setting).
 #[tauri::command]
 fn lab_default_config() -> LabConfig {
@@ -205,7 +215,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
-            qfl_zones, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
+            qfl_zones, smc_zones_cmd, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
             trading_status, account_overview, open_orders, place_order, place_orders, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())

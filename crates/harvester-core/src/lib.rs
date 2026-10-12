@@ -7,4 +7,5 @@ pub mod lab;
 pub mod ladder;
 pub mod candle;
 pub mod qfl;
+pub mod smc;
 pub mod signals;

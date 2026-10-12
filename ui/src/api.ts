@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Account, BaseZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
+import type { Account, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
 
 /** True when running inside the Tauri shell (false in a plain browser, e.g. `vite` on its own). */
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -33,6 +33,7 @@ export const api = {
   cancelAll: (symbol: string) => invoke<void>('cancel_all_orders', { symbol }),
   closePosition: (symbol: string, fraction = 1) => invoke<OrderAck>('close_position', { symbol, fraction }),
   setLeverage: (symbol: string, leverage: number) => invoke<void>('set_leverage', { symbol, leverage }),
+  smcZones: (symbol: string, interval: string, minFvgPct: number, maxEach: number) => invoke<SmcZone[]>('smc_zones_cmd', { symbol, interval, minFvgPct, maxEach }),
   qflZones: (symbol: string, interval: string, volatilityFactor: number, crackPct: number, mergePct: number) => invoke<BaseZone[]>('qfl_zones', { symbol, interval, volatilityFactor, crackPct, mergePct }),
   labDefaultConfig: () => invoke<LabConfig>('lab_default_config'),
   labRun: (request: { config: LabConfig; days: number; universe: number; luckRuns: number }) => invoke<LabReport>('lab_run', { request }),

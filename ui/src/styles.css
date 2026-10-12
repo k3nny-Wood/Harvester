@@ -1487,3 +1487,24 @@ button.mini {
   overflow: hidden;
   pointer-events: none;
 }
+
+.smc-bar {
+  position: absolute;
+  left: 240px;
+  top: 6px;
+  z-index: 30;
+  display: flex;
+  gap: 2px;
+}
+.smc-btn {
+  padding: 2px 10px;
+  font-size: 12px;
+  background: rgba(17, 23, 34, 0.9);
+}
+.smc-btn.on {
+  border-color: #2e9b6f;
+  color: #2e9b6f;
+}
+.bases-pop.smc-pop {
+  left: 240px;
+}
