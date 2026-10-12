@@ -26,21 +26,26 @@ describe('base shapes', () => {
     expect(baseShapes('A', '15m', [holding])[0].key).not.toBe(baseShapes('B', '15m', [holding])[0].key);
   });
 
-  it('broken bases are hidden unless asked for, and far ones are dropped', () => {
+  it('broken bases stay on the chart by default; the limits only thin out the bases that still hold', () => {
     const far: BaseView = { price: 50, time: 100, confirmTime: 200, crackTime: null, crackLevel: 49.75 };
     const all = [holding, cracked, far];
-    expect(visibleBases(all, { showBroken: false, maxDistancePct: 0, maxCount: 0 }, 100)).toEqual([holding, far]);
-    expect(visibleBases(all, { showBroken: true, maxDistancePct: 0, maxCount: 0 }, 100)).toEqual(all);
-    expect(visibleBases(all, { showBroken: false, maxDistancePct: 15, maxCount: 0 }, 100)).toEqual([holding]);
+    // everything is kept when nothing limits it, in time order
+    expect(visibleBases(all, { showBroken: true, maxDistancePct: 0, maxCount: 0 }, 100).map((b) => b.price)).toEqual([50, 90, 100]);
+    // the distance limit drops the far HOLDING base, never the broken one (price 90 is 10% away, the limit is 5%)
+    expect(visibleBases(all, { showBroken: true, maxDistancePct: 5, maxCount: 0 }, 100).map((b) => b.price)).toEqual([90, 100]);
+    // switching broken bases off removes only them
+    expect(visibleBases(all, { showBroken: false, maxDistancePct: 0, maxCount: 0 }, 100).map((b) => b.price)).toEqual([50, 100]);
     // without a known price nothing is filtered by distance
-    expect(visibleBases(all, { showBroken: false, maxDistancePct: 15, maxCount: 0 }, 0)).toEqual([holding, far]);
+    expect(visibleBases(all, { showBroken: true, maxDistancePct: 15, maxCount: 0 }, 0)).toHaveLength(3);
   });
 
   it('keeps only the nearest N when there are too many', () => {
     const mk = (price: number): BaseView => ({ price, time: price, confirmTime: price + 1, crackTime: null, crackLevel: price * 0.995 });
     const many = [mk(99), mk(90), mk(97), mk(80), mk(95)];
-    const got = visibleBases(many, { showBroken: false, maxDistancePct: 0, maxCount: 2 }, 100).map((b) => b.price);
-    expect(got).toEqual([99, 97]);
+    const brokenOne: BaseView = { price: 60, time: 1, confirmTime: 2, crackTime: 3, crackLevel: 59.7 };
+    const got = visibleBases([...many, brokenOne], { showBroken: true, maxDistancePct: 0, maxCount: 2 }, 100).map((b) => b.price);
+    // the broken base does not count towards the 2 nearest
+    expect(got.sort((a, b) => a - b)).toEqual([60, 97, 99]);
   });
 
   it('a limited length ends the line that many candles after the base, for the line and its crack level', () => {
@@ -86,16 +91,20 @@ describe('base shapes', () => {
     const lines = previewLines(candles, bases, 50.05, (p) => p.toFixed(2));
     const labels = lines.map((l) => l.label).filter(Boolean);
     expect(labels).toEqual(['this base 50.00 ×3', '40.00']);
-    // the broken base is not drawn; a crack level line follows each base that holds
-    expect(lines).toHaveLength(4);
+    // the broken base is a dim segment (one line); a crack level line follows each base that holds
+    expect(lines).toHaveLength(5);
     expect(lines[0].from).toBe(1);
   });
 
-  it('draws the signal own base even when price already broke it, but no other broken base', () => {
-    const candles = [{ time: 100 }, { time: 200 }, { time: 300 }];
-    const ownBroken: BaseView = { price: 50, time: 100, confirmTime: 200, crackTime: 250, crackLevel: 49.75 };
-    const otherBroken: BaseView = { price: 70, time: 100, confirmTime: 200, crackTime: 250, crackLevel: 69.65 };
+  it('draws broken bases as dim segments ending at the crack, the signal own one bright with its crack level', () => {
+    const candles = [{ time: 100 }, { time: 200 }, { time: 300 }, { time: 400 }];
+    const ownBroken: BaseView = { price: 50, time: 100, confirmTime: 200, crackTime: 300, crackLevel: 49.75 };
+    const otherBroken: BaseView = { price: 70, time: 100, confirmTime: 200, crackTime: 400, crackLevel: 69.65 };
     const lines = previewLines(candles, [ownBroken, otherBroken], 50.02, (p) => p.toFixed(1));
     expect(lines.map((l) => l.label).filter(Boolean)).toEqual(['this base 50.0']);
+    const dim = lines.find((l) => l.price === 70)!;
+    expect(dim).toMatchObject({ from: 0, to: 3, width: 1 });
+    expect(lines.filter((l) => l.price === 70)).toHaveLength(1); // no crack level line for a base that is not the signal's
+    expect(lines.find((l) => l.price === 49.75)).toBeDefined();
   });
 });

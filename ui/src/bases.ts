@@ -35,6 +35,8 @@ export interface PreviewLine {
   price: number;
   /** index of the first candle the line covers */
   from: number;
+  /** index of the last candle it covers; undefined = to the right edge */
+  to?: number;
   color: string;
   width: number;
   dash: number[];
@@ -44,10 +46,12 @@ export interface PreviewLine {
 const BLUE = '#4f8fdd';
 const BRIGHT = '#7cc0ff';
 const AMBER = '#e0a33d';
+const DIM = 'rgba(79, 143, 221, 0.45)';
 
 /**
  * Lines for the big hover preview: every base that holds as a line from its candle to the right, its crack level dotted, merged bases
- * labelled with how many they combine, and the signal's own base brighter and labelled (even when price has already broken it).
+ * labelled with how many they combine, broken bases as dim lines that end at the crack, and the signal's own base brighter and
+ * labelled (a crack signal is about a base price has already broken).
  */
 export function previewLines(candles: Array<{ time: number }>, bases: BaseView[], ownBase: number | null | undefined, fmt: (p: number) => string): PreviewLine[] {
   const out: PreviewLine[] = [];
@@ -57,8 +61,12 @@ export function previewLines(candles: Array<{ time: number }>, bases: BaseView[]
   };
   for (const b of bases) {
     const own = ownBase != null && ownBase > 0 && Math.abs(b.price / ownBase - 1) < 0.003;
-    // a broken base is only drawn when it is the signal's own: a crack signal is about exactly that base
-    if (b.crackTime != null && !own) continue;
+    if (b.crackTime != null) {
+      // finished history: a dim segment from the base to the candle that cracked it (the signal's own one brighter, with its crack level)
+      out.push({ price: b.price, from: index(b.time), to: index(b.crackTime), color: own ? BRIGHT : DIM, width: own ? 2.5 : 1, dash: own ? [] : [4, 3], label: own ? `this base ${fmt(b.price)}` : '' });
+      if (own) out.push({ price: b.crackLevel, from: index(b.confirmTime), to: index(b.crackTime), color: AMBER, width: 1, dash: [2, 3], label: '' });
+      continue;
+    }
     const n = b.count ?? 1;
     out.push({ price: b.price, from: index(b.time), color: own ? BRIGHT : BLUE, width: own ? 2.5 : n > 1 ? 2 : 1.4, dash: [], label: `${own ? 'this base ' : ''}${fmt(b.price)}${n > 1 ? ` ×${n}` : ''}` });
     out.push({ price: b.crackLevel, from: index(b.confirmTime), color: AMBER, width: 1, dash: [2, 3], label: '' });

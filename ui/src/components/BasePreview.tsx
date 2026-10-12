@@ -69,7 +69,7 @@ function paint(canvas: HTMLCanvasElement, candles: Kline[], lines: PreviewLine[]
     g.setLineDash(l.dash);
     g.beginPath();
     g.moveTo(x(l.from), y(l.price));
-    g.lineTo(W - right, y(l.price));
+    g.lineTo(l.to != null ? x(l.to) : W - right, y(l.price));
     g.stroke();
     g.setLineDash([]);
   }
@@ -132,10 +132,11 @@ function Popup({ signal, anchor }: { signal: Signal; anchor: DOMRect }) {
     if (!data || !ref.current) return;
     const merged = mergeBases(data.bases, cfg.mergePct);
     // the preview shows more of the picture than the chart does: a wider distance and more bases
-    const holding = visibleBases(merged, { showBroken: false, maxDistancePct: Math.max(cfg.maxDistancePct, 30), maxCount: 12 }, data.candles[data.candles.length - 1]?.close ?? 0);
+    const drawn = visibleBases(merged, { showBroken: cfg.showBroken, maxDistancePct: Math.max(cfg.maxDistancePct, 30), maxCount: 12 }, data.candles[data.candles.length - 1]?.close ?? 0);
     // a crack signal is about a base price has already broken: always include that one
     const own = signal.base ? data.bases.find((b) => Math.abs(b.price / signal.base! - 1) < 0.003) : undefined;
-    const shown = own && !holding.some((h) => Math.abs(h.price / own.price - 1) < 0.003) ? [...holding, own] : holding;
+    const shown = own && !drawn.some((h) => Math.abs(h.price / own.price - 1) < 0.003) ? [...drawn, own] : drawn;
+    const holding = shown.filter((b) => b.crackTime == null);
     const lines = previewLines(data.candles, shown, signal.base, fmt);
     paint(ref.current, data.candles, lines, `${signal.symbol} ${signal.timeframe} · ${holding.length} holding bases (volatility factor ${cfg.factor})`);
   }, [data, cfg.mergePct, cfg.maxDistancePct, cfg.factor, signal.base, signal.symbol, signal.timeframe]);

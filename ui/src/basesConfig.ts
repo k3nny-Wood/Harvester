@@ -7,11 +7,11 @@ export interface BasesConfig {
   factor: number;
   /** a crack is a break this far below the base, percent */
   crackPct: number;
-  /** draw the bases price already broke through */
+  /** keep drawing the bases price already broke through (dim, ending at the crack) */
   showBroken: boolean;
-  /** only bases within this % of the price (0 = all) */
+  /** only holding bases within this % of the price (0 = all); broken bases are never removed by it */
   maxDistancePct: number;
-  /** draw at most this many, the ones nearest to the price (0 = all) */
+  /** draw at most this many holding bases, the ones nearest to the price (0 = all); broken bases do not count */
   maxCount: number;
   /** how many candles a line runs to the right of its base (0 = no limit: a ray to the edge of the chart) */
   lengthCandles: number;
@@ -19,9 +19,9 @@ export interface BasesConfig {
   mergePct: number;
 }
 
-export const DEFAULT_BASES: BasesConfig = { on: true, factor: 3.5, crackPct: 0.5, showBroken: false, maxDistancePct: 15, maxCount: 8, lengthCandles: 30, mergePct: 0.5 };
+export const DEFAULT_BASES: BasesConfig = { on: true, factor: 3.5, crackPct: 0.5, showBroken: true, maxDistancePct: 15, maxCount: 8, lengthCandles: 30, mergePct: 0.5 };
 
-const KEY = 'harvester.bases.v5';
+const KEY = 'harvester.bases.v6';
 
 function load(): BasesConfig {
   try {

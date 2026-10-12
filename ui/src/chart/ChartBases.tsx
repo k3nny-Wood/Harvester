@@ -8,7 +8,7 @@ import { intervalMs } from '../intervals';
 import type { BaseView } from '../types';
 
 const HOLDING = '#4fa3ff';
-const CRACKED = 'rgba(79, 163, 255, 0.38)';
+const CRACKED = 'rgba(79, 163, 255, 0.55)';
 const LEVEL = '#e0a33d';
 /** What to draw for one base: a horizontal ray while it holds (with its crack level), a short dim line once price broke it. */
 export interface BaseShape {
@@ -21,17 +21,20 @@ export interface BaseShape {
   count?: number;
 }
 
-/** The bases worth drawing under the settings: broken ones only if asked for, only those near the price, and at most `maxCount`. */
+/**
+ * The bases worth drawing under the settings. The distance and count limits keep the bases that still hold readable; a broken base is
+ * history, drawn dim and short, and is never dropped by them (only switched off as a whole with `showBroken`).
+ */
 export function visibleBases(bases: BaseView[], cfg: Pick<BasesConfig, 'showBroken' | 'maxDistancePct' | 'maxCount'>, last: number): BaseView[] {
-  const kept = bases.filter((b) => {
-    if (b.crackTime != null && !cfg.showBroken) return false;
-    if (cfg.maxDistancePct > 0 && last > 0 && Math.abs(b.price / last - 1) * 100 > cfg.maxDistancePct) return false;
-    return true;
-  });
-  if (cfg.maxCount <= 0 || kept.length <= cfg.maxCount || !(last > 0)) return kept;
-  // the nearest to the price win; the rest stay out of the way
-  const nearest = [...kept].sort((a, b) => Math.abs(a.price / last - 1) - Math.abs(b.price / last - 1)).slice(0, cfg.maxCount);
-  return kept.filter((b) => nearest.includes(b));
+  const broken = cfg.showBroken ? bases.filter((b) => b.crackTime != null) : [];
+  const holding = bases.filter((b) => b.crackTime == null && !(cfg.maxDistancePct > 0 && last > 0 && Math.abs(b.price / last - 1) * 100 > cfg.maxDistancePct));
+  let kept = holding;
+  if (cfg.maxCount > 0 && holding.length > cfg.maxCount && last > 0) {
+    // the nearest to the price win; the rest stay out of the way
+    const nearest = [...holding].sort((a, b) => Math.abs(a.price / last - 1) - Math.abs(b.price / last - 1)).slice(0, cfg.maxCount);
+    kept = holding.filter((b) => nearest.includes(b));
+  }
+  return [...broken, ...kept].sort((a, b) => a.time - b.time);
 }
 
 /** `lengthCandles` of 0 leaves the line a ray to the edge of the chart (no end time). */
@@ -175,7 +178,7 @@ export function ChartBases({ chart }: { chart: Vela | null }) {
             <input type="range" min={0} max={200} step={5} value={cfg.lengthCandles} onChange={(e) => change({ lengthCandles: Number(e.target.value) })} />
           </label>
           <label className="check">
-            <input type="checkbox" checked={cfg.showBroken} onChange={(e) => change({ showBroken: e.target.checked })} /> Also draw broken bases (dim)
+            <input type="checkbox" checked={cfg.showBroken} onChange={(e) => change({ showBroken: e.target.checked })} /> Keep broken bases on the chart (dim)
           </label>
           <div className="muted">
             {bases.length} found, {merged.filter((b) => (b.count ?? 1) > 1).length} merged levels, {shown.length} drawn
