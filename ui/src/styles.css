@@ -1586,3 +1586,14 @@ button.mini {
   background: var(--down);
   color: #fff;
 }
+
+/* a chart tab whose symbol has a position or open orders */
+.tab-trading,
+.tab-trading .dv-default-tab,
+.tab-trading .dv-default-tab-content {
+  color: var(--up) !important;
+  font-weight: 700;
+}
+.tab-trading {
+  height: 100%;
+}
