@@ -95,6 +95,12 @@ async fn cancel_order(state: State<'_, AppState>, symbol: String, order_id: i64,
     state.trading.cancel(&symbol, order_id, conditional.unwrap_or(false)).await
 }
 
+/// Move an open order to a new price (the drag on the chart).
+#[tauri::command]
+async fn modify_order(state: State<'_, AppState>, symbol: String, order_id: i64, conditional: Option<bool>, price: Option<f64>, stop_price: Option<f64>) -> Result<OrderAck, String> {
+    state.trading.modify(&symbol, order_id, conditional.unwrap_or(false), price, stop_price).await
+}
+
 #[tauri::command]
 async fn order_history(state: State<'_, AppState>, symbol: String, limit: Option<u32>) -> Result<Vec<OrderRecord>, String> {
     state.trading.order_history(&symbol, limit.unwrap_or(100)).await
@@ -160,7 +166,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
             scanner_signals, scanner_status, scanner_config, scanner_configure,
-            trading_status, account_overview, open_orders, place_order, place_orders, cancel_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
+            trading_status, account_overview, open_orders, place_order, place_orders, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");

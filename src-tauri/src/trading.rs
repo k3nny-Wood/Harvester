@@ -298,6 +298,19 @@ pub fn parse_positions(v: &Value) -> Vec<Position> {
         .unwrap_or_default()
 }
 
+/// The order type of an exchange order name, for the orders this app can place (and so move).
+pub fn order_type_from(name: &str) -> Option<OrderType> {
+    match name {
+        "LIMIT" => Some(OrderType::Limit),
+        "MARKET" => Some(OrderType::Market),
+        "STOP_MARKET" => Some(OrderType::StopMarket),
+        "STOP" => Some(OrderType::Stop),
+        "TAKE_PROFIT_MARKET" => Some(OrderType::TakeProfitMarket),
+        "TAKE_PROFIT" => Some(OrderType::TakeProfit),
+        _ => None,
+    }
+}
+
 /// Open conditional (stop / take-profit) orders from `/fapi/v1/openAlgoOrders`.
 pub fn parse_algo_orders(v: &Value) -> Vec<OpenOrder> {
     let arr = if v.is_array() { v.as_array().cloned().unwrap_or_default() } else { v["orders"].as_array().cloned().unwrap_or_default() };
@@ -657,6 +670,54 @@ impl Trading {
         Ok(results)
     }
 
+    /// Move an open order to a new price (a drag on the chart). A limit order is amended in place; a stop or take-profit
+    /// cannot be amended, so it is cancelled and re-placed - validated first, and put back if the new one is refused.
+    pub async fn modify(&self, symbol: &str, order_id: i64, conditional: bool, new_price: Option<f64>, new_stop: Option<f64>) -> Result<OrderAck, String> {
+        let open = self.open_orders(Some(symbol)).await?;
+        let o = open.iter().find(|o| o.order_id == order_id && o.conditional == conditional).cloned().ok_or("That order is gone (filled or cancelled already).")?;
+        let t = order_type_from(&o.order_type).filter(|t| *t != OrderType::Market).ok_or_else(|| format!("A {} order cannot be moved.", o.order_type))?;
+        let side = if o.side == "BUY" { Side::Buy } else { Side::Sell };
+        let req = OrderRequest {
+            symbol: symbol.to_string(),
+            side,
+            order_type: t,
+            quantity: o.orig_qty,
+            price: if t.has_price() { Some(new_price.unwrap_or(o.price)) } else { None },
+            stop_price: if t.is_conditional() { Some(new_stop.unwrap_or(o.stop_price)) } else { None },
+            post_only: false,
+            reduce_only: o.reduce_only,
+            client_id: None,
+        };
+        let filters = self.market.symbol_filters(symbol).await?;
+        let reference = self.reference_price(symbol).await?;
+        let (qty, price, trigger) = prepare(&req, &filters, reference, self.max_notional)?;
+        let ack = |id: i64, status: String, client_id: String, px: Option<Decimal>| OrderAck { order_id: id, symbol: symbol.to_string(), status, client_id, quantity: to_f64(qty), price: px.map(to_f64), conditional };
+        if !conditional {
+            let p = price.ok_or("a limit order needs a price")?;
+            let params = vec![
+                ("symbol".to_string(), symbol.to_string()),
+                ("orderId".to_string(), order_id.to_string()),
+                ("side".to_string(), side.as_str().to_string()),
+                ("quantity".to_string(), qty.to_string()),
+                ("price".to_string(), p.to_string()),
+            ];
+            let v = self.signed(reqwest::Method::PUT, "/fapi/v1/order", params).await?;
+            return Ok(ack(v["orderId"].as_i64().unwrap_or(order_id), text(&v["status"]), text(&v["clientOrderId"]), Some(p)));
+        }
+        let trigger = trigger.ok_or("a stop needs a trigger price")?;
+        self.cancel(symbol, order_id, true).await?;
+        match self.signed(reqwest::Method::POST, "/fapi/v1/algoOrder", algo_params(&req, qty, price, trigger)).await {
+            Ok(v) => Ok(ack(v["algoId"].as_i64().unwrap_or(0), "NEW".to_string(), text(&v["clientAlgoId"]), Some(price.unwrap_or(trigger)))),
+            Err(e) => {
+                // the new order was refused after the old one was cancelled: put the old one back
+                let old = OrderRequest { price: if t.has_price() { Some(o.price) } else { None }, stop_price: Some(o.stop_price), ..req.clone() };
+                let (oq, op, ot) = (filters.round_quantity(o.orig_qty), if t.has_price() { Some(filters.round_price(o.price)) } else { None }, filters.round_price(o.stop_price));
+                let restored = self.signed(reqwest::Method::POST, "/fapi/v1/algoOrder", algo_params(&old, oq, op, ot)).await.is_ok();
+                Err(format!("{e} ({})", if restored { "the original order was put back" } else { "the original order was cancelled and could NOT be restored" }))
+            }
+        }
+    }
+
     /// Cancel one order. A stop / take-profit (`conditional`) is cancelled by its algo id.
     pub async fn cancel(&self, symbol: &str, order_id: i64, conditional: bool) -> Result<(), String> {
         if conditional {
@@ -837,6 +898,14 @@ mod tests {
         assert!(o[0].conditional && o[0].order_id == 99 && o[0].stop_price == 2900.0 && o[0].order_type == "STOP_MARKET");
         let m = parse_max_leverage(&json!([{"symbol": "ETHUSDT", "brackets": [{"bracket": 1, "initialLeverage": 100}, {"bracket": 2, "initialLeverage": 50}]}]));
         assert_eq!(m, Some(100));
+    }
+
+    #[test]
+    fn order_names_map_to_the_types_that_can_be_moved() {
+        assert_eq!(order_type_from("LIMIT"), Some(OrderType::Limit));
+        assert_eq!(order_type_from("STOP_MARKET"), Some(OrderType::StopMarket));
+        assert_eq!(order_type_from("TAKE_PROFIT"), Some(OrderType::TakeProfit));
+        assert_eq!(order_type_from("TRAILING_STOP_MARKET"), None);
     }
 
     #[test]

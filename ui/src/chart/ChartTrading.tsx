@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { Vela } from '@luxalgo/vela';
 import { api } from '../api';
+import type { OpenOrder } from '../types';
 import { useChart, useChartId } from '../chartStore';
 import { formatPrice, snapToTick } from '../ladderMath';
 import { useApp } from '../store';
@@ -18,12 +19,22 @@ interface Line {
   /** the price is above (up) or below (down) the visible range: drawn at that edge with an arrow */
   pinned?: 'up' | 'down';
   price?: number;
+  dragging?: boolean;
 }
 
 interface MenuState {
   x: number;
   y: number;
   price: number;
+}
+
+interface DragState {
+  orderId: number;
+  conditional: boolean;
+  /** price of the line when it was picked up */
+  from: number;
+  /** price under the pointer now */
+  to: number;
 }
 
 const BUY = '#2e9b6f';
@@ -46,6 +57,8 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
   const rootRef = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const mark = useChart((s) => s.markPrice);
   const precision = filters?.pricePrecision ?? 2;
   const canTrade = !!trading?.hasCredentials;
 
@@ -113,7 +126,8 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
     };
     const yOf = (p: number) => place(p)?.y ?? null;
     for (const o of orders.filter((o) => o.symbol === symbol)) {
-      const p = o.price || o.stopPrice;
+      const dragging = drag && drag.orderId === o.orderId && drag.conditional === o.conditional ? drag : null;
+      const p = dragging ? dragging.to : o.price || o.stopPrice;
       const at = p ? place(p) : null;
       if (!at) continue;
       lines.push({
@@ -122,10 +136,13 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
         pinned: at.pinned,
         price: p,
         color: o.side === 'BUY' ? BUY : SELL,
-        label: `${at.pinned === 'up' ? '▲ ' : at.pinned === 'down' ? '▼ ' : ''}${o.side} ${o.type.replace(/_/g, ' ')} ${o.origQty} @ ${formatPrice(p, precision)}${o.conditional && o.price ? ` (trigger ${formatPrice(o.stopPrice, precision)})` : ''}`,
+        label: dragging
+          ? `${o.side} ${o.type.replace(/_/g, ' ')} ${o.origQty} → ${formatPrice(p, precision)}${mark > 0 ? `  (${((p / mark - 1) * 100).toFixed(2)}% from last)` : ''}  · release to move`
+          : `${at.pinned === 'up' ? '▲ ' : at.pinned === 'down' ? '▼ ' : ''}${o.side} ${o.type.replace(/_/g, ' ')} ${o.origQty} @ ${formatPrice(p, precision)}${o.conditional && o.price ? ` (trigger ${formatPrice(o.stopPrice, precision)})` : ''}`,
         orderId: o.orderId,
         conditional: o.conditional,
-        dashed: o.type !== 'LIMIT',
+        dashed: o.type !== 'LIMIT' && !dragging,
+        dragging: !!dragging,
       });
     }
     const pos = account?.positions.find((p) => p.symbol === symbol);
@@ -138,6 +155,52 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
   }
   const plotW = info?.proj.width ?? 0;
   const offX = info && root ? info.plotRect.left - root.getBoundingClientRect().left : 0;
+
+  /** Press on an order line: the line follows the pointer; releasing the button moves the order on the exchange. */
+  const startDrag = (e: React.PointerEvent, l: Line) => {
+    if (l.orderId == null || l.pinned || !l.price) return;
+    e.preventDefault();
+    e.stopPropagation();
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    setMenu(null);
+    setDrag({ orderId: l.orderId, conditional: !!l.conditional, from: l.price, to: l.price });
+  };
+  const moveDrag = (e: React.PointerEvent) => {
+    if (!drag) return;
+    const p = priceAt(e.clientY);
+    if (p != null && p > 0) setDrag({ ...drag, to: p });
+  };
+  const endDrag = async (e: React.PointerEvent) => {
+    const d = drag;
+    if (!d) return;
+    try {
+      (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+    setDrag(null);
+    if (d.to === d.from) return;
+    const o: OpenOrder | undefined = useApp.getState().orders.find((x) => x.orderId === d.orderId && x.conditional === d.conditional);
+    if (!o) return;
+    const delta = d.to - (o.price || o.stopPrice);
+    const price = o.conditional ? (o.price ? o.price + delta : undefined) : d.to;
+    const stopPrice = o.conditional ? o.stopPrice + delta : undefined;
+    // show the new price at once so the line does not jump back while the exchange answers
+    useApp.getState().setOrders(useApp.getState().orders.map((x) => (x === o ? { ...x, price: price ?? x.price, stopPrice: stopPrice ?? x.stopPrice } : x)));
+    try {
+      const ack = await api.modifyOrder(o.symbol, o.orderId, o.conditional, price, stopPrice);
+      toast(`Moved ${o.side} ${o.type.replace(/_/g, ' ')} to ${formatPrice(ack.price ?? d.to, precision)}`, 'info');
+    } catch (err) {
+      toast(`Could not move the order: ${err}`, 'warn');
+    }
+    void refreshTrading();
+  };
+  useEffect(() => {
+    if (!drag) return;
+    const esc = (ev: KeyboardEvent) => ev.key === 'Escape' && setDrag(null);
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [drag]);
 
   const placeAt = async (side: 'BUY' | 'SELL', price: number) => {
     setMenu(null);
@@ -153,7 +216,24 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
       <svg className="trade-svg">
         {lines.map((l) => (
           <g key={l.key}>
-            <line x1={offX} x2={offX + plotW} y1={l.y} y2={l.y} stroke={l.color} strokeWidth={l.pinned ? 0.8 : 1.2} strokeDasharray={l.pinned ? '2 5' : l.dashed ? '5 4' : undefined} opacity={l.pinned ? 0.55 : 0.9} />
+            <line x1={offX} x2={offX + plotW} y1={l.y} y2={l.y} stroke={l.color} strokeWidth={l.dragging ? 2.4 : l.pinned ? 0.8 : 1.2} strokeDasharray={l.pinned ? '2 5' : l.dashed ? '5 4' : undefined} opacity={l.pinned ? 0.55 : 0.9} />
+            {l.orderId != null && !l.pinned && (
+              <line
+                className="order-hit"
+                x1={offX}
+                x2={offX + plotW - 90}
+                y1={l.y}
+                y2={l.y}
+                stroke="transparent"
+                strokeWidth={14}
+                onPointerDown={(e) => startDrag(e, l)}
+                onPointerMove={moveDrag}
+                onPointerUp={(e) => void endDrag(e)}
+                onPointerCancel={() => setDrag(null)}
+              >
+                <title>Drag to move this order</title>
+              </line>
+            )}
             <text x={l.pinned ? offX + plotW - 90 : offX + 8} y={l.y - 4} textAnchor={l.pinned ? 'end' : 'start'} className="trade-label" fill={l.color}>
               {l.label}
             </text>

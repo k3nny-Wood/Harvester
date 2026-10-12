@@ -1021,3 +1021,11 @@ button.mini {
 .sym-link:hover {
   text-decoration: underline;
 }
+
+.order-hit {
+  pointer-events: stroke;
+  cursor: ns-resize;
+}
+.order-hit:hover + text {
+  font-weight: 700;
+}

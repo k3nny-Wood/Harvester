@@ -26,6 +26,8 @@ export const api = {
   cancelOrder: (symbol: string, orderId: number, conditional = false) => invoke<void>('cancel_order', { symbol, orderId, conditional }),
   orderHistory: (symbol: string, limit = 100) => invoke<OrderRecord[]>('order_history', { symbol, limit }),
   tradeHistory: (symbol: string, limit = 200) => invoke<TradeRecord[]>('trade_history', { symbol, limit }),
+  modifyOrder: (symbol: string, orderId: number, conditional: boolean, price?: number, stopPrice?: number) =>
+    invoke<OrderAck>('modify_order', { symbol, orderId, conditional, price: price ?? null, stopPrice: stopPrice ?? null }),
   symbolLeverage: (symbol: string) => invoke<LeverageInfo>('symbol_leverage', { symbol }),
   cancelAll: (symbol: string) => invoke<void>('cancel_all_orders', { symbol }),
   closePosition: (symbol: string, fraction = 1) => invoke<OrderAck>('close_position', { symbol, fraction }),
