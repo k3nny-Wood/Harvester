@@ -27,13 +27,37 @@ function SymbolLink({ symbol }: { symbol: string }) {
   return <a onClick={() => openChart(symbol)}>{symbol}</a>;
 }
 
+/** Mark prices of the given symbols from the live websocket (Binance's own mark price), refreshed every second. */
+function useLiveMarks(symbols: string[]): Record<string, number> {
+  const [marks, setMarks] = useState<Record<string, number>>({});
+  const key = symbols.join(',');
+  useEffect(() => {
+    if (!key) return;
+    let stop = false;
+    const load = () => void api.markPrices(key.split(',')).then((m) => !stop && setMarks(m)).catch(() => undefined);
+    load();
+    const t = window.setInterval(load, 1000);
+    return () => {
+      stop = true;
+      window.clearInterval(t);
+    };
+  }, [key]);
+  return marks;
+}
+
 /** Open positions with unrealised P&L, return on margin, and close buttons. */
 export function PositionsPanel() {
   const trading = useApp((s) => s.trading);
   const account = useApp((s) => s.account);
   const toast = useApp((s) => s.toast);
+  const live = useLiveMarks(account?.positions.map((p) => p.symbol) ?? []);
   if (trading && !trading.hasCredentials) return <NoKeys />;
   if (!account) return <div className="panel pad muted">Loading the account…</div>;
+  // the REST read can be seconds old: show Binance's live mark price and the profit it implies (linear contracts)
+  const positions = account.positions.map((p) => {
+    const mark = live[p.symbol] ?? p.markPrice;
+    return { ...p, markPrice: mark, unrealizedPnl: live[p.symbol] ? p.amount * (mark - p.entryPrice) : p.unrealizedPnl };
+  });
 
   const close = async (symbol: string, fraction: number) => {
     if (!(await confirmDialog(`Close ${Math.round(fraction * 100)}% of the ${symbol} position at market?`, { confirmLabel: 'Close' }))) return;
@@ -91,7 +115,7 @@ export function PositionsPanel() {
               </td>
             </tr>
           )}
-          {account.positions.map((p) => {
+          {positions.map((p) => {
             const value = Math.abs(p.amount) * p.markPrice;
             const lev = p.leverage || account.leverages?.[p.symbol] || 0;
             const margin = lev > 0 ? (Math.abs(p.amount) * p.entryPrice) / lev : 0;

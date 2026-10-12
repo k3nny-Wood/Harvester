@@ -3,6 +3,7 @@
 mod held;
 mod movers;
 mod lab;
+mod marks;
 mod userstream;
 mod market;
 mod scanner;
@@ -28,6 +29,7 @@ use tauri::{AppHandle, Manager, State};
 struct AppState {
     lab: Lab,
     movers: movers::SharedDetector,
+    marks: marks::Marks,
     held: Arc<HeldStore>,
     market: Arc<Market>,
     streams: Streams,
@@ -114,6 +116,13 @@ fn held_list(state: State<'_, AppState>) -> Vec<HeldOrder> {
 #[tauri::command]
 async fn move_to_held(state: State<'_, AppState>, symbol: String, order_id: i64, price: f64) -> Result<OrderAck, String> {
     held::move_to_held(&state.trading, &state.held, &symbol, order_id, price).await
+}
+
+/// Live mark prices (from the websocket) of the given symbols; symbols without a price yet are left out.
+#[tauri::command]
+fn mark_prices(state: State<'_, AppState>, symbols: Vec<String>) -> std::collections::HashMap<String, f64> {
+    let m = state.marks.read().unwrap();
+    symbols.into_iter().filter_map(|s| m.get(&s).map(|p| (s, *p))).collect()
 }
 
 /// The pump / dump watcher's settings.
@@ -246,11 +255,12 @@ fn main() {
     let env = Env::from_name(&std::env::var("HARVESTER_ENV").unwrap_or_default());
     let market = Arc::new(Market::new(env));
     tauri::Builder::default()
-        .manage(AppState { lab: Lab::default(), movers: Arc::new(Mutex::new(MoverDetector::new(MoverParams::default()))), held: Arc::new(HeldStore::open(held::default_path())), market: market.clone(), streams: Streams::default(), scanner: Scanner::default(), trading: Arc::new(Trading::new(market)) })
+        .manage(AppState { lab: Lab::default(), marks: Default::default(), movers: Arc::new(Mutex::new(MoverDetector::new(MoverParams::default()))), held: Arc::new(HeldStore::open(held::default_path())), market: market.clone(), streams: Streams::default(), scanner: Scanner::default(), trading: Arc::new(Trading::new(market)) })
         .setup(|app| {
             let state = app.state::<AppState>();
             state.scanner.start(app.handle().clone(), state.market.clone(), ScannerConfig::default());
             userstream::start(app.handle().clone(), state.trading.clone());
+            marks::start(state.trading.clone(), state.marks.clone());
             held::start(app.handle().clone(), state.trading.clone(), state.held.clone());
             movers::start(app.handle().clone(), state.market.clone(), state.scanner.injector(), state.movers.clone());
             Ok(())
@@ -258,7 +268,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
             qfl_zones, smc_zones_cmd, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
-            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
+            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, cancel_order, modify_order, order_history, trade_history, symbol_leverage, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");

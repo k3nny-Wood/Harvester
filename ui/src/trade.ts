@@ -25,7 +25,7 @@ export async function refreshTrading(): Promise<void> {
 
 /** How often to poll: the user-data stream pushes every change, so the poll is only a safety net while it is connected. */
 export function pollInterval(streamConnected: boolean): number {
-  return streamConnected ? 20_000 : 3000;
+  return streamConnected ? 10_000 : 3000;
 }
 
 /**

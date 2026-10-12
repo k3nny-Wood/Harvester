@@ -24,6 +24,7 @@ export const api = {
   openOrders: (symbol?: string) => invoke<OpenOrder[]>('open_orders', { symbol: symbol ?? null }),
   placeOrder: (order: OrderRequest) => invoke<OrderAck>('place_order', { order }),
   placeOrders: (orders: OrderRequest[]) => invoke<Array<{ Ok: OrderAck } | { Err: string }>>('place_orders', { orders }),
+  markPrices: (symbols: string[]) => invoke<Record<string, number>>('mark_prices', { symbols }),
   moversConfig: () => invoke<MoverParams>('movers_config'),
   moversConfigure: (params: MoverParams) => invoke<void>('movers_configure', { params }),
   heldList: () => invoke<HeldOrder[]>('held_list'),
