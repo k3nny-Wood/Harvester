@@ -1,0 +1,43 @@
+60 coins, candles from 20451 days, trading 20494 -> 20726 days since epoch
+equal-weight buy & hold, whole window: +70.8%, by quarter: +14.2%  -5.7%  -0.3%  +68.3%
+quarters start: day 20494, day 20552, day 20610, day 20668
+ 15m  9/21  long none  trades  31059  ret    -89.6%  dd  96.4%  pf  0.87  win   23%  luck    -88.1% (p10    -91.4%)  worst-start    -89.6%  stressed   -100.0%  Q: -28% -65% -72% +42%
+ 15m  9/21  long gate  trades  10927  ret    -48.9%  dd  77.0%  pf  0.85  win   23%  luck    -53.2% (p10    -59.9%)  worst-start    -48.9%  stressed    -99.8%  Q: -17% -13% -38% +14%
+ 15m  9/21  both none  trades  62139  ret    -99.7%  dd  99.7%  pf  0.79  win   24%  luck    -99.3% (p10    -99.7%)  worst-start    -99.7%  stressed   -100.0%  Q: -56% -76% -88% -77%
+ 15m  9/21  both gate  trades  42007  ret    -99.6%  dd  99.6%  pf  0.71  win   24%  luck    -99.3% (p10    -99.5%)  worst-start    -99.6%  stressed   -100.0%  Q: -69% -55% -78% -85%
+ 15m 20/50  long none  trades  13364  ret    +55.7%  dd  80.2%  pf  1.05  win   24%  luck    +76.1% (p10    +14.9%)  worst-start    +13.9%  stressed    -99.7%  Q: +9% -26% -57% +301%
+ 15m 20/50  long gate  trades   4651  ret    +93.8%  dd  55.0%  pf  1.21  win   23%  luck    +51.2% (p10    +28.6%)  worst-start    +60.4%  stressed    -81.7%  Q: +7% +13% -22% +106%
+ 15m 20/50  both none  trades  26739  ret    -90.7%  dd  93.9%  pf  0.82  win   25%  luck    -80.9% (p10    -85.7%)  worst-start    -93.5%  stressed   -100.0%  Q: -22% -60% -73% -23%
+ 15m 20/50  both gate  trades  18026  ret    -89.5%  dd  92.2%  pf  0.79  win   25%  luck    -84.9% (p10    -89.5%)  worst-start    -89.5%  stressed   -100.0%  Q: -24% -30% -57% -50%
+ 15m 50/200 long none  trades   4149  ret   +376.7%  dd  64.0%  pf  1.47  win   25%  luck   +391.1% (p10   +105.2%)  worst-start   +352.5%  stressed    -35.8%  Q: -19% -16% -24% +368%
+ 15m 50/200 long gate  trades   1408  ret   +234.0%  dd  59.5%  pf  1.61  win   29%  luck   +176.4% (p10   +113.5%)  worst-start   +171.7%  stressed    +54.6%  Q: -0% +11% +5% +188%
+ 15m 50/200 both none  trades   8282  ret    -17.3%  dd  74.0%  pf  0.95  win   26%  luck     -4.4% (p10    -49.0%)  worst-start    -17.3%  stressed    -92.6%  Q: -47% +10% -4% +48%
+ 15m 50/200 both gate  trades   5541  ret    -29.2%  dd  60.1%  pf  0.91  win   27%  luck    -36.7% (p10    -55.1%)  worst-start    -29.2%  stressed    -96.1%  Q: -36% +56% -21% +19%
+  1h  9/21  long none  trades   7614  ret   +771.6%  dd  46.5%  pf  1.52  win   26%  luck   +530.1% (p10   +344.5%)  worst-start   +328.7%  stressed    -74.6%  Q: +27% +8% +11% +443%
+  1h  9/21  long gate  trades   2689  ret   +218.2%  dd  46.5%  pf  1.61  win   28%  luck   +198.1% (p10   +108.1%)  worst-start   +164.4%  stressed    -11.0%  Q: +8% +6% +7% +174%
+  1h  9/21  both none  trades  15223  ret    -75.2%  dd  88.2%  pf  0.80  win   26%  luck    -45.9% (p10    -73.4%)  worst-start    -75.2%  stressed    -99.7%  Q: -45% -34% -32% +22%
+  1h  9/21  both gate  trades  10298  ret    -54.0%  dd  65.4%  pf  0.88  win   27%  luck    -59.7% (p10    -66.5%)  worst-start    -56.1%  stressed    -99.2%  Q: -16% -11% +3% -29%
+  1h 20/50  long none  trades   3340  ret   +322.8%  dd  59.6%  pf  1.59  win   25%  luck   +242.0% (p10   +135.1%)  worst-start   +224.9%  stressed    -26.0%  Q: -19% +8% -22% +220%
+  1h 20/50  long gate  trades   1154  ret   +128.7%  dd  59.6%  pf  1.65  win   29%  luck   +112.2% (p10    +69.6%)  worst-start    +94.4%  stressed    +22.4%  Q: -8% +10% +8% +112%
+  1h 20/50  both none  trades   6662  ret    -12.8%  dd  72.3%  pf  0.96  win   27%  luck     -6.3% (p10    -48.0%)  worst-start    -38.6%  stressed    -91.2%  Q: -52% +13% -10% +69%
+  1h 20/50  both gate  trades   4476  ret    -41.9%  dd  71.5%  pf  0.85  win   28%  luck    -38.3% (p10    -56.4%)  worst-start    -41.9%  stressed    -89.0%  Q: -52% +41% -11% +0%
+  1h 50/200 long none  trades   1112  ret   +476.4%  dd  73.1%  pf  1.78  win   25%  luck   +343.4% (p10   +189.5%)  worst-start   +263.6%  stressed   +218.3%  Q: -24% +6% +64% +220%
+  1h 50/200 long gate  trades    356  ret    +53.8%  dd  60.9%  pf  0.94  win   31%  luck    +46.6% (p10    +12.4%)  worst-start    +52.9%  stressed    +19.1%  Q: -25% +7% +12% +67%
+  1h 50/200 both none  trades   2193  ret    -34.6%  dd  83.5%  pf  0.68  win   24%  luck    -36.9% (p10    -62.6%)  worst-start    -38.7%  stressed    -77.5%  Q: -69% +36% +76% +87%
+  1h 50/200 both gate  trades   1437  ret    -40.1%  dd  78.2%  pf  0.58  win   25%  luck    -60.4% (p10    -73.6%)  worst-start    -40.1%  stressed    -78.2%  Q: -64% +34% +43% +13%
+  4h  9/21  long none  trades   1921  ret   +249.5%  dd  75.3%  pf  1.58  win   27%  luck   +125.1% (p10    +55.8%)  worst-start   +181.8%  stressed    +11.5%  Q: -17% +0% -20% +193%
+  4h  9/21  long gate  trades    636  ret    +94.5%  dd  68.0%  pf  1.56  win   29%  luck   +111.7% (p10    +42.6%)  worst-start    +77.1%  stressed    +28.6%  Q: -14% -0% +16% +99%
+  4h  9/21  both none  trades   3834  ret    -36.9%  dd  84.1%  pf  0.84  win   27%  luck    -23.2% (p10    -50.7%)  worst-start    -36.9%  stressed    -83.7%  Q: -67% +22% -20% +68%
+  4h  9/21  both gate  trades   2549  ret    -35.4%  dd  72.7%  pf  0.84  win   27%  luck    -26.4% (p10    -50.8%)  worst-start    -35.4%  stressed    -76.1%  Q: -48% +17% +13% +4%
+  4h 20/50  long none  trades    871  ret   +163.8%  dd  67.9%  pf  1.24  win   26%  luck   +366.5% (p10   +166.4%)  worst-start   +139.7%  stressed    +53.0%  Q: -28% -13% -13% +194%
+  4h 20/50  long gate  trades    295  ret   +104.3%  dd  65.8%  pf  1.36  win   33%  luck    +98.4% (p10    +43.8%)  worst-start    +28.4%  stressed    +62.5%  Q: -14% +15% +18% +39%
+  4h 20/50  both none  trades   1707  ret     +0.4%  dd  61.3%  pf  0.82  win   24%  luck    -10.9% (p10    -52.7%)  worst-start    -44.4%  stressed    -60.2%  Q: -53% +32% +26% +38%
+  4h 20/50  both gate  trades   1131  ret    -30.8%  dd  74.4%  pf  0.65  win   26%  luck    -36.7% (p10    -56.6%)  worst-start    -30.8%  stressed    -71.0%  Q: -51% +35% +75% -23%
+  4h 50/200 long none  trades    225  ret   +320.0%  dd  74.7%  pf  1.06  win   34%  luck   +270.0% (p10   +152.7%)  worst-start   +127.1%  stressed   +245.0%  Q: +8% -17% -12% +279%
+  4h 50/200 long gate  trades     97  ret    +97.0%  dd  79.3%  pf  0.45  win   35%  luck    +84.7% (p10    +42.4%)  worst-start    +97.0%  stressed    +75.5%  Q: -1% -17% -2% +135%
+  4h 50/200 both none  trades    403  ret    +71.6%  dd  76.1%  pf  0.70  win   32%  luck   +121.4% (p10    +19.6%)  worst-start     -2.2%  stressed     +1.7%  Q: +12% +19% +10% +110%
+  4h 50/200 both gate  trades    275  ret    +23.8%  dd  84.6%  pf  0.55  win   32%  luck     -0.8% (p10    -38.5%)  worst-start    +12.9%  stressed    -35.6%  Q: -1% +7% +4% +84%
+
+QFL ladder (V2 live, market gate on), same coins and window: ladders 3499  ret -0.2%  dd 52.0%  pf 1.05  luck -2.1% (p10 -7.9%)  worst-start -10.6%  stressed -23.3%  Q: +4% -41% -10% +39%
+
+10 of 36 configurations are positive in the full window, under stressed costs AND from every start date
