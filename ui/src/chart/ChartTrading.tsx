@@ -416,7 +416,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
                 onPointerUp={(e) => void endDrag(e)}
                 onPointerCancel={() => setDrag(null)}
               >
-                <rect width={TAG_W} height={18} rx={3} fill="#0f1620" stroke={l.color} strokeWidth={l.dragging ? 2 : 1} />
+                <rect width={TAG_W} height={18} rx={3} fill="#0f1620" fillOpacity={0.45} stroke={l.color} strokeWidth={l.dragging ? 2 : 1} />
                 <text x={TAG_W / 2} y={12.5} textAnchor="middle" fill={l.color}>
                   {l.tag}
                 </text>

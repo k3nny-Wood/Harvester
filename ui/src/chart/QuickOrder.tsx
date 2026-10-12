@@ -315,7 +315,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
           <title>Drag to move</title>
         </line>
         <g className="line-tag drag" transform={`translate(${offX + plotW - TAG_W - 2}, ${y - 9})`} onPointerDown={(e) => startDrag(e, which)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={() => setDrag(null)} onDoubleClick={() => canTrade && void place()}>
-          <rect width={TAG_W} height={18} rx={3} fill="#0f1620" stroke={color} strokeWidth={drag === which ? 2 : 1} />
+          <rect width={TAG_W} height={18} rx={3} fill="#0f1620" fillOpacity={0.45} stroke={color} strokeWidth={drag === which ? 2 : 1} />
           <text x={TAG_W / 2} y={12.5} textAnchor="middle" fill={color}>
             {tag}
           </text>
@@ -354,7 +354,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
           <g>
             <line x1={offX} x2={offX + plotW} y1={yL} y2={yL} stroke="#e0a33d" strokeWidth={1.2} strokeDasharray="2 4" />
             <g className="line-tag" transform={`translate(${offX + plotW - TAG_W - 2}, ${yL - 9})`}>
-              <rect width={TAG_W} height={18} rx={3} fill="#0f1620" stroke="#e0a33d" />
+              <rect width={TAG_W} height={18} rx={3} fill="#0f1620" fillOpacity={0.45} stroke="#e0a33d" />
               <text x={TAG_W / 2} y={12.5} textAnchor="middle" fill="#e0a33d">
                 {`LIQUIDATION ~${signed(gain(liq) * lev, 0)}`}
               </text>
