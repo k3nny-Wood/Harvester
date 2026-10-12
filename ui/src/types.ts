@@ -191,6 +191,8 @@ export interface Account {
   availableBalance: number;
   unrealizedPnl: number;
   positions: Position[];
+  /** leverage per symbol, also for symbols with no position */
+  leverages?: Record<string, number>;
 }
 
 export interface OpenOrder {

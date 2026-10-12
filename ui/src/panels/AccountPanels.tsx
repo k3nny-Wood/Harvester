@@ -93,7 +93,8 @@ export function PositionsPanel() {
           )}
           {account.positions.map((p) => {
             const value = Math.abs(p.amount) * p.markPrice;
-            const margin = p.leverage > 0 ? (Math.abs(p.amount) * p.entryPrice) / p.leverage : 0;
+            const lev = p.leverage || account.leverages?.[p.symbol] || 0;
+            const margin = lev > 0 ? (Math.abs(p.amount) * p.entryPrice) / lev : 0;
             const roe = margin > 0 ? (p.unrealizedPnl / margin) * 100 : 0;
             return (
               <tr key={p.symbol}>
@@ -109,7 +110,7 @@ export function PositionsPanel() {
                 <td className={p.unrealizedPnl >= 0 ? 'up' : 'down'}>{money(p.unrealizedPnl)}</td>
                 <td className={roe >= 0 ? 'up' : 'down'}>{margin ? `${roe.toFixed(1)}%` : '-'}</td>
                 <td>{p.liquidationPrice || '-'}</td>
-                <td>{p.leverage || '-'}x</td>
+                <td>{lev ? `${lev}x` : '-'}</td>
                 <td className="pf-actions">
                   {[0.25, 0.5, 1].map((f) => (
                     <button key={f} onClick={() => void close(p.symbol, f)}>
@@ -130,6 +131,7 @@ export function PositionsPanel() {
 export function OpenOrdersPanel() {
   const trading = useApp((s) => s.trading);
   const orders = useApp((s) => s.orders);
+  const leverages = useApp((s) => s.account?.leverages);
   const held = useApp((s) => s.held).filter((h) => h.status === 'held');
   const toast = useApp((s) => s.toast);
   if (trading && !trading.hasCredentials) return <NoKeys />;
@@ -178,6 +180,7 @@ export function OpenOrdersPanel() {
             <th>Filled</th>
             <th>Price</th>
             <th>Trigger</th>
+            <th>Lev</th>
             <th>Flags</th>
             <th>
               {orders.length > 0 && (
@@ -191,7 +194,7 @@ export function OpenOrdersPanel() {
         <tbody>
           {orders.length === 0 && held.length === 0 && (
             <tr>
-              <td colSpan={10} className="muted">
+              <td colSpan={11} className="muted">
                 No open orders.
               </td>
             </tr>
@@ -208,6 +211,7 @@ export function OpenOrdersPanel() {
               <td>-</td>
               <td>{h.request.price}</td>
               <td>-</td>
+              <td>{leverages?.[h.request.symbol] ? `${leverages[h.request.symbol]}x` : '-'}</td>
               <td className="muted" title="Kept on this computer: Binance only takes limit orders close to the market. It is sent automatically when the price comes within range, while Harvester is open.">
                 waiting for range{h.request.reduceOnly ? ' · reduce-only' : ''}
               </td>
@@ -230,6 +234,7 @@ export function OpenOrdersPanel() {
               <td>{o.executedQty || '-'}</td>
               <td>{o.price || '-'}</td>
               <td>{o.stopPrice || '-'}</td>
+              <td>{leverages?.[o.symbol] ? `${leverages[o.symbol]}x` : '-'}</td>
               <td className="muted">{o.reduceOnly ? 'reduce-only' : ''}</td>
               <td>
                 <button className="icon-btn" title="Cancel this order" onClick={() => void cancel(o.symbol, o.orderId, o.conditional)}>

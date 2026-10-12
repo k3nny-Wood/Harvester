@@ -193,6 +193,8 @@ pub struct Account {
     pub available_balance: f64,
     pub unrealized_pnl: f64,
     pub positions: Vec<Position>,
+    /// the leverage set for each symbol the account lists (also the ones with no position, for their open orders)
+    pub leverages: std::collections::HashMap<String, f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -276,6 +278,11 @@ pub fn parse_open_orders(v: &Value) -> Vec<OpenOrder> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// symbol -> leverage from the `positions` list of an account answer.
+pub fn parse_leverages(acc: &Value) -> std::collections::HashMap<String, f64> {
+    acc["positions"].as_array().map(|a| a.iter().filter_map(|p| Some((p["symbol"].as_str()?.to_string(), num(&p["leverage"])))).filter(|(_, l)| *l > 0.0).collect()).unwrap_or_default()
 }
 
 pub fn parse_positions(v: &Value) -> Vec<Position> {
@@ -603,6 +610,7 @@ impl Trading {
             available_balance: num(&acc["availableBalance"]),
             unrealized_pnl: num(&acc["totalUnrealizedProfit"]),
             positions: parse_positions(&risk),
+            leverages: parse_leverages(&acc),
         })
     }
 
