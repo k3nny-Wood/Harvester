@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useReducer } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
+import type { PineStore } from './pine/pineStore';
 import { useApp } from './store';
 import type { Distribution, LadderPreview, Side, SizeMode, SymbolFilters } from './types';
 
@@ -79,13 +80,20 @@ export function createChartStore(symbol: string, timeframe: string): ChartStore 
 /** Every open chart tab, by its dockview panel id. */
 export const chartRegistry = new Map<string, ChartStore>();
 
-export const ChartContext = createContext<{ id: string; store: ChartStore } | null>(null);
+export const ChartContext = createContext<{ id: string; store: ChartStore; pine: PineStore } | null>(null);
 
 /** Read from the chart this component lives in (a chart tab and everything inside it). */
 export function useChart<T>(selector: (s: ChartState) => T): T {
   const ctx = useContext(ChartContext);
   if (!ctx) throw new Error('useChart outside a chart panel');
   return useStore(ctx.store, selector);
+}
+
+/** The Pine store of the chart tab this component lives in. */
+export function usePine(): PineStore {
+  const ctx = useContext(ChartContext);
+  if (!ctx) throw new Error('usePine outside a chart panel');
+  return ctx.pine;
 }
 
 export function useChartId(): string {
