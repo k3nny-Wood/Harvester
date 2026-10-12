@@ -64,6 +64,29 @@ export function bracketProblems(q: Quick, ladderEnd?: number): string[] {
   return out;
 }
 
+const snapTo = (p: number, tick: number) => (tick > 0 ? Number((Math.round(p / tick) * tick).toPrecision(12)) : p);
+
+/**
+ * Keep the take-profit and stop-loss outside a ladder's range. `push`: an exit that ended up inside (the ladder was switched on or widened)
+ * moves out to the default distance beyond the nearest edge. `clamp`: an exit the user drags or types into the range stops at the edge.
+ */
+export function keepOutside(q: Quick, end: number, tick: number, mode: 'push' | 'clamp'): { tp: number; sl: number } {
+  if (!(end > 0)) return { tp: q.tp, sl: q.sl };
+  const long = q.side === 'BUY';
+  const high = Math.max(q.entry, end);
+  const low = Math.min(q.entry, end);
+  const step = tick > 0 ? tick : high * 1e-6;
+  let { tp, sl } = q;
+  if (long) {
+    if (tp <= high) tp = mode === 'push' ? snapTo(high * (1 + DEFAULT_TP_PCT / 100), tick) : snapTo(high + step, tick);
+    if (sl >= low) sl = mode === 'push' ? snapTo(low * (1 - DEFAULT_SL_PCT / 100), tick) : snapTo(low - step, tick);
+  } else {
+    if (tp >= low) tp = mode === 'push' ? snapTo(low * (1 - DEFAULT_TP_PCT / 100), tick) : snapTo(low - step, tick);
+    if (sl <= high) sl = mode === 'push' ? snapTo(high * (1 + DEFAULT_SL_PCT / 100), tick) : snapTo(high + step, tick);
+  }
+  return { tp, sl };
+}
+
 /** Where a new ladder ends by default: 1.5% beyond the entry, against the trade (a long scales in lower, a short higher). */
 export function defaultLadderEnd(side: Side, entry: number, tick: number): number {
   const p = entry * (1 + (side === 'BUY' ? -1 : 1) * 0.015);
@@ -205,6 +228,12 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
     };
   }, [chart, q === null]);
 
+  useEffect(() => {
+    if (!q || !lad.on || !(lad.end > 0)) return;
+    const adj = keepOutside(q, lad.end, tickSize, 'push');
+    if (adj.tp !== q.tp || adj.sl !== q.sl) setQ({ ...q, ...adj });
+  }, [q, lad.on, lad.end, tickSize]);
+
   if (!q) return <div ref={rootRef} className="trade-layer" />;
 
   const long = q.side === 'BUY';
@@ -251,7 +280,15 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
   const yL = liq != null ? yOf(liq) : null;
   const clampY = (y: number | null) => (y == null ? null : Math.max(offY, Math.min(offY + plotH, y)));
 
-  const set = (which: Which, p: number) => (which === 'end' ? setLad((l) => ({ ...l, end: p })) : setQ((cur) => (cur ? { ...cur, [which]: p } : cur)));
+  const set = (which: Which, p: number) => {
+    if (which === 'end') return setLad((l) => ({ ...l, end: p }));
+    setQ((cur) => {
+      if (!cur) return cur;
+      const next = { ...cur, [which]: p };
+      // with a ladder the exits cannot be dragged or typed into its range: they stop at the edge
+      return lad.on && lad.end > 0 ? { ...next, ...keepOutside(next, lad.end, tickSize, 'clamp') } : next;
+    });
+  };
   // one switch for the ladder, used by the checkbox in the panel and the one on the amount box
   const toggleLadder = (on: boolean) => setLad((l) => ({ ...l, on, end: l.end > 0 && l.end !== q.entry ? l.end : defaultLadderEnd(q.side, q.entry, tickSize) }));
   const startDrag = (e: React.PointerEvent, which: Which) => {

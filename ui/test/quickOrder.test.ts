@@ -82,3 +82,35 @@ describe('exits of a ladder', () => {
     expect(defaultLadderEnd('SELL', 100, 0.01)).toBeGreaterThan(100);
   });
 });
+
+import { keepOutside } from '../src/chart/QuickOrder';
+
+describe('keeping the exits outside a ladder', () => {
+  const long = { side: 'BUY' as const, entry: 100, tp: 102, sl: 99 };
+
+  it('pushes an exit that ended up inside the range out to the default distance beyond the edge', () => {
+    // long ladder 100 -> 97: the stop at 99 is inside, the take-profit at 102 is already outside
+    const r = keepOutside(long, 97, 0.01, 'push');
+    expect(r.tp).toBe(102);
+    expect(r.sl).toBeCloseTo(97 * 0.99, 2);
+  });
+
+  it('clamps an exit dragged into the range at the edge', () => {
+    expect(keepOutside({ ...long, tp: 99.5 }, 97, 0.01, 'clamp').tp).toBeCloseTo(100.01, 6);
+    expect(keepOutside({ ...long, sl: 98 }, 97, 0.01, 'clamp').sl).toBeCloseTo(96.99, 6);
+  });
+
+  it('leaves exits that are already outside alone, and does nothing without a ladder', () => {
+    expect(keepOutside({ ...long, sl: 95 }, 97, 0.01, 'push')).toEqual({ tp: 102, sl: 95 });
+    expect(keepOutside(long, 0, 0.01, 'push')).toEqual({ tp: 102, sl: 99 });
+  });
+
+  it('a short ladder is the mirror', () => {
+    const s = { side: 'SELL' as const, entry: 100, tp: 99, sl: 101 };
+    // ladder 100 -> 103: the stop at 101 is inside, the take-profit at 99 is outside
+    const r = keepOutside(s, 103, 0.01, 'push');
+    expect(r.tp).toBe(99);
+    expect(r.sl).toBeCloseTo(103 * 1.01, 2);
+    expect(keepOutside({ ...s, tp: 101.5 }, 103, 0.01, 'clamp').tp).toBeCloseTo(99.99, 6);
+  });
+});
