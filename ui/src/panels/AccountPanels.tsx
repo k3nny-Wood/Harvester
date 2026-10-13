@@ -113,7 +113,9 @@ export function PositionsPanel() {
                 <td>{Math.abs(p.amount)}</td>
                 <td>{p.entryPrice}</td>
                 <td>{p.markPrice}</td>
-                <td>{p.liquidationPrice || '-'}</td>
+                <td title={p.liquidationPrice ? undefined : p.isolated ? undefined : 'Cross margin: your whole account backs this position and Binance reports no liquidation price, because the price would have to fall below zero (long) or the account is far larger than the position.'}>
+                  {p.liquidationPrice || (p.isolated ? '-' : 'none')}
+                </td>
                 <td>{margin ? money(margin) : '-'}</td>
                 <td className={`pf-pnl ${p.unrealizedPnl >= 0 ? 'up' : 'down'}`}>
                   {p.unrealizedPnl >= 0 ? '+' : ''}
