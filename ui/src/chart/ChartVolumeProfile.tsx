@@ -3,6 +3,9 @@ import type { IndicatorHandle, Vela } from '@luxalgo/vela';
 
 const KEY = 'harvester.volumeProfile.v1';
 
+/** The library's bar colours with half their strength (the bars are painted at their own opacity on top of this). */
+const INPUTS = { upColor: 'rgba(41, 98, 255, 0.5)', downColor: 'rgba(242, 54, 69, 0.5)' };
+
 function loadOn(): boolean {
   try {
     return window.localStorage.getItem(KEY) === '1';
@@ -24,7 +27,7 @@ export function ChartVolumeProfile({ chart }: { chart: Vela | null }) {
     if (!chart) return;
     if (on) {
       try {
-        handle.current = chart.addNativeIndicator('vpvr');
+        handle.current = chart.addNativeIndicator('vpvr', { inputs: INPUTS });
       } catch {
         handle.current = null;
       }
