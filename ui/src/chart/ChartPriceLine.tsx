@@ -51,7 +51,7 @@ export function ChartPriceLine({ chart }: { chart: Vela | null }) {
       body = (
         <svg className="trade-svg">
           <g className="price-pulse">
-            <line x1={x0} x2={x1} y1={y} y2={y} stroke="#ffffff" strokeWidth={1.2} strokeDasharray="2 3" />
+            <line x1={x0} x2={x1} y1={y} y2={y} stroke="#ffffff" strokeWidth={2} />
             <g transform={`translate(${x1}, ${y - 15})`}>
               <rect width={axisW} height={30} fill="#ffffff" />
               <text x={axisW / 2} y={12} textAnchor="middle" fill="#0b0f15" className="price-chip">
