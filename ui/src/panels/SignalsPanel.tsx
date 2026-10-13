@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { alertSettings, playChime, updateAlerts } from '../alerts';
 import { DEFAULT_MOVERS, useMovers, windowLabel } from '../moversConfig';
+import { useScannerParams } from '../scannerParams';
 import { api } from '../api';
 import { WithBasePreview } from '../components/BasePreview';
 import { Thumb } from '../components/Thumb';
@@ -39,6 +40,14 @@ export function SignalsPanel() {
   const [alerts, setAlerts] = useState(alertSettings.current);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [moversOpen, setMoversOpen] = useState(false);
+  const [qflOpen, setQflOpen] = useState(false);
+  const scanParams = useScannerParams((s) => s.params);
+  const changeScan = useScannerParams((s) => s.change);
+  const resetScan = useScannerParams((s) => s.reset);
+  // the running scanner starts with its own defaults: tell it the saved rules, and again whenever they change
+  useEffect(() => {
+    void api.scannerParams(scanParams).catch(() => undefined);
+  }, [scanParams]);
   const movers = useMovers((s) => s.params);
   const changeMovers = useMovers((s) => s.change);
   const setRule = useMovers((s) => s.setRule);
@@ -59,7 +68,7 @@ export function SignalsPanel() {
 
   const restart = (patch: Partial<{ timeframe: string; universe: number }>) => {
     if (!config) return;
-    void api.scannerConfigure({ ...config, ...patch });
+    void api.scannerConfigure({ ...config, params: useScannerParams.getState().params, ...patch });
   };
 
   const toggleSource = (key: 'qfl' | 'movers') => {
@@ -100,6 +109,9 @@ export function SignalsPanel() {
           <button className={`src${sources.qfl ? ' on' : ''}`} onClick={() => toggleSource('qfl')} title="QFL base cracks, drops and watches (rule based)">
             <i /> QFL
           </button>
+          <button className="src" onClick={() => setQflOpen((v) => !v)} title="QFL / drop / watch settings">
+            ⚙
+          </button>
           <button className={`src${sources.movers ? ' on' : ''}`} onClick={() => toggleSource('movers')} title="Sudden pumps and dumps across every perpetual (live price stream)">
             <i /> Movers
           </button>
@@ -138,6 +150,45 @@ export function SignalsPanel() {
             Alert settings {alertsOpen ? '▴' : '▾'}
           </button>
         </div>
+        {qflOpen && (
+          <div className="alert-box">
+            <div className="muted">Rules of the QFL scanner. They apply at once to every symbol it follows.</div>
+            <b>Drops</b>
+            <label className="minscore">
+              Minimum drop <b>{scanParams.dropMinPct}%</b>
+              <input type="range" min={0.5} max={20} step={0.5} value={scanParams.dropMinPct} onChange={(e) => changeScan({ dropMinPct: Number(e.target.value) })} />
+            </label>
+            <label className="minscore">
+              From the high of the last <b>{scanParams.dropWindow} candles</b>
+              <input type="range" min={3} max={96} step={1} value={scanParams.dropWindow} onChange={(e) => changeScan({ dropWindow: Number(e.target.value) })} />
+            </label>
+            <label className="minscore">
+              And at least <b>{scanParams.dropMinMultiple === 0 ? 'off' : `${scanParams.dropMinMultiple}x`}</b> the coin's normal move
+              <input type="range" min={0} max={8} step={0.5} value={scanParams.dropMinMultiple} onChange={(e) => changeScan({ dropMinMultiple: Number(e.target.value) })} />
+            </label>
+            <b>Cracks and watches</b>
+            <label className="minscore">
+              A crack counts for <b>{scanParams.freshBars} candles</b>
+              <input type="range" min={1} max={40} step={1} value={scanParams.freshBars} onChange={(e) => changeScan({ freshBars: Number(e.target.value) })} />
+            </label>
+            <label className="minscore">
+              Crack depth below the base <b>{(scanParams.qfl.crackPct * 100).toFixed(1)}%</b>
+              <input type="range" min={0.1} max={3} step={0.1} value={Number((scanParams.qfl.crackPct * 100).toFixed(1))} onChange={(e) => changeScan({ qfl: { crackPct: Number(e.target.value) / 100 } })} />
+            </label>
+            <label className="minscore">
+              Watch when within <b>{scanParams.nearPct}%</b> of the crack level
+              <input type="range" min={0.2} max={5} step={0.1} value={scanParams.nearPct} onChange={(e) => changeScan({ nearPct: Number(e.target.value) })} />
+            </label>
+            <label className="minscore">
+              Base sensitivity (volatility factor) <b>{scanParams.qfl.volatilityFactor}</b>
+              <input type="range" min={0.5} max={5} step={0.1} value={scanParams.qfl.volatilityFactor} onChange={(e) => changeScan({ qfl: { volatilityFactor: Number(e.target.value) } })} />
+            </label>
+            <small className="muted">A higher factor needs a bigger bounce before a base counts, so fewer bases exist. Same idea as the factor in the chart's Bases settings.</small>
+            <button className="chip" onClick={resetScan}>
+              Reset
+            </button>
+          </div>
+        )}
         {moversOpen && (
           <div className="alert-box">
             <div className="muted">A sudden move is reported when the price changes by at least this much within the window AND by several times what that coin normally moves in that long.</div>

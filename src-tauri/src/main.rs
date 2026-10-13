@@ -233,6 +233,12 @@ fn scanner_sources(app: AppHandle, state: State<'_, AppState>, sources: Sources)
 }
 
 /// Restart the scanner with a new configuration (timeframe, universe size, thresholds).
+/// New signal rules (drop %, crack depth, ...) for the running scanner.
+#[tauri::command]
+fn scanner_params(app: AppHandle, state: State<'_, AppState>, params: harvester_core::signals::SignalParams) {
+    state.scanner.set_params(&app, params);
+}
+
 #[tauri::command]
 fn scanner_configure(app: AppHandle, state: State<'_, AppState>, config: ScannerConfig) {
     state.scanner.start(app, state.market.clone(), config);
@@ -292,7 +298,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
-            qfl_zones, smc_zones_cmd, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_sources,
+            qfl_zones, smc_zones_cmd, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_params, scanner_sources,
             trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, bracket_add, bracket_list, bracket_cancel, cancel_order, modify_order, order_history, trade_history, symbol_leverage, leverage_brackets, cancel_all_orders, close_position, set_leverage
         ])
         .run(tauri::generate_context!())

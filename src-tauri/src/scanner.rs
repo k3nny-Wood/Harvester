@@ -252,6 +252,20 @@ impl Scanner {
         emit_signals(app, &mut g, true);
     }
 
+    /// New rules (drop size, crack depth, ...) apply at once: every symbol already loaded is analysed again with them. No restart, no reload.
+    pub fn set_params(&self, app: &AppHandle, params: SignalParams) {
+        let mut g = self.inner.lock().unwrap();
+        g.config.params = params;
+        let symbols: Vec<String> = g.buffers.keys().cloned().collect();
+        for s in &symbols {
+            analyse_drops(&mut g, s);
+            if g.full.contains(s) {
+                analyse_symbol(app, &mut g, s);
+            }
+        }
+        emit_signals(app, &mut g, true);
+    }
+
     pub fn injector(&self) -> Injector {
         Injector { inner: self.inner.clone() }
     }

@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { LeverageBracket, Account, ArmedBracket, MoverParams, HeldEvent, HeldOrder, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
+import type { SignalParams, LeverageBracket, Account, ArmedBracket, MoverParams, HeldEvent, HeldOrder, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
 
 /** True when running inside the Tauri shell (false in a plain browser, e.g. `vite` on its own). */
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -28,6 +28,7 @@ export const api = {
   bracketList: () => invoke<ArmedBracket[]>('bracket_list'),
   bracketCancel: (id: string) => invoke<boolean>('bracket_cancel', { id }),
   markPrices: (symbols: string[]) => invoke<Record<string, number>>('mark_prices', { symbols }),
+  scannerParams: (params: SignalParams) => invoke<void>('scanner_params', { params }),
   moversConfig: () => invoke<MoverParams>('movers_config'),
   moversConfigure: (params: MoverParams) => invoke<void>('movers_configure', { params }),
   heldList: () => invoke<HeldOrder[]>('held_list'),
