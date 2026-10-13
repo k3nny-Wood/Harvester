@@ -15,6 +15,7 @@ import { DRAWING_GROUPS } from './drawingTools';
 import { ChartBases } from './ChartBases';
 import { ChartFills } from './ChartFills';
 import { ChartSmc } from './ChartSmc';
+import { ChartPriceLine } from './ChartPriceLine';
 import { ChartVolumeProfile } from './ChartVolumeProfile';
 import { ChartTrading } from './ChartTrading';
 import { QuickOrder } from './QuickOrder';
@@ -99,7 +100,7 @@ function ChartBody() {
       bars: START_BARS,
       drawings: { toolbar: true, groups: DRAWING_GROUPS },
       volume: true,
-      currentPriceLine: true,
+      currentPriceLine: false, // drawn by ChartPriceLine instead (white, pulsing)
       // every chart tab owns a renderer, and a browser only allows about 16 WebGL contexts at once: beyond that the candles of the extra charts
       // never appear (a blank, white chart). The 2D canvas has no such limit.
       nativeBackend: 'canvas2d',
@@ -243,6 +244,7 @@ function ChartBody() {
       <ChartFills chart={chart} />
       <ChartBases chart={chart} />
       <ChartSmc chart={chart} />
+      <ChartPriceLine chart={chart} />
       <ChartVolumeProfile chart={chart} />
       <ChartTrading chart={chart} host={ref} />
       <LadderOverlay chart={chart} host={ref} />

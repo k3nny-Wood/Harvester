@@ -1790,3 +1790,26 @@ button.mini {
   font-weight: 700;
   white-space: nowrap;
 }
+
+/* the last-price line: white, fading slightly in and out */
+.price-pulse {
+  animation: price-pulse 2.2s ease-in-out infinite;
+}
+@keyframes price-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.price-chip {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.price-chip.small {
+  font-size: 10px;
+  font-weight: 600;
+}
