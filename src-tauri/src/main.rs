@@ -141,7 +141,7 @@ fn bracket_cancel(state: State<'_, AppState>, id: String) -> bool {
 #[tauri::command]
 fn mark_prices(state: State<'_, AppState>, symbols: Vec<String>) -> std::collections::HashMap<String, f64> {
     let m = state.marks.read().unwrap();
-    symbols.into_iter().filter_map(|s| m.get(&s).map(|p| (s, *p))).collect()
+    marks::fresh(&m, &symbols, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0))
 }
 
 /// The pump / dump watcher's settings.
