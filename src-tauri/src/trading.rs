@@ -441,6 +441,11 @@ pub fn parse_trade_history(v: &Value) -> Vec<TradeRecord> {
         .unwrap_or_default()
 }
 
+/// The query parameters of a margin-mode change (Binance names cross margin "CROSSED").
+pub fn margin_type_params(symbol: &str, isolated: bool) -> Vec<(String, String)> {
+    vec![("symbol".to_string(), symbol.to_string()), ("marginType".to_string(), if isolated { "ISOLATED" } else { "CROSSED" }.to_string())]
+}
+
 /// The brackets of a `leverageBracket` answer.
 pub fn parse_brackets(v: &Value) -> Vec<LeverageBracket> {
     let first = if v.is_array() { v.get(0) } else { Some(v) };
@@ -846,6 +851,16 @@ impl Trading {
         Ok(OrderAck { order_id: v["orderId"].as_i64().unwrap_or(0), symbol: symbol.to_string(), status: text(&v["status"]), client_id: text(&v["clientOrderId"]), quantity: qty, price: None, conditional: false })
     }
 
+    /// Cross or isolated margin for a symbol. Binance only allows it with no position and no open orders on the symbol.
+    pub async fn set_margin_type(&self, symbol: &str, isolated: bool) -> Result<(), String> {
+        match self.signed(reqwest::Method::POST, "/fapi/v1/marginType", margin_type_params(symbol, isolated)).await {
+            Ok(_) => Ok(()),
+            // "No need to change margin type": it already is what was asked for
+            Err(e) if e.contains("-4046") => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
     pub async fn set_leverage(&self, symbol: &str, leverage: u32) -> Result<(), String> {
         let cap = env_var("MAX_LEVERAGE").and_then(|v| v.parse::<u32>().ok()).unwrap_or(20);
         if leverage == 0 || leverage > cap {
@@ -974,6 +989,12 @@ mod tests {
         assert_eq!(get("price"), Some("2895"));
         assert!(OrderType::StopMarket.is_conditional() && !OrderType::Limit.is_conditional());
         assert!(OrderType::TakeProfit.has_price() && !OrderType::TakeProfitMarket.has_price());
+    }
+
+    #[test]
+    fn margin_mode_changes_use_binances_names() {
+        assert_eq!(margin_type_params("ETHUSDT", true), vec![("symbol".to_string(), "ETHUSDT".to_string()), ("marginType".to_string(), "ISOLATED".to_string())]);
+        assert_eq!(margin_type_params("ETHUSDT", false)[1].1, "CROSSED");
     }
 
     #[test]

@@ -8,6 +8,7 @@ import { maxPct, sizeFromPct } from '../sizing';
 import { useApp } from '../store';
 import { refreshTrading } from '../trade';
 import type { LeverageBracket, OrderAck, OrderRequest, Side } from '../types';
+import { MarginModeToggle } from '../components/MarginModeToggle';
 import { getProjector } from './projector';
 import { averagePrice, ladderRungs, MAX_RUNGS, MIN_RUNGS, type RungWeights } from './quickLadder';
 
@@ -478,6 +479,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
             <span>Lev</span>
             <input type="range" min={1} max={maxLev} step={1} value={lev} title="Leverage (same setting as in the panel)" onChange={(e) => setLev(Number(e.target.value))} />
             <b className="quick-lev">{lev}x</b>
+            <MarginModeToggle symbol={symbol} compact />
           </div>
           <div className="quick-ladder-row">
             <label className="quick-ladder-check" title="Spread the entry over several orders (same switch as in the panel)">
@@ -547,6 +549,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
           </span>
           <input type="range" min={1} max={maxLev} step={1} value={lev} onChange={(e) => setLev(Number(e.target.value))} />
         </label>
+        <MarginModeToggle symbol={symbol} />
         <div className="quick-sum">
           <span>Position {notional.toFixed(2)} USDT</span>
           {ladOn && <span>Avg entry {formatPrice(avg, precision)}</span>}
