@@ -6,6 +6,7 @@ import { confirmDialog } from '../confirm';
 import { openChart } from '../dock';
 import { useApp } from '../store';
 import { refreshTrading } from '../trade';
+import { defaultExitPrice, exitState } from '../positionExits';
 import { AddSizeModal, type AddSizeTarget } from '../components/AddSizeModal';
 import type { ArmedBracket, OrderRecord, TradeRecord } from '../types';
 
@@ -35,6 +36,7 @@ export function PositionsPanel() {
   const account = useApp((s) => s.account);
   const toast = useApp((s) => s.toast);
   const [addFor, setAddFor] = useState<AddSizeTarget | null>(null);
+  const openOrders = useApp((s) => s.orders);
   const live = useLiveMarks(account?.positions.map((p) => p.symbol) ?? []);
   if (trading && !trading.hasCredentials) return <NoKeys />;
   if (!account) return <div className="panel pad muted">Loading the account…</div>;
@@ -43,6 +45,21 @@ export function PositionsPanel() {
     const mark = live[p.symbol] ?? p.markPrice;
     return { ...p, markPrice: mark, unrealizedPnl: live[p.symbol] ? p.amount * (mark - p.entryPrice) : p.unrealizedPnl };
   });
+
+  // a stop-loss / take-profit for the whole position, reduce-only, placed a little way from the price: its line and box appear on the chart,
+  // where they can be dragged to the level wanted
+  const addExit = async (symbol: string, amount: number, mark: number, kind: 'stop' | 'take') => {
+    const long = amount > 0;
+    const price = defaultExitPrice(kind, long, mark);
+    try {
+      await api.placeOrder({ symbol, side: long ? 'SELL' : 'BUY', type: kind === 'stop' ? 'STOP_MARKET' : 'TAKE_PROFIT_MARKET', quantity: Math.abs(amount), stopPrice: price, reduceOnly: true });
+      toast(`${symbol}: ${kind === 'stop' ? 'stop-loss' : 'take-profit'} placed for the whole position at about ${price.toPrecision(5)}. Drag its box on the chart to move it.`, 'info');
+      openChart(symbol);
+      await refreshTrading();
+    } catch (e) {
+      toast(`${kind === 'stop' ? 'Stop-loss' : 'Take-profit'}: ${e}`, 'warn');
+    }
+  };
 
   const close = async (symbol: string, fraction: number) => {
     if (!(await confirmDialog(`Close ${Math.round(fraction * 100)}% of the ${symbol} position at market?`, { confirmLabel: 'Close' }))) return;
@@ -126,6 +143,16 @@ export function PositionsPanel() {
                 <td>{money(value)}</td>
                 <td>{lev ? `${lev}x ${p.isolated ? 'Isolated' : 'Cross'}` : '-'}</td>
                 <td className="pf-actions">
+                  {!exitState(p.symbol, p.amount, openOrders).stop && (
+                    <button className="exit-add" title="This position has no stop-loss: place one on the chart" onClick={() => void addExit(p.symbol, p.amount, p.markPrice, 'stop')}>
+                      + SL
+                    </button>
+                  )}
+                  {!exitState(p.symbol, p.amount, openOrders).take && (
+                    <button className="exit-add" title="This position has no take-profit: place one on the chart" onClick={() => void addExit(p.symbol, p.amount, p.markPrice, 'take')}>
+                      + TP
+                    </button>
+                  )}
                   <button title="Add to this position (with its stop-loss and take-profit resized)" onClick={() => setAddFor({ kind: 'position', symbol: p.symbol, amount: p.amount, mark: p.markPrice })}>
                     + Add
                   </button>

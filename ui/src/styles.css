@@ -1886,3 +1886,8 @@ button.mini {
   color: var(--down);
   font-size: 26px;
 }
+
+.pf-actions button.exit-add {
+  border-color: #6cc4ff;
+  color: #6cc4ff;
+}
