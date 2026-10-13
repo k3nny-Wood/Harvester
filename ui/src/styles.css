@@ -970,14 +970,24 @@ table.rungs tr.bad td {
 }
 .balances {
   display: flex;
-  gap: 16px;
+  align-items: baseline;
+  gap: 20px;
   font-size: 12px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 .balances b {
   color: var(--text);
-  margin-left: 3px;
+  margin-left: 4px;
+  /* the account figures are what the trader watches: big and bold */
+  font-size: 20px;
+  font-weight: 700;
+}
+.balances b.up {
+  color: var(--up);
+}
+.balances b.down {
+  color: var(--down);
 }
 .hist-bar {
   display: flex;
