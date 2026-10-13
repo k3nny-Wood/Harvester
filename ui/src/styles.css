@@ -1765,3 +1765,11 @@ button.mini {
   top: 6px;
   z-index: 30;
 }
+.vp-bar {
+  display: flex;
+  gap: 2px;
+}
+.bases-pop.vp-pop {
+  left: 340px;
+  width: 230px;
+}
