@@ -10,6 +10,7 @@ import { ChartContext, chartRegistry, createChartStore, useChart, useChartId, us
 import { getDock } from '../dock';
 import { intervalMs, intervalToVela } from '../intervals';
 import { deeperTarget, START_BARS } from './history';
+import { useTimeframeHotkeys } from './useTimeframeHotkeys';
 import { useApp } from '../store';
 import { DRAWING_GROUPS } from './drawingTools';
 import { ChartBases } from './ChartBases';
@@ -83,6 +84,8 @@ function ChartBody() {
   const [pineOpen, setPineOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const hovering = useRef(false);
+  const setTimeframe = useChart((s) => s.setTimeframe);
+  const tfPopup = useTimeframeHotkeys({ hovering, chartId, timeframe, setTimeframe });
 
   // One Vela instance for the tab's lifetime; the market is switched in place.
   useEffect(() => {
@@ -244,6 +247,7 @@ function ChartBody() {
       <ChartFills chart={chart} />
       <ChartBases chart={chart} />
       <ChartSmc chart={chart} />
+      {tfPopup && <div className={`tf-popup${tfPopup.bad ? ' bad' : ''}`}>{tfPopup.text}</div>}
       <ChartPriceLine chart={chart} />
       <ChartVolumeProfile chart={chart} />
       <ChartTrading chart={chart} host={ref} />

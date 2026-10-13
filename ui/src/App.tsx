@@ -7,7 +7,7 @@ import { ConfirmHost, confirmDialog } from './confirm';
 import { activeChartStore, useActiveChart } from './chartStore';
 import { ChartPanel } from './chart/ChartPanel';
 import { newChartId, openChart, setDock } from './dock';
-import { TIMEFRAMES } from './intervals';
+import { BAR_TIMEFRAMES } from './intervals';
 import { LabPanel } from './panels/LabPanel';
 import { LadderPanel } from './panels/LadderPanel';
 import { OrdersPanel } from './panels/OrdersPanel';
@@ -208,7 +208,7 @@ export function App() {
           <span className="last">{markPrice ? markPrice.toFixed(precision) : '…'}</span>
         </div>
         <div className="tfs">
-          {TIMEFRAMES.map((t) => (
+          {BAR_TIMEFRAMES.map((t) => (
             <button key={t.interval} className={t.interval === timeframe ? 'active' : ''} onClick={() => store()?.setTimeframe(t.interval)}>
               {t.label}
             </button>
