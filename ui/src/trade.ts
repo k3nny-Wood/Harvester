@@ -3,6 +3,7 @@ import { activeChartStore } from './chartStore';
 import { confirmDialog } from './confirm';
 import { useApp } from './store';
 import { closeOrder } from './sizing';
+import { leftoverOrders, leftoverSymbols } from './leftovers';
 import type { OrderRequest, Side } from './types';
 
 /** Refresh the account, positions and open orders from the exchange. */
@@ -21,6 +22,61 @@ export async function refreshTrading(): Promise<void> {
   if (orders) app.setOrders(orders);
   const held = await api.heldList().catch(() => null);
   if (held) app.setHeld(held);
+  void cleanLeftovers();
+}
+
+/** Leftover stop-loss / take-profit orders are only cancelled once they have been seen this long, and after a fresh check of the exchange. */
+const LEFTOVER_WAIT_MS = 4000;
+const leftoverSince = new Map<string, number>();
+let cleaning = false;
+
+/**
+ * When a position has closed (its take-profit or stop-loss fired, or it was closed by hand) the other exit order is left on the exchange.
+ * A reduce-only order with no position can do nothing, so it is cancelled. A symbol only counts when it looks orphaned for a few seconds in a row
+ * and again on a fresh read, so the exits of an entry that has just filled are never taken for leftovers.
+ */
+async function cleanLeftovers(): Promise<void> {
+  if (cleaning || !inTauri) return;
+  const app = useApp.getState();
+  const positions = app.account?.positions ?? [];
+  const candidates = leftoverSymbols(positions, app.orders, app.held, []);
+  for (const sym of [...leftoverSince.keys()]) if (!candidates.includes(sym)) leftoverSince.delete(sym);
+  if (!candidates.length) return;
+  const now = Date.now();
+  const ripe = candidates.filter((sym) => {
+    if (!leftoverSince.has(sym)) leftoverSince.set(sym, now);
+    return now - (leftoverSince.get(sym) ?? now) >= LEFTOVER_WAIT_MS;
+  });
+  if (!ripe.length) return;
+  cleaning = true;
+  try {
+    const [account, brackets, held] = await Promise.all([api.account(), api.bracketList(), api.heldList()]);
+    for (const sym of ripe) {
+      const open = await api.openOrders(sym);
+      const stale = leftoverOrders(sym, account.positions, open, held, brackets);
+      if (!stale.length) {
+        leftoverSince.delete(sym);
+        continue;
+      }
+      let cancelled = 0;
+      for (const o of stale) {
+        try {
+          await api.cancelOrder(sym, o.orderId, o.conditional);
+          cancelled += 1;
+        } catch {
+          /* it may have just been cancelled or triggered: the next refresh shows what is left */
+        }
+      }
+      leftoverSince.delete(sym);
+      if (cancelled) app.toast(`${sym}: cancelled ${cancelled} leftover stop-loss / take-profit order${cancelled === 1 ? '' : 's'} (the position is closed)`, 'info');
+    }
+    const refreshed = await api.openOrders().catch(() => null);
+    if (refreshed) useApp.getState().setOrders(refreshed);
+  } catch {
+    /* try again on the next refresh */
+  } finally {
+    cleaning = false;
+  }
 }
 
 /** How often to poll: the user-data stream pushes every change, so the poll is only a safety net while it is connected. */
