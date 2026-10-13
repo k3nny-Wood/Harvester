@@ -206,6 +206,8 @@ export interface Account {
   positions: Position[];
   /** leverage per symbol, also for symbols with no position */
   leverages?: Record<string, number>;
+  /** true = isolated margin, false = cross, per symbol */
+  isolated?: Record<string, boolean>;
 }
 
 export interface OpenOrder {

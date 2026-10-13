@@ -122,7 +122,7 @@ export function PositionsPanel() {
                   {money(p.unrealizedPnl)} USDT ({initial ? `${roe >= 0 ? '+' : ''}${roe.toFixed(2)}%` : '-'})
                 </td>
                 <td>{money(value)}</td>
-                <td>{lev ? `${lev}x` : '-'}</td>
+                <td>{lev ? `${lev}x ${p.isolated ? 'Isolated' : 'Cross'}` : '-'}</td>
                 <td className="pf-actions">
                   {[0.25, 0.5, 1].map((f) => (
                     <button key={f} onClick={() => void close(p.symbol, f)}>
@@ -144,6 +144,8 @@ export function OpenOrdersPanel() {
   const trading = useApp((s) => s.trading);
   const orders = useApp((s) => s.orders);
   const leverages = useApp((s) => s.account?.leverages);
+  const isolated = useApp((s) => s.account?.isolated);
+  const levText = (symbol: string) => (leverages?.[symbol] ? `${leverages[symbol]}x ${isolated?.[symbol] ? 'Isolated' : 'Cross'}` : '-');
   const [armed, setArmed] = useState<ArmedBracket[]>([]);
   useEffect(() => {
     let stop = false;
@@ -257,7 +259,7 @@ export function OpenOrdersPanel() {
               <td>-</td>
               <td>{h.request.price}</td>
               <td>-</td>
-              <td>{leverages?.[h.request.symbol] ? `${leverages[h.request.symbol]}x` : '-'}</td>
+              <td>{levText(h.request.symbol)}</td>
               <td className="muted" title="Kept on this computer: Binance only takes limit orders close to the market. It is sent automatically when the price comes within range, while Harvester is open.">
                 waiting for range{h.request.reduceOnly ? ' · reduce-only' : ''}
               </td>
@@ -280,7 +282,7 @@ export function OpenOrdersPanel() {
               <td>{o.executedQty || '-'}</td>
               <td>{o.price || '-'}</td>
               <td>{o.stopPrice || '-'}</td>
-              <td>{leverages?.[o.symbol] ? `${leverages[o.symbol]}x` : '-'}</td>
+              <td>{levText(o.symbol)}</td>
               <td className="muted">{o.reduceOnly ? 'reduce-only' : ''}</td>
               <td>
                 <button className="icon-btn" title="Cancel this order" onClick={() => void cancel(o.symbol, o.orderId, o.conditional)}>

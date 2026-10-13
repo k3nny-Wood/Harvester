@@ -208,6 +208,8 @@ pub struct Account {
     pub positions: Vec<Position>,
     /// the leverage set for each symbol the account lists (also the ones with no position, for their open orders)
     pub leverages: std::collections::HashMap<String, f64>,
+    /// for each symbol the account lists: true = isolated margin, false = cross
+    pub isolated: std::collections::HashMap<String, bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -291,6 +293,11 @@ pub fn parse_open_orders(v: &Value) -> Vec<OpenOrder> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// symbol -> true when the symbol's margin mode is isolated (cross otherwise), from the `positions` list of an account answer.
+pub fn parse_margin_modes(acc: &Value) -> std::collections::HashMap<String, bool> {
+    acc["positions"].as_array().map(|a| a.iter().filter_map(|p| Some((p["symbol"].as_str()?.to_string(), p["isolated"].as_bool().unwrap_or(false)))).collect()).unwrap_or_default()
 }
 
 /// symbol -> leverage from the `positions` list of an account answer.
@@ -638,6 +645,7 @@ impl Trading {
             unrealized_pnl: num(&acc["totalUnrealizedProfit"]),
             positions: parse_positions(&risk),
             leverages: parse_leverages(&acc),
+            isolated: parse_margin_modes(&acc),
         })
     }
 
@@ -966,6 +974,14 @@ mod tests {
         assert_eq!(get("price"), Some("2895"));
         assert!(OrderType::StopMarket.is_conditional() && !OrderType::Limit.is_conditional());
         assert!(OrderType::TakeProfit.has_price() && !OrderType::TakeProfitMarket.has_price());
+    }
+
+    #[test]
+    fn reads_the_margin_mode_of_each_symbol() {
+        let m = parse_margin_modes(&json!({"positions": [{"symbol": "ETHUSDT", "isolated": true}, {"symbol": "BTCUSDT", "isolated": false}]}));
+        assert_eq!(m.get("ETHUSDT"), Some(&true));
+        assert_eq!(m.get("BTCUSDT"), Some(&false));
+        assert!(parse_margin_modes(&json!({})).is_empty());
     }
 
     #[test]
