@@ -144,6 +144,25 @@ function ChartBody() {
     return () => window.removeEventListener('keydown', onKey);
   }, [chartId]);
 
+  // A trendline the user draws starts solid and blue (the library's default is a faded dotted line). Only drawings placed with the tool:
+  // the app's own lines (bases, zones) are added from code, without a placement draft before them.
+  useEffect(() => {
+    if (!chart) return;
+    let lastDraft = 0;
+    const draft = chart.on('drawing:draft', (e: { doc: unknown }) => {
+      if (e.doc) lastDraft = Date.now();
+    });
+    const created = chart.on('drawing:created', (e: { id: string }) => {
+      if (Date.now() - lastDraft > 3000) return;
+      const d = chart.drawings.all().find((x) => x.id === e.id);
+      if (!d || d.type !== 'trendline') return;
+      chart.drawings.update(e.id, { style: { ...d.style, lineColor: '#2962ff', lineWidth: Math.max(2, d.style.lineWidth || 2), lineStyle: 'solid' } });
+    });
+    return () => {
+      [draft, created].forEach((o) => typeof o === 'function' && o());
+    };
+  }, [chart]);
+
   // Older candles on demand: Vela holds a fixed depth, so when panning or zooming out reaches the oldest bar the chart is
   // reloaded deeper (the view stays where it is) until the exchange has nothing older.
   const depth = useRef({ oldest: 0, loaded: START_BARS, genesis: false, loading: false });
