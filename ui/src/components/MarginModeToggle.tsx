@@ -3,6 +3,8 @@ import { api } from '../api';
 import { useApp } from '../store';
 import { refreshTrading } from '../trade';
 
+const NO_POSITIONS: Array<{ symbol: string; amount: number }> = [];
+
 /** Why the margin mode of a symbol cannot be changed right now (Binance refuses while it holds a position or open orders), or null when it can. */
 export function marginModeBlock(symbol: string, positions: Array<{ symbol: string; amount: number }>, orders: Array<{ symbol: string }>): string | null {
   if (positions.some((p) => p.symbol === symbol && p.amount !== 0)) return `${symbol} has an open position: close it first.`;
@@ -16,7 +18,9 @@ export function marginModeBlock(symbol: string, positions: Array<{ symbol: strin
  */
 export function MarginModeToggle({ symbol, compact = false }: { symbol: string; compact?: boolean }) {
   const isolated = useApp((s) => s.account?.isolated?.[symbol] ?? false);
-  const positions = useApp((s) => s.account?.positions ?? []);
+  // select the stored arrays themselves: a selector that builds a new array on every call (`?? []`) makes React re-render forever
+  const accountPositions = useApp((s) => s.account?.positions);
+  const positions = accountPositions ?? NO_POSITIONS;
   const orders = useApp((s) => s.orders);
   const canTrade = useApp((s) => !!s.trading?.hasCredentials);
   const toast = useApp((s) => s.toast);
