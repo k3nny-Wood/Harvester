@@ -1757,3 +1757,11 @@ button.mini {
 .quick-ladder-row .quick-lev {
   min-width: 26px;
 }
+
+/* volume profile switch, next to the SMC button */
+.vp-bar {
+  position: absolute;
+  left: 340px;
+  top: 6px;
+  z-index: 30;
+}

@@ -15,6 +15,7 @@ import { DRAWING_GROUPS } from './drawingTools';
 import { ChartBases } from './ChartBases';
 import { ChartFills } from './ChartFills';
 import { ChartSmc } from './ChartSmc';
+import { ChartVolumeProfile } from './ChartVolumeProfile';
 import { ChartTrading } from './ChartTrading';
 import { QuickOrder } from './QuickOrder';
 import { LadderOverlay } from './LadderOverlay';
@@ -220,6 +221,7 @@ function ChartBody() {
       <ChartFills chart={chart} />
       <ChartBases chart={chart} />
       <ChartSmc chart={chart} />
+      <ChartVolumeProfile chart={chart} />
       <ChartTrading chart={chart} host={ref} />
       <LadderOverlay chart={chart} host={ref} />
       <QuickOrder chart={chart} host={ref} />
