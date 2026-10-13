@@ -21,6 +21,8 @@ interface Line {
   key: string;
   /** the box's text: what this line is */
   tag?: string;
+  /** colour of the box's text when it differs from the line's (the position: green in profit, red in loss) */
+  textColor?: string;
   y: number;
   color: string;
   label: string;
@@ -54,6 +56,8 @@ interface DragState {
 }
 
 const BUY = '#2e9b6f';
+/** the position's own line across the chart */
+const POSITION_LINE = '#6cc4ff';
 const SELL = '#d0454b';
 
 /**
@@ -197,7 +201,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
       const roe = initial > 0 ? `  ROE ${pnl >= 0 ? '+' : ''}${((pnl / initial) * 100).toFixed(2)}%` : '';
       // green while in profit, red in a loss; the box shows the return on the position's margin (price change when the leverage is unknown)
       const pct = initial > 0 ? (pnl / initial) * 100 : pos.entryPrice > 0 ? ((liveMark ?? pos.markPrice) / pos.entryPrice - 1) * 100 * (pos.amount > 0 ? 1 : -1) : 0;
-      if (ye != null) lines.push({ key: 'pos', tag: `${pos.amount > 0 ? 'LONG' : 'SHORT'} ${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`, y: ye, color: pnl >= 0 ? BUY : SELL, label: `${pos.amount > 0 ? 'LONG' : 'SHORT'} ${pos.amount} @ ${formatPrice(pos.entryPrice, precision)}  PNL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}${roe}`, dashed: false });
+      if (ye != null) lines.push({ key: 'pos', tag: `${pos.amount > 0 ? 'LONG' : 'SHORT'} ${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`, y: ye, color: POSITION_LINE, textColor: pnl >= 0 ? BUY : SELL, label: `${pos.amount > 0 ? 'LONG' : 'SHORT'} ${pos.amount} @ ${formatPrice(pos.entryPrice, precision)}  PNL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}${roe}`, dashed: false });
       const yl = pos.liquidationPrice > 0 ? yOf(pos.liquidationPrice) : null;
       if (yl != null) lines.push({ key: 'liq', tag: 'LIQUIDATION', y: yl, color: '#e0a33d', label: `LIQ ${formatPrice(pos.liquidationPrice, precision)}`, dashed: true });
     }
@@ -431,7 +435,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
                 onPointerCancel={() => setDrag(null)}
               >
                 <rect width={TAG_W} height={18} rx={3} fill="#0f1620" fillOpacity={0.45} stroke={l.key === 'pos' ? '#ffffff' : l.color} strokeWidth={l.key === 'pos' ? 1.5 : l.dragging ? 2 : 1} />
-                <text x={TAG_W / 2} y={12.5} textAnchor="middle" fill={l.color}>
+                <text x={TAG_W / 2} y={12.5} textAnchor="middle" fill={l.textColor ?? l.color}>
                   {l.tag}
                 </text>
                 <title>{l.orderId != null || l.heldId != null ? 'Grab to move this order up or down' : l.tag}</title>
