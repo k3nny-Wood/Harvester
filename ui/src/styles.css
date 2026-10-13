@@ -1776,7 +1776,7 @@ button.mini {
 
 /* the profit of a position: big and bold so it can be read at a glance */
 .pf-table td.pf-pnl {
-  font-size: 15px;
+  font-size: 20px;
   font-weight: 700;
   white-space: nowrap;
 }
