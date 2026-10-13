@@ -10,6 +10,7 @@ import { fitMenu, type MenuPlacement } from '../menuFit';
 import { closeOrder, maxPct, notionalOfForm, pctFromNotional, sizeFromPct } from '../sizing';
 import { useLiveMarks } from '../liveMarks';
 import { orderFromForm, refreshTrading, submitOrder } from '../trade';
+import { AddSizeModal, type AddSizeTarget } from '../components/AddSizeModal';
 import { orderTag } from './lineTags';
 import { getProjector } from './projector';
 
@@ -75,6 +76,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
   const [, setTick] = useState(0);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [sizeModal, setSizeModal] = useState<AddSizeTarget | null>(null);
   const mark = useChart((s) => s.markPrice);
   const precision = filters?.pricePrecision ?? 2;
   const canTrade = !!trading?.hasCredentials;
@@ -240,7 +242,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
     // a limit order can be dragged anywhere: beyond Binance's range it is cancelled there and kept here instead (a held order)
     setDrag({ ...drag, to: raw });
   };
-  const endDrag = async (e: React.PointerEvent) => {
+  const endDrag = async (e: React.PointerEvent, fromTag = false) => {
     const d = drag;
     if (!d) return;
     try {
@@ -249,7 +251,14 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
       /* already released */
     }
     setDrag(null);
-    if (d.to === d.from) return;
+    if (d.to === d.from) {
+      // a click on the box without dragging: open the size dialog of that order
+      if (fromTag && !d.heldId) {
+        const o = useApp.getState().orders.find((x) => x.orderId === d.orderId && x.conditional === d.conditional);
+        if (o) setSizeModal({ kind: 'order', symbol: o.symbol, side: o.side, orderId: o.orderId, conditional: o.conditional, type: o.type, price: o.price || o.stopPrice, qty: o.origQty, reduceOnly: o.reduceOnly });
+      }
+      return;
+    }
     if (d.heldId) {
       // show the new price at once; the saved copy on disk follows
       const app = useApp.getState();
@@ -410,10 +419,15 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
             {l.tag && (
               <g
                 className={l.orderId != null || l.heldId != null ? 'line-tag drag' : 'line-tag'}
+                onClick={() => {
+                  if (l.key !== 'pos') return;
+                  const p = account?.positions.find((x) => x.symbol === symbol && x.amount !== 0);
+                  if (p) setSizeModal({ kind: 'position', symbol, amount: p.amount, mark: liveMark ?? p.markPrice });
+                }}
                 transform={`translate(${offX + plotW - TAG_W - 2}, ${l.y - 9})`}
                 onPointerDown={(e) => startDrag(e, l)}
                 onPointerMove={moveDrag}
-                onPointerUp={(e) => void endDrag(e)}
+                onPointerUp={(e) => void endDrag(e, true)}
                 onPointerCancel={() => setDrag(null)}
               >
                 <rect width={TAG_W} height={18} rx={3} fill="#0f1620" fillOpacity={0.45} stroke={l.color} strokeWidth={l.dragging ? 2 : 1} />
@@ -465,6 +479,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
           </g>
         ))}
       </svg>
+      {sizeModal && <AddSizeModal target={sizeModal} onClose={() => setSizeModal(null)} />}
 
       {menu && (
         <div ref={menuRef} className="ctx-menu" style={{ left: placement?.left ?? menu.x + 4, top: placement?.top ?? menu.y + 4, maxHeight: placement?.maxHeight, overflowY: 'auto' }} onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>

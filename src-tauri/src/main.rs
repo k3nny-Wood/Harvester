@@ -172,8 +172,14 @@ async fn cancel_order(state: State<'_, AppState>, symbol: String, order_id: i64,
 
 /// Move an open order to a new price (the drag on the chart).
 #[tauri::command]
-async fn modify_order(state: State<'_, AppState>, symbol: String, order_id: i64, conditional: Option<bool>, price: Option<f64>, stop_price: Option<f64>) -> Result<OrderAck, String> {
-    state.trading.modify(&symbol, order_id, conditional.unwrap_or(false), price, stop_price).await
+async fn modify_order(state: State<'_, AppState>, symbol: String, order_id: i64, conditional: Option<bool>, price: Option<f64>, stop_price: Option<f64>, quantity: Option<f64>) -> Result<OrderAck, String> {
+    state.trading.modify(&symbol, order_id, conditional.unwrap_or(false), price, stop_price, quantity).await
+}
+
+/// Make the stop-loss / take-profit of a position cover its whole size again (after adding to it).
+#[tauri::command]
+async fn resize_exits(state: State<'_, AppState>, symbol: String, expected: Option<f64>) -> Result<usize, String> {
+    state.trading.resize_exits(&symbol, expected).await
 }
 
 #[tauri::command]
@@ -304,7 +310,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
             qfl_zones, smc_zones_cmd, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_params, scanner_sources,
-            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, bracket_add, bracket_list, bracket_cancel, cancel_order, modify_order, order_history, trade_history, symbol_leverage, leverage_brackets, cancel_all_orders, close_position, set_leverage, set_margin_type
+            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, bracket_add, bracket_list, bracket_cancel, cancel_order, modify_order, resize_exits, order_history, trade_history, symbol_leverage, leverage_brackets, cancel_all_orders, close_position, set_leverage, set_margin_type
         ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");

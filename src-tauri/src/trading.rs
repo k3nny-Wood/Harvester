@@ -441,6 +441,16 @@ pub fn parse_trade_history(v: &Value) -> Vec<TradeRecord> {
         .unwrap_or_default()
 }
 
+/// The reduce-only stop-loss / take-profit orders (by algo id) whose size differs from the position's.
+pub fn exits_to_resize(orders: &[OpenOrder], position_size: f64) -> Vec<i64> {
+    orders
+        .iter()
+        .filter(|o| o.conditional && o.reduce_only && (o.order_type.starts_with("STOP") || o.order_type.starts_with("TAKE_PROFIT")))
+        .filter(|o| (o.orig_qty - position_size).abs() > position_size * 1e-9)
+        .map(|o| o.order_id)
+        .collect()
+}
+
 /// The query parameters of a margin-mode change (Binance names cross margin "CROSSED").
 pub fn margin_type_params(symbol: &str, isolated: bool) -> Vec<(String, String)> {
     vec![("symbol".to_string(), symbol.to_string()), ("marginType".to_string(), if isolated { "ISOLATED" } else { "CROSSED" }.to_string())]
@@ -760,9 +770,9 @@ impl Trading {
         Ok(results)
     }
 
-    /// Move an open order to a new price (a drag on the chart). A limit order is amended in place; a stop or take-profit
-    /// cannot be amended, so it is cancelled and re-placed - validated first, and put back if the new one is refused.
-    pub async fn modify(&self, symbol: &str, order_id: i64, conditional: bool, new_price: Option<f64>, new_stop: Option<f64>) -> Result<OrderAck, String> {
+    /// Change an open order: a new price (a drag on the chart) and / or a new total quantity. A limit order is amended in place; a stop or
+    /// take-profit cannot be amended, so it is cancelled and re-placed - validated first, and put back if the new one is refused.
+    pub async fn modify(&self, symbol: &str, order_id: i64, conditional: bool, new_price: Option<f64>, new_stop: Option<f64>, new_quantity: Option<f64>) -> Result<OrderAck, String> {
         let open = self.open_orders(Some(symbol)).await?;
         let o = open.iter().find(|o| o.order_id == order_id && o.conditional == conditional).cloned().ok_or("That order is gone (filled or cancelled already).")?;
         let t = order_type_from(&o.order_type).filter(|t| *t != OrderType::Market).ok_or_else(|| format!("A {} order cannot be moved.", o.order_type))?;
@@ -771,7 +781,7 @@ impl Trading {
             symbol: symbol.to_string(),
             side,
             order_type: t,
-            quantity: o.orig_qty,
+            quantity: new_quantity.filter(|q| *q > 0.0).unwrap_or(o.orig_qty),
             price: if t.has_price() { Some(new_price.unwrap_or(o.price)) } else { None },
             stop_price: if t.is_conditional() { Some(new_stop.unwrap_or(o.stop_price)) } else { None },
             post_only: false,
@@ -806,6 +816,32 @@ impl Trading {
                 Err(format!("{e} ({})", if restored { "the original order was put back" } else { "the original order was cancelled and could NOT be restored" }))
             }
         }
+    }
+
+    /// After a position grew (or shrank): make its stop-loss and take-profit orders cover the whole position again. `expected` is the size the
+    /// position should reach (the order that changed it may take a moment to show): it is waited for, up to about 4 seconds.
+    pub async fn resize_exits(&self, symbol: &str, expected: Option<f64>) -> Result<usize, String> {
+        let mut size = 0.0;
+        for attempt in 0..8 {
+            let acc = self.account().await?;
+            size = acc.positions.iter().find(|p| p.symbol == symbol).map(|p| p.amount.abs()).unwrap_or(0.0);
+            if expected.map_or(true, |e| size >= e * 0.999) {
+                break;
+            }
+            if attempt < 7 {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+        }
+        if !(size > 0.0) {
+            return Err(format!("{symbol} has no open position"));
+        }
+        let open = self.open_orders(Some(symbol)).await?;
+        let mut n = 0;
+        for id in exits_to_resize(&open, size) {
+            self.modify(symbol, id, true, None, None, Some(size)).await?;
+            n += 1;
+        }
+        Ok(n)
     }
 
     /// Cancel one order. A stop / take-profit (`conditional`) is cancelled by its algo id.
@@ -989,6 +1025,20 @@ mod tests {
         assert_eq!(get("price"), Some("2895"));
         assert!(OrderType::StopMarket.is_conditional() && !OrderType::Limit.is_conditional());
         assert!(OrderType::TakeProfit.has_price() && !OrderType::TakeProfitMarket.has_price());
+    }
+
+    #[test]
+    fn only_reduce_only_exits_of_another_size_are_resized() {
+        let mk = |id: i64, t: &str, qty: f64, reduce: bool, conditional: bool| OpenOrder { order_id: id, symbol: "ETHUSDT".into(), side: "SELL".into(), order_type: t.into(), price: 0.0, stop_price: 1.0, orig_qty: qty, executed_qty: 0.0, status: "NEW".into(), reduce_only: reduce, client_id: String::new(), time: 0, conditional };
+        let orders = vec![
+            mk(1, "STOP_MARKET", 2.0, true, true),
+            mk(2, "TAKE_PROFIT_MARKET", 3.0, true, true),
+            mk(3, "STOP_MARKET", 3.0, true, true),   // already the right size
+            mk(4, "STOP_MARKET", 2.0, false, true),  // not reduce-only: an entry stop
+            mk(5, "LIMIT", 2.0, true, false),        // a plain order
+        ];
+        assert_eq!(exits_to_resize(&orders, 3.0), vec![1]);
+        assert_eq!(exits_to_resize(&orders, 2.0), vec![2, 3]);
     }
 
     #[test]

@@ -1840,3 +1840,27 @@ button.mini {
 .margin-mode-why {
   font-size: 11px;
 }
+
+/* the add-size dialog */
+.size-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+.size-modal {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7);
+}

@@ -6,6 +6,7 @@ import { confirmDialog } from '../confirm';
 import { openChart } from '../dock';
 import { useApp } from '../store';
 import { refreshTrading } from '../trade';
+import { AddSizeModal, type AddSizeTarget } from '../components/AddSizeModal';
 import type { ArmedBracket, OrderRecord, TradeRecord } from '../types';
 
 function money(n: number, digits = 2): string {
@@ -33,6 +34,7 @@ export function PositionsPanel() {
   const trading = useApp((s) => s.trading);
   const account = useApp((s) => s.account);
   const toast = useApp((s) => s.toast);
+  const [addFor, setAddFor] = useState<AddSizeTarget | null>(null);
   const live = useLiveMarks(account?.positions.map((p) => p.symbol) ?? []);
   if (trading && !trading.hasCredentials) return <NoKeys />;
   if (!account) return <div className="panel pad muted">Loading the account…</div>;
@@ -124,6 +126,9 @@ export function PositionsPanel() {
                 <td>{money(value)}</td>
                 <td>{lev ? `${lev}x ${p.isolated ? 'Isolated' : 'Cross'}` : '-'}</td>
                 <td className="pf-actions">
+                  <button title="Add to this position (with its stop-loss and take-profit resized)" onClick={() => setAddFor({ kind: 'position', symbol: p.symbol, amount: p.amount, mark: p.markPrice })}>
+                    + Add
+                  </button>
                   {[0.25, 0.5, 1].map((f) => (
                     <button key={f} onClick={() => void close(p.symbol, f)}>
                       {f * 100}%
@@ -135,6 +140,7 @@ export function PositionsPanel() {
           })}
         </tbody>
       </table>
+      {addFor && <AddSizeModal target={addFor} onClose={() => setAddFor(null)} />}
     </div>
   );
 }
@@ -159,6 +165,7 @@ export function OpenOrdersPanel() {
   }, []);
   const held = useApp((s) => s.held).filter((h) => h.status === 'held');
   const toast = useApp((s) => s.toast);
+  const [addFor, setAddFor] = useState<AddSizeTarget | null>(null);
   if (trading && !trading.hasCredentials) return <NoKeys />;
 
   const cancelHeld = async (id: string) => {
@@ -285,6 +292,15 @@ export function OpenOrdersPanel() {
               <td>{levText(o.symbol)}</td>
               <td className="muted">{o.reduceOnly ? 'reduce-only' : ''}</td>
               <td>
+                {!o.reduceOnly && (
+                  <button
+                    className="icon-btn"
+                    title="Add size to this order"
+                    onClick={() => setAddFor({ kind: 'order', symbol: o.symbol, side: o.side, orderId: o.orderId, conditional: o.conditional, type: o.type, price: o.price || o.stopPrice, qty: o.origQty, reduceOnly: o.reduceOnly })}
+                  >
+                    ＋
+                  </button>
+                )}
                 <button className="icon-btn" title="Cancel this order" onClick={() => void cancel(o.symbol, o.orderId, o.conditional)}>
                   ×
                 </button>
@@ -293,6 +309,7 @@ export function OpenOrdersPanel() {
           ))}
         </tbody>
       </table>
+      {addFor && <AddSizeModal target={addFor} onClose={() => setAddFor(null)} />}
     </div>
   );
 }
