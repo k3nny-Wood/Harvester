@@ -115,7 +115,7 @@ export function PositionsPanel() {
                 <td>{p.markPrice}</td>
                 <td>{p.liquidationPrice || '-'}</td>
                 <td>{margin ? money(margin) : '-'}</td>
-                <td className={p.unrealizedPnl >= 0 ? 'up' : 'down'}>
+                <td className={`pf-pnl ${p.unrealizedPnl >= 0 ? 'up' : 'down'}`}>
                   {p.unrealizedPnl >= 0 ? '+' : ''}
                   {money(p.unrealizedPnl)} USDT ({initial ? `${roe >= 0 ? '+' : ''}${roe.toFixed(2)}%` : '-'})
                 </td>
