@@ -100,6 +100,9 @@ function ChartBody() {
       drawings: { toolbar: true, groups: DRAWING_GROUPS },
       volume: true,
       currentPriceLine: true,
+      // every chart tab owns a renderer, and a browser only allows about 16 WebGL contexts at once: beyond that the candles of the extra charts
+      // never appear (a blank, white chart). The 2D canvas has no such limit.
+      nativeBackend: 'canvas2d',
     });
     c.data.registerProvider('binance', new HarvesterProvider());
     c.drawings.setStayMode(true);
