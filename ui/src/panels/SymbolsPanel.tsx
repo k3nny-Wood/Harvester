@@ -52,8 +52,8 @@ export function SymbolsPanel() {
           <button
             key={s.symbol}
             className={`symbol-row${s.symbol === current ? ' active' : ''}`}
-            title="Opens a chart tab for this symbol (switches to it if it is already open). Ctrl+click always opens a new tab."
-            onClick={(e) => openChart(s.symbol, undefined, e.ctrlKey)}
+            title="Opens the chart of this symbol (there is one chart per symbol: switches to it if it is already open)"
+            onClick={() => openChart(s.symbol)}
           >
             <span className="sym">{s.symbol.replace('USDT', '')}</span>
             <span className="px">{s.lastPrice}</span>

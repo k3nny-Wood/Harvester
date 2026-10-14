@@ -18,31 +18,41 @@ export function newChartId(): string {
   return `chart-${Date.now().toString(36)}${counter}`;
 }
 
+/** The chart tabs that show a symbol more than once: every one but the first (or the one to keep). Only one chart per symbol is allowed. */
+export function chartsToClose(charts: Array<{ id: string; symbol: string }>, keepId?: string): string[] {
+  const keep = new Map<string, string>();
+  for (const c of charts) if (!keep.has(c.symbol) || c.id === keepId) keep.set(c.symbol, c.id);
+  return charts.filter((c) => keep.get(c.symbol) !== c.id).map((c) => c.id);
+}
+
+/** The id of the chart tab that shows `symbol`, if there is one (a tab of a restored layout counts before it has mounted). */
+function chartIdOf(d: DockviewApi, symbol: string): string | undefined {
+  for (const [id, store] of chartRegistry) if (store.getState().symbol === symbol && d.getPanel(id)) return id;
+  return d.panels.find((p) => p.id.startsWith('chart-') && (p.params as { symbol?: string } | undefined)?.symbol === symbol)?.id;
+}
+
+/** Close the extra tabs of a symbol (a layout saved before this rule can hold several). */
+export function dedupeCharts(d: DockviewApi): void {
+  const charts = d.panels.filter((p) => p.id.startsWith('chart-')).map((p) => ({ id: p.id, symbol: (p.params as { symbol?: string } | undefined)?.symbol ?? '' })).filter((c) => c.symbol);
+  const active = useApp.getState().activeChartId;
+  for (const id of chartsToClose(charts, active)) d.getPanel(id)?.api.close();
+}
+
 /**
- * Open a chart for a symbol as a new tab (next to the chart that has focus), or focus the tab that already shows it.
- * `forceNew` always creates a tab, which is how the same symbol is viewed on two timeframes.
+ * Show a symbol's chart: there is only ever ONE chart per symbol, whatever its timeframe. If the symbol is already open its tab is brought to the
+ * front (and switched to `timeframe` when one is asked for); otherwise a new tab opens next to the chart that has focus.
  */
-export function openChart(symbol: string, timeframe?: string, forceNew = false): void {
+export function openChart(symbol: string, timeframe?: string, _forceNew = false): void {
   const d = dock;
   if (!d) return;
-  const tf = timeframe ?? activeChartStore()?.getState().timeframe ?? '15m';
-  if (!forceNew) {
-    // an exact match (same timeframe) wins; when no timeframe was asked for, any tab of the symbol will do
-    let any: string | null = null;
-    for (const [id, store] of chartRegistry) {
-      const s = store.getState();
-      if (s.symbol !== symbol) continue;
-      if (s.timeframe === tf) {
-        d.getPanel(id)?.api.setActive();
-        return;
-      }
-      any = any ?? id;
-    }
-    if (any && timeframe === undefined) {
-      d.getPanel(any)?.api.setActive();
-      return;
-    }
+  const existing = chartIdOf(d, symbol);
+  if (existing) {
+    d.getPanel(existing)?.api.setActive();
+    const store = chartRegistry.get(existing);
+    if (timeframe && store && store.getState().timeframe !== timeframe) store.getState().setTimeframe(timeframe);
+    return;
   }
+  const tf = timeframe ?? activeChartStore()?.getState().timeframe ?? '15m';
   const active = useApp.getState().activeChartId;
   const ref = d.getPanel(active) ?? d.panels.find((p) => p.id.startsWith('chart-'));
   const id = newChartId();
@@ -57,9 +67,11 @@ export function openChart(symbol: string, timeframe?: string, forceNew = false):
   d.getPanel(id)?.api.setActive();
 }
 
-/** Show a symbol in the chart that has focus (the usual click in the symbol list). */
+/** Show a symbol in the chart that has focus; when another tab already shows it, that tab is brought up instead (one chart per symbol). */
 export function showSymbol(symbol: string): void {
+  const d = dock;
   const store = activeChartStore();
+  if (d && chartIdOf(d, symbol)) return openChart(symbol);
   if (store) store.getState().setSymbol(symbol);
   else openChart(symbol);
 }

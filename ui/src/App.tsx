@@ -6,7 +6,7 @@ import { api, inTauri, onScannerStatus, onSignalNew, onSignals } from './api';
 import { ConfirmHost, confirmDialog } from './confirm';
 import { activeChartStore, useActiveChart } from './chartStore';
 import { ChartPanel } from './chart/ChartPanel';
-import { newChartId, openChart, setDock } from './dock';
+import { dedupeCharts, newChartId, setDock } from './dock';
 import { BAR_TIMEFRAMES } from './intervals';
 import { LabPanel } from './panels/LabPanel';
 import { LadderPanel } from './panels/LadderPanel';
@@ -170,6 +170,7 @@ export function App() {
       dock.clear();
       buildDefaultLayout(dock);
     }
+    dedupeCharts(dock); // a saved layout from before the one-chart-per-symbol rule
     syncOpen(dock);
     dock.onDidLayoutChange(() => {
       try {
@@ -216,9 +217,6 @@ export function App() {
             </button>
           ))}
         </div>
-        <button className="tool" title="Open this symbol in a new chart tab" onClick={() => openChart(symbol || 'BTCUSDT', timeframe, true)}>
-          + Chart
-        </button>
         <button className={`tool${ladderPhase !== 'idle' ? ' active' : ''}`} title="Draw a ladder of orders on the chart (L)" onClick={() => store()?.patchLadder({ phase: ladderPhase === 'idle' ? 'start' : 'idle' })}>
           ☰ Ladder <kbd>L</kbd>
         </button>
