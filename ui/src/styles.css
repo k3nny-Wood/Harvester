@@ -93,9 +93,16 @@ kbd {
   border-bottom: 1px solid var(--line);
 }
 .brand {
+  display: flex;
+  align-items: center;
   font-weight: 700;
   letter-spacing: 0.3px;
-  color: var(--accent);
+  color: #fff;
+}
+.brand-logo {
+  height: 26px;
+  width: 26px;
+  margin-right: 8px;
 }
 .brand span {
   margin-left: 8px;

@@ -9,6 +9,7 @@ import { ChartPanel } from './chart/ChartPanel';
 import { dedupeCharts, newChartId, setDock } from './dock';
 import { BAR_TIMEFRAMES } from './intervals';
 import { LabPanel } from './panels/LabPanel';
+import logo from './assets/logo.png';
 import { NewsPanel } from './panels/NewsPanel';
 import { AnalystPanel } from './panels/AnalystPanel';
 import { LadderPanel } from './panels/LadderPanel';
@@ -214,6 +215,7 @@ export function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
+          <img className="brand-logo" src={logo} alt="" />
           Harvester<span>manual trading terminal</span>
         </div>
         <div className="sym-box">
