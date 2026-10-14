@@ -18,6 +18,7 @@ import { SymbolsPanel } from './panels/SymbolsPanel';
 import { useApp } from './store';
 import { startTradingPoll } from './trade';
 import { LiveUPnL } from './components/LiveUPnL';
+import { CapToggle } from './components/CapToggle';
 
 const LAYOUT_KEY = 'harvester.layout.v6';
 
@@ -240,6 +241,7 @@ export function App() {
             {streamConnected ? '● live' : '○ polling'}
           </span>
         )}
+        <CapToggle />
         <button
           className={`env ${env}`}
           title="Switch between the testnet and live exchange"

@@ -1916,3 +1916,16 @@ button.mini {
   font-size: 13px;
   font-weight: 800;
 }
+
+/* the safety cap switch in the top bar */
+.cap-toggle {
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cap-toggle.off {
+  background: var(--warn);
+  border-color: var(--warn);
+  color: #1b1200;
+  font-weight: 700;
+}

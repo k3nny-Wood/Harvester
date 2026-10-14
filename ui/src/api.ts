@@ -45,6 +45,7 @@ export const api = {
   symbolLeverage: (symbol: string) => invoke<LeverageInfo>('symbol_leverage', { symbol }),
   cancelAll: (symbol: string) => invoke<void>('cancel_all_orders', { symbol }),
   closePosition: (symbol: string, fraction = 1) => invoke<OrderAck>('close_position', { symbol, fraction }),
+  setCapOverride: (off: boolean) => invoke<void>('set_cap_override', { off }),
   setMarginType: (symbol: string, isolated: boolean) => invoke<void>('set_margin_type', { symbol, isolated }),
   setLeverage: (symbol: string, leverage: number) => invoke<void>('set_leverage', { symbol, leverage }),
   smcZones: (symbol: string, interval: string, minFvgPct: number, maxEach: number) => invoke<SmcZone[]>('smc_zones_cmd', { symbol, interval, minFvgPct, maxEach }),

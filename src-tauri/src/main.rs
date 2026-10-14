@@ -212,6 +212,12 @@ async fn close_position(state: State<'_, AppState>, symbol: String, fraction: Op
     state.trading.close_position(&symbol, fraction.unwrap_or(1.0)).await
 }
 
+/// Switch the per-order safety cap off (true) or back on (false) for this session.
+#[tauri::command]
+fn set_cap_override(state: State<'_, AppState>, off: bool) {
+    state.trading.set_cap_override(off);
+}
+
 #[tauri::command]
 async fn set_margin_type(state: State<'_, AppState>, symbol: String, isolated: bool) -> Result<(), String> {
     state.trading.set_margin_type(&symbol, isolated).await
@@ -310,7 +316,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
             qfl_zones, smc_zones_cmd, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_params, scanner_sources,
-            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, bracket_add, bracket_list, bracket_cancel, cancel_order, modify_order, resize_exits, order_history, trade_history, symbol_leverage, leverage_brackets, cancel_all_orders, close_position, set_leverage, set_margin_type
+            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, bracket_add, bracket_list, bracket_cancel, cancel_order, modify_order, resize_exits, order_history, trade_history, symbol_leverage, leverage_brackets, cancel_all_orders, close_position, set_leverage, set_margin_type, set_cap_override
         ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");

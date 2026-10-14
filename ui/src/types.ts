@@ -171,7 +171,11 @@ export interface ScannerConfig {
 export interface TradingStatus {
   env: Env;
   hasCredentials: boolean;
+  /** 0 while the cap is overridden (no limit) */
   maxOrderNotional: number;
+  /** the cap from the .env file, also while it is overridden */
+  configuredCap: number;
+  capOverride: boolean;
   message: string;
 }
 

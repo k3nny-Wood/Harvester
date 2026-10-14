@@ -218,6 +218,10 @@ pub struct TradingStatus {
     pub env: Env,
     pub has_credentials: bool,
     pub max_order_notional: f64,
+    /// the cap set in the .env file, shown even while it is overridden
+    pub configured_cap: f64,
+    /// the safety cap is switched off for this session
+    pub cap_override: bool,
     pub message: String,
 }
 
@@ -226,6 +230,8 @@ pub struct Trading {
     offset_ms: AtomicI64,
     synced: AtomicBool,
     max_notional: f64,
+    /// the safety cap is switched off for this session (never remembered: every start has it on)
+    cap_off: AtomicBool,
 }
 
 fn env_var(name: &str) -> Option<String> {
@@ -555,7 +561,7 @@ pub fn algo_params(req: &OrderRequest, qty: Decimal, price: Option<Decimal>, tri
 impl Trading {
     pub fn new(market: Arc<Market>) -> Trading {
         let max_notional = env_var("MAX_ORDER_NOTIONAL").and_then(|v| v.parse().ok()).unwrap_or(5000.0);
-        Trading { market, offset_ms: AtomicI64::new(0), synced: AtomicBool::new(false), max_notional }
+        Trading { market, offset_ms: AtomicI64::new(0), synced: AtomicBool::new(false), max_notional, cap_off: AtomicBool::new(false) }
     }
 
     pub fn status(&self) -> TradingStatus {
@@ -569,7 +575,8 @@ impl Trading {
                 Env::Live => "No live API keys: set BINANCE_LIVE_API_KEY and BINANCE_LIVE_API_SECRET (withdrawals disabled, IP-restricted) to trade live.".to_string(),
             }
         };
-        TradingStatus { env, has_credentials: has, max_order_notional: self.max_notional, message }
+        // with the cap off the UI sees 0, which it treats as "no limit"
+        TradingStatus { env, has_credentials: has, max_order_notional: if self.cap_overridden() { 0.0 } else { self.max_notional }, configured_cap: self.max_notional, cap_override: self.cap_overridden(), message }
     }
 
     fn now_ms(&self) -> i64 {
@@ -595,7 +602,20 @@ impl Trading {
         &self.market
     }
 
+    pub fn cap_overridden(&self) -> bool {
+        self.cap_off.load(Ordering::Relaxed)
+    }
+
+    /// Switch the per-order safety cap off (or back on) for this session.
+    pub fn set_cap_override(&self, off: bool) {
+        self.cap_off.store(off, Ordering::Relaxed);
+    }
+
+    /// The largest order value accepted right now: the configured cap, or no limit while it is overridden.
     pub fn max_notional(&self) -> f64 {
+        if self.cap_overridden() {
+            return f64::INFINITY;
+        }
         self.max_notional
     }
 
@@ -716,7 +736,7 @@ impl Trading {
     pub async fn place(&self, req: OrderRequest) -> Result<OrderAck, String> {
         let filters = self.market.symbol_filters(&req.symbol).await?;
         let reference = self.reference_price(&req.symbol).await?;
-        let (qty, price, trigger) = prepare(&req, &filters, reference, self.max_notional)?;
+        let (qty, price, trigger) = prepare(&req, &filters, reference, self.max_notional())?;
         if let Some(trigger) = trigger {
             let v = self.signed(reqwest::Method::POST, "/fapi/v1/algoOrder", algo_params(&req, qty, price, trigger)).await?;
             return Ok(OrderAck { order_id: v["algoId"].as_i64().unwrap_or(0), symbol: req.symbol, status: "NEW".to_string(), client_id: text(&v["clientAlgoId"]), quantity: to_f64(qty), price: Some(to_f64(price.unwrap_or(trigger))), conditional: true });
@@ -736,7 +756,7 @@ impl Trading {
         let mut prepared: Vec<(usize, Vec<(String, String)>)> = Vec::new();
         for (i, r) in reqs.iter().enumerate() {
             results.push(Err("not sent".into()));
-            match prepare(r, &filters, reference, self.max_notional) {
+            match prepare(r, &filters, reference, self.max_notional()) {
                 Ok((qty, price, None)) => prepared.push((i, order_params(r, qty, price))),
                 Ok(_) => results[i] = Err("stops and take-profits are placed one at a time".into()),
                 Err(e) => results[i] = Err(e),
@@ -790,7 +810,7 @@ impl Trading {
         };
         let filters = self.market.symbol_filters(symbol).await?;
         let reference = self.reference_price(symbol).await?;
-        let (qty, price, trigger) = prepare(&req, &filters, reference, self.max_notional)?;
+        let (qty, price, trigger) = prepare(&req, &filters, reference, self.max_notional())?;
         let ack = |id: i64, status: String, client_id: String, px: Option<Decimal>| OrderAck { order_id: id, symbol: symbol.to_string(), status, client_id, quantity: to_f64(qty), price: px.map(to_f64), conditional };
         if !conditional {
             let p = price.ok_or("a limit order needs a price")?;
@@ -1039,6 +1059,17 @@ mod tests {
         ];
         assert_eq!(exits_to_resize(&orders, 3.0), vec![1]);
         assert_eq!(exits_to_resize(&orders, 2.0), vec![2, 3]);
+    }
+
+    #[test]
+    fn a_cap_of_infinity_never_refuses_an_order() {
+        let f = eth();
+        let req = OrderRequest { symbol: "ETHUSDT".into(), side: Side::Buy, order_type: OrderType::Limit, quantity: 1000.0, price: Some(2000.0), stop_price: None, post_only: false, reduce_only: false, client_id: None };
+        // 2,000,000 USDT of position: refused by a cap of 5,000, accepted without one (the other checks are the exchange's filters)
+        let capped = prepare(&req, &f, 2000.0, 5000.0);
+        assert!(capped.as_ref().err().map_or(false, |e| e.contains("safety cap")), "{capped:?}");
+        let open = prepare(&req, &f, 2000.0, f64::INFINITY);
+        assert!(open.as_ref().err().map_or(true, |e| !e.contains("safety cap")), "{open:?}");
     }
 
     #[test]
