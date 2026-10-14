@@ -151,5 +151,6 @@ Put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the `.env` file (a bot from @
 | `/signals` | the scanner's best entries |
 | `/chart SYMBOL [timeframe]` | a chart picture, e.g. `/chart BTC 1h`, with your position's entry, stop, target, liquidation and open orders drawn on it |
 | `/charts` | a picture of every open position (up to 6, worst first) |
+| `/close SYMBOL` | market-closes that whole position at once, e.g. `/close BTC` |
 
-The bot only reads: it cannot place, change or cancel an order. Only your chat is answered, commands older than two minutes are ignored, and the bot token is never logged. Use a bot of its own: two programs polling one bot (for example the MarketScanner V2 bot) would fight over its messages.
+`/close` is the only command that trades: it sends one reduce-only market order for the named position (it can never open or flip one) and does nothing if there is no such position. Only your chat is answered, commands older than two minutes are ignored, and the bot token is never logged. Use a bot of its own: two programs polling one bot (for example the MarketScanner V2 bot) would fight over its messages.

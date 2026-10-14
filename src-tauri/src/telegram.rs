@@ -1,7 +1,7 @@
 //! Harvester's Telegram bot (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID in the .env file): a summary of the account every 30 minutes, and
-//! commands to ask for it, the positions, the orders, the scanner and chart pictures.
+//! commands to ask for it, the positions, the orders, the scanner and chart pictures, and `/close SYMBOL`.
 //!
-//! Safety: the bot only READS. It cannot place, change or cancel an order.
+//! Safety: `/close` is the only command that trades: it market-closes ONE named position (reduce-only, so it can never open or flip one).
 //!  * only messages from TELEGRAM_CHAT_ID are answered; everything else is ignored without a reply;
 //!  * messages that were waiting when Harvester started, and messages older than 2 minutes, are never acted on;
 //!  * the token is only used in requests to api.telegram.org and never written to a log.
@@ -270,6 +270,20 @@ impl Bot {
                 }
             }
             Command::Chart { symbol, timeframe } => self.chart(&symbol, timeframe.as_deref().unwrap_or(DEFAULT_TIMEFRAME)).await,
+            Command::Close(symbol) => {
+                let (acc, _) = match self.snapshot().await {
+                    Ok(x) => x,
+                    Err(e) => return self.say(&report::esc(&e)).await,
+                };
+                let Some(p) = acc.positions.iter().find(|p| p.symbol == symbol && p.amount != 0.0) else {
+                    return self.say(&format!("No open position in {}. Nothing was closed.", report::esc(&symbol))).await;
+                };
+                let (side, size, upnl) = (if p.amount > 0.0 { "LONG" } else { "SHORT" }, p.amount.abs(), p.unrealized_pnl);
+                match self.trading.close_position(&symbol, 1.0).await {
+                    Ok(ack) => self.say(&format!("<b>Closing {}</b> {side} {size}: market order {} ({} now {})", report::esc(&symbol), report::esc(&ack.status.to_lowercase()), if upnl < 0.0 { "loss" } else { "profit" }, report::signed(upnl))).await,
+                    Err(e) => self.say(&format!("Could not close {}: {}", report::esc(&symbol), report::esc(&e))).await,
+                }
+            }
             Command::Charts => match self.snapshot().await {
                 Ok((acc, orders)) => {
                     let mut rows = position_rows(&acc, &orders);

@@ -197,6 +197,8 @@ pub enum Command {
     Chart { symbol: String, timeframe: Option<String> },
     /// a picture of every open position
     Charts,
+    /// close the whole position of this symbol at market
+    Close(String),
     /// the command was not understood; the text is what was typed
     Unknown(String),
     /// a usage problem the user should be told about
@@ -212,7 +214,8 @@ pub const HELP: &str = "<b>Harvester commands</b>\n\
 /signals - the scanner's best entries\n\
 /chart SYMBOL [timeframe] - a chart picture (e.g. /chart BTC 1h), with your position and orders drawn on it\n\
 /charts - a picture of every open position\n\
-\nThe summary arrives by itself every 30 minutes. These commands only read: nothing here can place or cancel an order.";
+/close SYMBOL - close that position at market, at once (e.g. /close BTC)\n\
+\nThe summary arrives by itself every 30 minutes. /close is the only command that trades.";
 
 const TIMEFRAMES: &[&str] = &["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"];
 
@@ -240,6 +243,13 @@ pub fn parse_command(text: &str) -> Command {
         "orders" => Command::Orders,
         "signals" => Command::Signals,
         "charts" => Command::Charts,
+        "close" => match args.as_slice() {
+            [sym] => match normalize_symbol(sym) {
+                Some(symbol) => Command::Close(symbol),
+                None => Command::Usage("That does not look like a symbol. Example: /close BTC"),
+            },
+            _ => Command::Usage("Usage: /close SYMBOL, for example /close BTC (closes that whole position at market)"),
+        },
         "chart" => {
             let Some(sym) = args.first() else { return Command::Usage("Usage: /chart SYMBOL [timeframe], for example /chart BTC 1h") };
             let Some(symbol) = normalize_symbol(sym) else { return Command::Usage("That does not look like a symbol. Example: /chart BTC 1h") };
@@ -328,6 +338,11 @@ mod tests {
         assert!(matches!(parse_command("/chart"), Command::Usage(_)));
         assert!(matches!(parse_command("/chart btc 7x"), Command::Usage(_)));
         assert!(matches!(parse_command("/chart b;tc"), Command::Usage(_)));
+        assert_eq!(parse_command("/close eth"), Command::Close("ETHUSDT".into()));
+        assert_eq!(parse_command("/close ETHUSDT"), Command::Close("ETHUSDT".into()));
+        assert!(matches!(parse_command("/close"), Command::Usage(_)));
+        assert!(matches!(parse_command("/close btc eth"), Command::Usage(_)), "two symbols is ambiguous: nothing is closed");
+        assert!(matches!(parse_command("/close b;tc"), Command::Usage(_)));
         assert_eq!(parse_command("/nope"), Command::Unknown("nope".into()));
         assert_eq!(parse_command("hello there"), Command::NotACommand);
         assert_eq!(parse_command("   "), Command::NotACommand);
