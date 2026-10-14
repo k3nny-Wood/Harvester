@@ -13,6 +13,8 @@ import { getProjector } from './projector';
 import { averagePrice, ladderRungs, MAX_RUNGS, MIN_RUNGS, type RungWeights } from './quickLadder';
 
 const TAG_W = 156;
+/** The amount box under the entry: 50% wider than a line box, its right edge still just left of the boxes. */
+const AMOUNT_W = Math.round(TAG_W * 1.5);
 
 type Which = 'entry' | 'tp' | 'sl' | 'end';
 
@@ -464,7 +466,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
       {yE != null && (
         <div
           className="quick-amount"
-          style={{ left: offX + plotW - 2 * TAG_W - 8, top: yE + 12 + 80 > offY + plotH ? yE - 92 : yE + 12, width: TAG_W }}
+          style={{ left: offX + plotW - TAG_W - 8 - AMOUNT_W, top: yE + 12 + 80 > offY + plotH ? yE - 92 : yE + 12, width: AMOUNT_W }}
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
