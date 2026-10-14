@@ -52,7 +52,8 @@ export function AddSizeModal({ target, onClose }: { target: AddSizeTarget; onClo
   const refPrice = target.kind === 'order' ? target.price : mode === 'LIMIT' && limitPrice > 0 ? limitPrice : target.mark;
   const currentQty = target.kind === 'order' ? target.qty : Math.abs(target.amount);
   const currentNotional = currentQty * (target.kind === 'order' ? target.price : target.mark);
-  const sliderMax = maxAddPct(wallet, lev, cap, currentNotional);
+  // the safety cap limits ONE order: when growing an order its whole size counts, but a new order added to a position is only the new part
+  const sliderMax = maxAddPct(wallet, lev, cap, target.kind === 'order' ? currentNotional : 0);
   const used = Math.min(pct, sliderMax);
   const addQty = floorQty(addQuantity(used, wallet, lev, refPrice), step);
   const newQty = currentQty + addQty;
@@ -143,6 +144,9 @@ export function AddSizeModal({ target, onClose }: { target: AddSizeTarget; onClo
                 new total <b>{newQty.toFixed(precision)} {unit}</b>
               </span>
             </div>
+            {cap > 0 && sliderMax > 0 && sliderMax < 100 && wallet > 0 && (
+              <div className="muted quick-note">One order is limited to {cap} USDT of position value (MAX_ORDER_NOTIONAL in the .env file): that is why the slider stops at {sliderMax.toFixed(1)}%.</div>
+            )}
             {sliderMax <= 0 && cap > 0 && <div className="warn quick-note">This order is already at the safety cap of {cap} USDT (MAX_ORDER_NOTIONAL).</div>}
             {target.kind === 'order' && target.conditional && <div className="muted quick-note">A stop / take-profit cannot be amended: it is replaced by a bigger one at the same trigger (the old one is put back if that fails).</div>}
             {target.kind === 'order' && !target.conditional && <div className="muted quick-note">The order keeps its price. A bigger order goes to the back of the queue at that price.</div>}
