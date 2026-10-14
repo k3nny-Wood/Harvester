@@ -106,7 +106,7 @@ export function exitsMustWait(q: Quick, mark: number): boolean {
 }
 
 /**
- * Quick bracket order. Hover the chart and press F (long) or D (short): the entry starts at the current price (drag it to where the order should wait: a stop-limit
+ * Quick bracket order. Hover the chart and press D (long) or F (short): the entry starts at the current price (drag it to where the order should wait: a stop-limit
  * when that price is beyond the market, a plain limit on the near side), with a take-profit and a stop-loss around it. The three lines can be dragged
  * and a panel sets amount and leverage. OK places the entry together with its take-profit and stop-loss (both reduce-only, sized to the entry).
  */
@@ -188,7 +188,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       if (!inside.current || useApp.getState().activeChartId !== chartId) return;
       e.preventDefault();
-      open(k === 'f' ? 'BUY' : 'SELL');
+      open(k === 'd' ? 'BUY' : 'SELL'); // D = long, F = short
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
