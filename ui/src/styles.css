@@ -1608,7 +1608,7 @@ button.mini {
   height: 100%;
 }
 
-/* quick bracket order (F long / D short) */
+/* quick bracket order (D long / F short) */
 .quick-hit {
   pointer-events: stroke;
   cursor: ns-resize;
