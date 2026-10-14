@@ -9,6 +9,7 @@ import { ChartPanel } from './chart/ChartPanel';
 import { newChartId, openChart, setDock } from './dock';
 import { BAR_TIMEFRAMES } from './intervals';
 import { LabPanel } from './panels/LabPanel';
+import { NewsPanel } from './panels/NewsPanel';
 import { LadderPanel } from './panels/LadderPanel';
 import { OrdersPanel } from './panels/OrdersPanel';
 import { PlaceholderPanel } from './panels/PlaceholderPanel';
@@ -33,6 +34,7 @@ interface PanelDef {
 const PANELS: PanelDef[] = [
   { id: 'symbols', title: 'Symbols', component: 'symbols' },
   { id: 'signals', title: 'Signals', component: 'signals' },
+  { id: 'news', title: 'News', component: 'news' },
   { id: 'ladder', title: 'Ladder', component: 'ladder' },
   { id: 'orders', title: 'Orders', component: 'orders' },
   { id: 'positions', title: 'Positions', component: 'positions' },
@@ -46,6 +48,7 @@ const components = {
   chart: (p: IDockviewPanelProps<{ symbol?: string; timeframe?: string }>) => <ChartPanel {...p} />,
   symbols: () => <SymbolsPanel />,
   signals: () => <SignalsPanel />,
+  news: () => <NewsPanel />,
   ladder: () => <LadderPanel />,
   orders: () => <OrdersPanel />,
   positions: () => <PositionsPanel />,
@@ -73,6 +76,7 @@ function buildDefaultLayout(dock: DockviewApi) {
   dock.addPanel({ id: chartId, title: 'BTCUSDT 15m', component: 'chart', params: { symbol: 'BTCUSDT', timeframe: '15m' } });
   addPanel(dock, by('symbols'), { referencePanel: chartId, direction: 'left' });
   addPanel(dock, by('signals'), { referencePanel: chartId, direction: 'right' });
+  addPanel(dock, by('news'), { referencePanel: 'signals', direction: 'within' });
   addPanel(dock, by('orders'), { referencePanel: 'signals', direction: 'below' });
   addPanel(dock, by('ladder'), { referencePanel: 'orders', direction: 'within' });
   addPanel(dock, by('positions'), { referencePanel: chartId, direction: 'below' });

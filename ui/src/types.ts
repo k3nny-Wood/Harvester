@@ -190,6 +190,35 @@ export interface ArmedBracket {
   createdMs: number;
 }
 
+export type NewsKind = 'news' | 'listing' | 'delisting' | 'notice';
+
+export interface NewsItem {
+  id: string;
+  source: string;
+  title: string;
+  url: string;
+  /** 0 when the feed gave no time */
+  timeMs: number;
+  summary: string;
+  kind: NewsKind;
+}
+
+export interface NewsSourceStatus {
+  name: string;
+  ok: boolean;
+  count: number;
+  error: string;
+}
+
+export interface NewsResult {
+  ticker: string;
+  name: string | null;
+  items: NewsItem[];
+  notices: NewsItem[];
+  fetchedMs: number;
+  sources: NewsSourceStatus[];
+}
+
 export interface Position {
   symbol: string;
   amount: number;
