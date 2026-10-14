@@ -429,7 +429,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
         {which === 'entry' && (
           <g className="line-tag" transform={`translate(${offX + plotW - TAG_W - 2 - 22}, ${y - 9})`} style={{ cursor: 'pointer' }} onClick={() => canTrade && void place(true)}>
             <rect width={18} height={18} rx={3} fill="#0f1620" fillOpacity={0.45} stroke={color} />
-            <text x={9} y={12.5} textAnchor="middle" fill={color}>
+            <text x={9} y={13} textAnchor="middle" fill="#ffffff" className="m-button">
               M
             </text>
             <title>Market: enter now at the market price instead of waiting for this level, with the take-profit and stop-loss</title>

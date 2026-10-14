@@ -1911,3 +1911,8 @@ button.mini {
 .quick-amount .quick-apply:disabled {
   opacity: 0.45;
 }
+
+.line-tag text.m-button {
+  font-size: 13px;
+  font-weight: 800;
+}
