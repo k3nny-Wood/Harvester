@@ -200,6 +200,56 @@ export interface Delisting {
   url: string;
 }
 
+/** What the analyst answers (the same shape as the Rust `Analysis`). */
+export interface AiAnalysis {
+  bias: 'bullish' | 'bearish' | 'neutral';
+  confidence: number;
+  horizonHours: number;
+  summary: string;
+  keyLevels: Array<{ price: number; kind: 'support' | 'resistance' | 'target' | 'invalidation'; note: string }>;
+  scenarios: Array<{ name: string; condition: string; outcome: string }>;
+  reasons: string[];
+  risks: string[];
+  positionNote: string;
+}
+
+export interface AiEntry {
+  id: string;
+  createdMs: number;
+  symbol: string;
+  timeframe: string;
+  model: string;
+  price: number;
+  analysis: AiAnalysis;
+  usage: { inputTokens: number; outputTokens: number };
+  withImage: boolean;
+}
+
+export interface AiOutcome {
+  hours: number;
+  changePct: number | null;
+  correct: boolean | null;
+}
+
+export interface AiHorizon {
+  hours: number;
+  scored: number;
+  hits: number;
+  hitRatePct: number | null;
+  avgDirectionalChangePct: number | null;
+  upRatePct: number | null;
+}
+
+export interface AiTrack {
+  record: { analyses: number; directional: number; neutral: number; horizons: AiHorizon[] };
+  entries: Array<{ entry: AiEntry; outcomes: AiOutcome[] }>;
+}
+
+export interface AiModel {
+  id: string;
+  label: string;
+}
+
 export type NewsKind = 'news' | 'listing' | 'delisting' | 'notice';
 
 export interface NewsItem {

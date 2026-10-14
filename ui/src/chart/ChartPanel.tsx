@@ -21,6 +21,8 @@ import { ChartPriceLine } from './ChartPriceLine';
 import { ChartVolumeProfile } from './ChartVolumeProfile';
 import { ChartTrading } from './ChartTrading';
 import { QuickOrder } from './QuickOrder';
+import { ChartAnalysis } from './ChartAnalysis';
+import { velaRegistry } from './velaRegistry';
 import { LadderOverlay } from './LadderOverlay';
 import { pushLayerData } from './projector';
 import { HarvesterProvider } from './provider';
@@ -115,7 +117,9 @@ function ChartBody() {
     pushLayerData(c, 'ticker-watermark', { symbol: initial.current.symbol, enabled: true });
     c.on('market:changed', (p: { symbol: string }) => pushLayerData(c, 'ticker-watermark', { symbol: p.symbol.split(':').pop() ?? p.symbol, enabled: true }));
     setChart(c);
+    velaRegistry.set(chartId, c);
     return () => {
+      velaRegistry.delete(chartId);
       setChart(null);
       c.destroy();
     };
@@ -248,6 +252,7 @@ function ChartBody() {
       <ChartFills chart={chart} />
       <ChartBases chart={chart} />
       <ChartSmc chart={chart} />
+      <ChartAnalysis chart={chart} />
       <ChartDelistBanner />
       {tfPopup && <div className={`tf-popup${tfPopup.bad ? ' bad' : ''}`}>{tfPopup.text}</div>}
       <ChartPriceLine chart={chart} />

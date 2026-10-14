@@ -10,6 +10,7 @@ import { dedupeCharts, newChartId, setDock } from './dock';
 import { BAR_TIMEFRAMES } from './intervals';
 import { LabPanel } from './panels/LabPanel';
 import { NewsPanel } from './panels/NewsPanel';
+import { AnalystPanel } from './panels/AnalystPanel';
 import { LadderPanel } from './panels/LadderPanel';
 import { OrdersPanel } from './panels/OrdersPanel';
 import { PlaceholderPanel } from './panels/PlaceholderPanel';
@@ -36,6 +37,7 @@ const PANELS: PanelDef[] = [
   { id: 'symbols', title: 'Symbols', component: 'symbols' },
   { id: 'signals', title: 'Signals', component: 'signals' },
   { id: 'news', title: 'News', component: 'news' },
+  { id: 'analyst', title: 'AI Analyst', component: 'analyst' },
   { id: 'ladder', title: 'Ladder', component: 'ladder' },
   { id: 'orders', title: 'Orders', component: 'orders' },
   { id: 'positions', title: 'Positions', component: 'positions' },
@@ -50,6 +52,7 @@ const components = {
   symbols: () => <SymbolsPanel />,
   signals: () => <SignalsPanel />,
   news: () => <NewsPanel />,
+  analyst: () => <AnalystPanel />,
   ladder: () => <LadderPanel />,
   orders: () => <OrdersPanel />,
   positions: () => <PositionsPanel />,
@@ -78,6 +81,7 @@ function buildDefaultLayout(dock: DockviewApi) {
   addPanel(dock, by('symbols'), { referencePanel: chartId, direction: 'left' });
   addPanel(dock, by('signals'), { referencePanel: chartId, direction: 'right' });
   addPanel(dock, by('news'), { referencePanel: 'signals', direction: 'within' });
+  addPanel(dock, by('analyst'), { referencePanel: 'signals', direction: 'within' });
   addPanel(dock, by('orders'), { referencePanel: 'signals', direction: 'below' });
   addPanel(dock, by('ladder'), { referencePanel: 'orders', direction: 'within' });
   addPanel(dock, by('positions'), { referencePanel: chartId, direction: 'below' });

@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { Delisting, NewsResult, SignalParams, LeverageBracket, Account, ArmedBracket, MoverParams, HeldEvent, HeldOrder, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
+import type { AiEntry, AiModel, AiTrack, Delisting, NewsResult, SignalParams, LeverageBracket, Account, ArmedBracket, MoverParams, HeldEvent, HeldOrder, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
 
 /** True when running inside the Tauri shell (false in a plain browser, e.g. `vite` on its own). */
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -27,6 +27,10 @@ export const api = {
   bracketAdd: (b: { symbol: string; long: boolean; takeProfit: number; stopLoss: number; entryOrderId: number; entryConditional: boolean; quantity?: number }) => invoke<ArmedBracket>('bracket_add', b),
   bracketList: () => invoke<ArmedBracket[]>('bracket_list'),
   bracketCancel: (id: string) => invoke<boolean>('bracket_cancel', { id }),
+  aiModels: () => invoke<AiModel[]>('ai_models'),
+  aiAnalyze: (request: { model: string; symbol: string; timeframe: string; price: number; context: string; image: string | null }) => invoke<AiEntry>('ai_analyze', { request }),
+  aiHistory: (symbol?: string) => invoke<AiEntry[]>('ai_history', { symbol: symbol ?? null }),
+  aiTrack: () => invoke<AiTrack>('ai_track'),
   delistings: (force = false) => invoke<Delisting[]>('delistings', { force }),
   newsFor: (symbol: string, force = false) => invoke<NewsResult>('news_for', { symbol, force }),
   openUrl: (url: string) => invoke<void>('open_url', { url }),

@@ -2059,3 +2059,143 @@ button.mini {
   margin: 0 -2px 0 8px;
   font-size: 13px;
 }
+
+/* AI analyst */
+.ai {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 6px;
+  padding: 8px;
+}
+.ai-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ai-note-input {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  font-size: 12px;
+}
+.ai-tabs {
+  display: flex;
+  gap: 4px;
+}
+.ai-tabs button.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ai-body {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+.ai-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ai-bias {
+  font-size: 18px;
+}
+.ai-bar {
+  position: relative;
+  height: 6px;
+  background: var(--panel-2);
+  border-radius: 3px;
+  margin: 4px 0;
+}
+.ai-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: currentColor;
+}
+.ai-bar i.up {
+  color: var(--up);
+}
+.ai-bar i.down {
+  color: var(--down);
+}
+.ai-bar i.muted {
+  color: var(--muted);
+}
+.ai-bar u {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--line);
+}
+.ai-meta {
+  font-size: 11px;
+}
+.ai-summary {
+  margin: 6px 0;
+  line-height: 1.4;
+}
+.ai-pos {
+  background: var(--panel-2);
+  border-left: 3px solid var(--accent);
+  padding: 4px 8px;
+  margin: 6px 0;
+}
+.ai-sec {
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ai-level {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.ai-lk {
+  min-width: 82px;
+  font-size: 11px;
+}
+.ai-level.support .ai-lk {
+  color: #2e9b6f;
+}
+.ai-level.resistance .ai-lk {
+  color: #d0454b;
+}
+.ai-level.target .ai-lk {
+  color: #4fa3ff;
+}
+.ai-level.invalidation .ai-lk {
+  color: #e0a33d;
+}
+.ai-scn {
+  margin: 4px 0;
+}
+.ai ul {
+  margin: 2px 0 2px 16px;
+  padding: 0;
+}
+.ai-risks li {
+  color: #f0c36d;
+}
+.ai-disclaimer {
+  font-size: 10px;
+  line-height: 1.3;
+}
+.ai-note {
+  font-size: 11px;
+  margin: 4px 0;
+}
+.ai-hist {
+  font-size: 11px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ai-outs {
+  display: flex;
+  gap: 10px;
+}
