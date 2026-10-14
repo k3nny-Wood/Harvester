@@ -1,5 +1,6 @@
 import { DockviewDefaultTab, type IDockviewPanelHeaderProps } from 'dockview-react';
 import { useEffect, useState } from 'react';
+import { delistingFor, describeDelisting, useDelistings } from '../delistings';
 import { useApp } from '../store';
 
 /** A chart's tab: bold green text while the chart's symbol has an open position or order (also one held on this computer). */
@@ -11,6 +12,7 @@ export function ChartTab(props: IDockviewPanelHeaderProps) {
     return () => d.dispose();
   }, [props.api]);
   const symbol = title.split(' ')[0];
+  const delist = useDelistings((s) => delistingFor(symbol, s.list));
   const active = useApp(
     (s) =>
       !!symbol &&
@@ -19,7 +21,12 @@ export function ChartTab(props: IDockviewPanelHeaderProps) {
         s.held.some((h) => h.status === 'held' && h.request.symbol === symbol)),
   );
   return (
-    <div className={active ? 'tab-trading' : undefined}>
+    <div className={`chart-tab${active ? ' tab-trading' : ''}`}>
+      {delist && (
+        <span className={`delist-mark tab-warn ${delist.kind === 'spot' ? 'warn' : 'danger'}`} title={describeDelisting(delist, Date.now()).text}>
+          ⚠
+        </span>
+      )}
       <DockviewDefaultTab {...props} />
     </div>
   );

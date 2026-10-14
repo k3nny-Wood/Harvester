@@ -2048,3 +2048,14 @@ button.mini {
 .delist-mark.warn {
   color: #e0a33d;
 }
+
+/* the warning sign in a chart's tab */
+.chart-tab {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+.chart-tab .tab-warn {
+  margin: 0 -2px 0 8px;
+  font-size: 13px;
+}
