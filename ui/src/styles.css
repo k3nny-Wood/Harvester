@@ -1891,3 +1891,23 @@ button.mini {
   border-color: #6cc4ff;
   color: #6cc4ff;
 }
+
+.quick-amount .quick-apply {
+  pointer-events: auto;
+  margin-top: 3px;
+  width: 100%;
+  padding: 3px 0;
+  font-size: 12px;
+  font-weight: 700;
+  border: 0;
+  color: #fff;
+}
+.quick-amount .quick-apply.buy {
+  background: #2e9b6f;
+}
+.quick-amount .quick-apply.sell {
+  background: #d0454b;
+}
+.quick-amount .quick-apply:disabled {
+  opacity: 0.45;
+}

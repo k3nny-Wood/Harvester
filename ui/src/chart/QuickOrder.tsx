@@ -466,7 +466,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
       {yE != null && (
         <div
           className="quick-amount"
-          style={{ left: offX + plotW - TAG_W - 8 - AMOUNT_W, top: yE + 12 + 80 > offY + plotH ? yE - 92 : yE + 12, width: AMOUNT_W }}
+          style={{ left: offX + plotW - TAG_W - 8 - AMOUNT_W, top: yE + 12 + 106 > offY + plotH ? yE - 118 : yE + 12, width: AMOUNT_W }}
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
@@ -490,6 +490,14 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
             <input type="range" min={MIN_RUNGS} max={MAX_RUNGS} step={1} value={lad.count} disabled={!lad.on} title="Number of orders in the ladder (same setting as in the panel)" onChange={(e) => setLad((l) => ({ ...l, count: Number(e.target.value) }))} />
             <b>{lad.on ? rungs.length : lad.count}</b>
           </div>
+          <button
+            className={`quick-apply ${long ? 'buy' : 'sell'}`}
+            disabled={busy || !canTrade || problems.length > 0 || rungTooSmall || !(qty > 0)}
+            title="Place the order with its take-profit and stop-loss (same as double-clicking a box, or OK in the panel)"
+            onClick={() => void place()}
+          >
+            {busy ? 'Placing…' : 'Apply'}
+          </button>
         </div>
       )}
       <div className="quick-panel" onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
