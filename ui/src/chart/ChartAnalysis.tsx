@@ -76,9 +76,17 @@ export function ChartAnalysis({ chart }: { chart: Vela | null }) {
       </svg>
     );
   }
+  const setPrefs = useAnalyst((s) => s.setPrefs);
   return (
-    <div ref={rootRef} className="trade-layer">
-      {body}
-    </div>
+    <>
+      <div className="ai-bar-top">
+        <button className={`ai-toggle${show ? ' on' : ''}`} onClick={() => setPrefs({ showOnChart: !show })} title="Show / hide the AI analyst's levels and bias arrow on this chart">
+          AI{show && entry ? ' ●' : ''}
+        </button>
+      </div>
+      <div ref={rootRef} className="trade-layer">
+        {body}
+      </div>
+    </>
   );
 }
