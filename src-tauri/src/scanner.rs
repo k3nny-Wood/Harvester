@@ -9,7 +9,7 @@ use crate::market::{Env, Market};
 use crate::stream::parse_kline_value;
 use futures_util::{stream, StreamExt};
 use harvester_core::candle::Candle;
-use harvester_core::signals::{analyse, analyse_drop, Signal, SignalKind, SignalParams};
+use harvester_core::signals::{analyse, analyse_drop, ScoreParts, Signal, SignalKind, SignalParams};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -30,6 +30,8 @@ const FULL_PACE_MS: u64 = 450;
 const FULL_REFRESH_SECS: u64 = 10;
 /// How many of the latest candles the drop check looks at (it needs the drop window, ~50 for the volatility and the Donchian window).
 const DROP_TAIL: usize = 300;
+/// No kline message for this long means the connection is dead.
+const SILENCE_LIMIT_SECS: u64 = 45;
 /// A triggered crack or drop stays in the list this long after it was last seen.
 const KEEP_MS: u64 = 6 * 3600 * 1000;
 /// A sudden pump or dump stays this long.
@@ -173,8 +175,35 @@ fn analyse_symbol(app: &AppHandle, inner: &mut Inner, symbol: &str) {
             inner.signals.insert(s.id.clone(), s);
         }
     }
-    inner.signals.retain(|_, s| !(s.kind == SignalKind::Crack && now.saturating_sub(s.time_ms) > KEEP_MS));
-    inner.signals.retain(|_, s| !(matches!(s.kind, SignalKind::Pump | SignalKind::Dump) && now.saturating_sub(s.time_ms) > SPIKE_KEEP_MS));
+    let tf = timeframe_ms(&inner.config.timeframe);
+    prune_signals(&mut inner.signals, now, tf);
+}
+
+/// Length of a candle of a timeframe such as "5m", "1h", "1d" in milliseconds.
+fn timeframe_ms(tf: &str) -> u64 {
+    let (n, unit) = tf.split_at(tf.len().saturating_sub(1));
+    let n: u64 = n.parse().unwrap_or(15);
+    n * match unit {
+        "m" => 60_000,
+        "h" => 3_600_000,
+        "d" => 86_400_000,
+        "w" => 604_800_000,
+        _ => 60_000,
+    }
+}
+
+/// Remove what has expired: a crack after `KEEP_MS`, a pump / dump after `SPIKE_KEEP_MS`, and a drop or watch that has not been refreshed for a few
+/// candles (they are re-made on every live update, so one that is old means the feed behind it stopped).
+fn prune_signals(signals: &mut HashMap<String, Signal>, now: u64, candle_ms: u64) {
+    let stale = (candle_ms * 3).max(20 * 60_000);
+    signals.retain(|_, s| {
+        let age = now.saturating_sub(s.time_ms);
+        match s.kind {
+            SignalKind::Crack => age <= KEEP_MS,
+            SignalKind::Pump | SignalKind::Dump => age <= SPIKE_KEEP_MS,
+            SignalKind::Drop | SignalKind::Near => age <= stale,
+        }
+    });
 }
 
 /// The drop check of one symbol: cheap (only the latest candles), so it runs on every live update. A drop that is no longer a drop disappears.
@@ -413,12 +442,36 @@ async fn live_session(app: &AppHandle, market: &Arc<Market>, inner: &Arc<Mutex<I
     let env: Env = market.env();
     let url = format!("{}/stream?streams={}", env.ws_base(), streams.join("/"));
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.map_err(|e| format!("websocket: {e}"))?;
-    while let Some(msg) = ws.next().await {
+    // The kline stream of dozens of symbols never goes quiet. If it does, the connection is dead without having said so (sleep, a network change):
+    // reconnect, which also reloads the candles.
+    let mut last_message = Instant::now();
+    let mut housekeeping = tokio::time::interval(Duration::from_secs(15));
+    loop {
+        let msg = tokio::select! {
+            m = ws.next() => m,
+            _ = housekeeping.tick() => {
+                if last_message.elapsed() > Duration::from_secs(SILENCE_LIMIT_SECS) {
+                    break;
+                }
+                // expired results leave the list even when nothing new arrives
+                let mut g = inner.lock().unwrap();
+                let tf = timeframe_ms(&g.config.timeframe);
+                let before = g.signals.len();
+                prune_signals(&mut g.signals, now_ms(), tf);
+                if g.signals.len() != before {
+                    refresh_counts(&mut g);
+                    emit_signals(app, &mut g, true);
+                }
+                continue;
+            }
+        };
+        let Some(msg) = msg else { break };
         let text = match msg {
             Ok(Message::Text(t)) => t,
             Ok(Message::Close(_)) | Err(_) => break,
             _ => continue,
         };
+        last_message = Instant::now();
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
         let Some(ev) = parse_kline_value(v.get("data").unwrap_or(&v)) else { continue };
         let c = Candle::new(ev.bar.time, ev.bar.open, ev.bar.high, ev.bar.low, ev.bar.close, ev.bar.volume);
@@ -525,6 +578,56 @@ mod tests {
         }
         assert_eq!(buf.len(), MAX_CANDLES);
         assert_eq!(buf.last().unwrap().open_time, (MAX_CANDLES as u64 + 49) * 900);
+    }
+
+    fn signal(id: &str, kind: SignalKind, time_ms: u64) -> Signal {
+        Signal {
+            id: id.into(),
+            symbol: "ETHUSDT".into(),
+            timeframe: "5m".into(),
+            kind,
+            time_ms,
+            price: 1.0,
+            base: None,
+            crack_level: None,
+            distance_pct: None,
+            drop_pct: 0.0,
+            vol_ratio: 1.0,
+            donch_pos: None,
+            score: 50,
+            parts: ScoreParts { structure: 0.0, volume: 0.0, magnitude: 0.0, pivot: 0.0, stabilising: 0.0 },
+            reasons: vec![],
+            thumb: vec![],
+        }
+    }
+
+    #[test]
+    fn expired_results_are_removed_by_kind() {
+        let now = 100 * 3_600_000u64;
+        let mut m: HashMap<String, Signal> = HashMap::new();
+        for (id, kind, age) in [
+            ("crack-fresh", SignalKind::Crack, 5 * 3_600_000),
+            ("crack-old", SignalKind::Crack, 7 * 3_600_000),
+            ("pump-fresh", SignalKind::Pump, 1 * 3_600_000),
+            ("dump-old", SignalKind::Dump, 3 * 3_600_000),
+            ("drop-fresh", SignalKind::Drop, 4 * 60_000),
+            ("drop-stale", SignalKind::Drop, 6 * 3_600_000),
+            ("near-stale", SignalKind::Near, 18 * 3_600_000),
+        ] {
+            m.insert(id.into(), signal(id, kind, now - age));
+        }
+        prune_signals(&mut m, now, 300_000); // 5-minute candles: a drop or watch older than 20 minutes is stale
+        let mut left: Vec<&str> = m.keys().map(|k| k.as_str()).collect();
+        left.sort();
+        assert_eq!(left, vec!["crack-fresh", "drop-fresh", "pump-fresh"]);
+    }
+
+    #[test]
+    fn timeframes_become_milliseconds() {
+        assert_eq!(timeframe_ms("5m"), 300_000);
+        assert_eq!(timeframe_ms("1h"), 3_600_000);
+        assert_eq!(timeframe_ms("15m"), 900_000);
+        assert_eq!(timeframe_ms("1d"), 86_400_000);
     }
 
     #[test]
