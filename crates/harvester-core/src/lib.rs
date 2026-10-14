@@ -9,6 +9,7 @@ pub mod ladder;
 pub mod movers;
 pub mod delist;
 pub mod news;
+pub mod ai;
 pub mod candle;
 pub mod qfl;
 pub mod smc;
