@@ -64,13 +64,13 @@ export function ChartAnalysis({ chart }: { chart: Vela | null }) {
             </g>
           );
         })}
+        <text x={(x0 + x1) / 2} y={offY + 40} textAnchor="middle" fill={bias.color} className="trade-label">
+          {`AI opinion: ${bias.label} ${a.confidence}% · ${age}`}
+        </text>
         {yP != null && (
           <g transform={`translate(${(x0 + x1) / 2}, ${yP})`}>
             {a.bias !== 'neutral' && <polygon points={a.bias === 'bullish' ? '0,-8 -9,8 9,8' : '0,8 -9,-8 9,-8'} transform={`translate(0, ${a.bias === 'bullish' ? -22 : 22})`} fill={bias.color} />}
             {a.bias === 'neutral' && <rect x={-8} y={-30} width={16} height={16} transform="rotate(45 0 -22)" fill={bias.color} opacity={0.8} />}
-            <text y={a.bias === 'bearish' ? 44 : -40} textAnchor="middle" fill={bias.color} className="trade-label">
-              {`AI opinion: ${bias.label} ${a.confidence}% · ${age}`}
-            </text>
           </g>
         )}
       </svg>
