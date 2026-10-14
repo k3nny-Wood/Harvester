@@ -5,6 +5,7 @@ mod held;
 mod movers;
 mod lab;
 mod marks;
+mod news;
 mod userstream;
 mod market;
 mod scanner;
@@ -33,6 +34,7 @@ struct AppState {
     movers: movers::SharedDetector,
     brackets: Arc<BracketStore>,
     marks: marks::Marks,
+    news: std::sync::Arc<news::NewsHub>,
     held: Arc<HeldStore>,
     market: Arc<Market>,
     streams: Streams,
@@ -135,6 +137,18 @@ fn bracket_list(state: State<'_, AppState>) -> Vec<Bracket> {
 #[tauri::command]
 fn bracket_cancel(state: State<'_, AppState>, id: String) -> bool {
     state.brackets.cancel(&id)
+}
+
+/// News about the coin of `symbol`: Binance announcements and crypto news sites, filtered to that coin.
+#[tauri::command]
+async fn news_for(state: State<'_, AppState>, symbol: String, force: Option<bool>) -> Result<news::NewsResult, String> {
+    Ok(state.news.news_for(&symbol, force.unwrap_or(false)).await)
+}
+
+/// Open a link in the default browser.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    news::open_in_browser(&url)
 }
 
 /// Live mark prices (from the websocket) of the given symbols; symbols without a price yet are left out.
@@ -302,13 +316,14 @@ fn main() {
     let env = Env::from_name(&std::env::var("HARVESTER_ENV").unwrap_or_default());
     let market = Arc::new(Market::new(env));
     tauri::Builder::default()
-        .manage(AppState { lab: Lab::default(), brackets: Arc::new(BracketStore::open(brackets::default_path())), marks: Default::default(), movers: Arc::new(Mutex::new(MoverDetector::new(MoverParams::default()))), held: Arc::new(HeldStore::open(held::default_path())), market: market.clone(), streams: Streams::default(), scanner: Scanner::default(), trading: Arc::new(Trading::new(market)) })
+        .manage(AppState { lab: Lab::default(), news: Arc::new(news::NewsHub::new(news::default_names_path())), brackets: Arc::new(BracketStore::open(brackets::default_path())), marks: Default::default(), movers: Arc::new(Mutex::new(MoverDetector::new(MoverParams::default()))), held: Arc::new(HeldStore::open(held::default_path())), market: market.clone(), streams: Streams::default(), scanner: Scanner::default(), trading: Arc::new(Trading::new(market)) })
         .setup(|app| {
             let state = app.state::<AppState>();
             state.scanner.start(app.handle().clone(), state.market.clone(), ScannerConfig::default());
             userstream::start(app.handle().clone(), state.trading.clone());
             brackets::start(app.handle().clone(), state.trading.clone(), state.brackets.clone());
             marks::start(state.trading.clone(), state.marks.clone());
+            { let hub = state.news.clone(); tauri::async_runtime::spawn(async move { hub.load_names().await; }); }
             held::start(app.handle().clone(), state.trading.clone(), state.held.clone());
             movers::start(app.handle().clone(), state.market.clone(), state.scanner.injector(), state.movers.clone());
             Ok(())
@@ -316,7 +331,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
             qfl_zones, smc_zones_cmd, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_params, scanner_sources,
-            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, bracket_add, bracket_list, bracket_cancel, cancel_order, modify_order, resize_exits, order_history, trade_history, symbol_leverage, leverage_brackets, cancel_all_orders, close_position, set_leverage, set_margin_type, set_cap_override
+            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, news_for, open_url, bracket_add, bracket_list, bracket_cancel, cancel_order, modify_order, resize_exits, order_history, trade_history, symbol_leverage, leverage_brackets, cancel_all_orders, close_position, set_leverage, set_margin_type, set_cap_override
         ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");
