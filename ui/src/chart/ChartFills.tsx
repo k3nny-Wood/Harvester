@@ -82,6 +82,7 @@ export function ChartFills({ chart }: { chart: Vela | null }) {
       });
       if (d) {
         chart.drawings.update(d.id, { locked: true }); // an overlay of the app, not something to drag around
+        chart.drawings.bringToFront(d.id); // a new drawing starts just under the candles: the buy / sell arrows belong in front of them
         ids.current.set(m.key, d.id);
       }
     }
