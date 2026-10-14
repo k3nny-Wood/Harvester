@@ -3,6 +3,7 @@
 //! The reading and matching rules are in `harvester-core::news`; this file is the network, the cache and the coin names.
 
 use futures_util::future::join_all;
+use harvester_core::delist::{merge, parse_exchange_info, spot_delistings, Delisting};
 use harvester_core::news::{base_ticker, mentions, parse_binance_announcements, parse_rss, NewsItem, NewsKind};
 use serde::Serialize;
 use serde_json::Value;
@@ -62,6 +63,7 @@ pub struct NewsHub {
     names: Mutex<HashMap<String, String>>,
     names_path: PathBuf,
     panic: Mutex<HashMap<String, (u64, Vec<NewsItem>)>>,
+    delist: tokio::sync::Mutex<(u64, Vec<Delisting>)>,
 }
 
 fn now_ms() -> u64 {
@@ -88,7 +90,7 @@ impl NewsHub {
         if let Some(saved) = std::fs::read(&names_path).ok().and_then(|b| serde_json::from_slice::<HashMap<String, String>>(&b).ok()) {
             names.extend(saved);
         }
-        NewsHub { http, feed: tokio::sync::Mutex::new(FeedCache::default()), names: Mutex::new(names), names_path, panic: Mutex::new(HashMap::new()) }
+        NewsHub { http, feed: tokio::sync::Mutex::new(FeedCache::default()), names: Mutex::new(names), names_path, panic: Mutex::new(HashMap::new()), delist: tokio::sync::Mutex::new((0, Vec::new())) }
     }
 
     /// Load the coin names (ticker -> name) of the 1000 biggest coins from CoinGecko, once a week. A failure just leaves the built-in names.
@@ -190,6 +192,32 @@ impl NewsHub {
             *cache = FeedCache { items, sources, fetched_ms: now_ms() };
         }
         (cache.items.clone(), cache.sources.clone(), cache.fetched_ms)
+    }
+
+    /// The futures contracts that are scheduled to be delisted, or have just been: Binance's futures `exchangeInfo` (a perpetual with a real
+    /// settlement date) plus the spot delisting announcements for coins that have a futures contract. Kept for 10 minutes.
+    pub async fn delistings(&self, force: bool) -> Vec<Delisting> {
+        let mut cache = self.delist.lock().await;
+        let age = now_ms().saturating_sub(cache.0);
+        if cache.0 != 0 && age < 10 * 60 * 1000 && !(force && age > MIN_REFRESH_MS) {
+            return cache.1.clone();
+        }
+        let info = self.get_text("https://fapi.binance.com/fapi/v1/exchangeInfo").await.and_then(|t| serde_json::from_str::<Value>(&t).map_err(|e| format!("{e}")));
+        let now = now_ms();
+        let (futures, symbols) = match &info {
+            Ok(v) => {
+                let symbols: Vec<String> = v["symbols"].as_array().into_iter().flatten().filter(|s| s["status"] == "TRADING").filter_map(|s| s["symbol"].as_str().map(str::to_string)).collect();
+                (parse_exchange_info(v, now), symbols)
+            }
+            // the exchange did not answer: keep what was known rather than showing "no delistings"
+            Err(_) if cache.0 != 0 => return cache.1.clone(),
+            Err(_) => (Vec::new(), Vec::new()),
+        };
+        let (items, _, _) = self.refresh_feed(false).await;
+        let spot = spot_delistings(&items, &symbols, now);
+        let merged = merge(futures, spot);
+        *cache = (now, merged.clone());
+        merged
     }
 
     /// CryptoPanic's feed for one coin, when a key is set. Kept for the same few minutes.
@@ -295,6 +323,23 @@ mod live {
             for i in r.items.iter().take(4) {
                 println!("   [{}] {} ({})", i.source, i.title, i.time_ms);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod live_delist {
+    use super::*;
+
+    /// Talks to the real servers: `cargo test live_delistings -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn live_delistings() {
+        let hub = NewsHub::new(std::env::temp_dir().join("harvester_names_live_test2.json"));
+        let d = hub.delistings(true).await;
+        println!("{} delisting warnings", d.len());
+        for x in &d {
+            println!("  {:<16} {:?} {} | {}", x.symbol, x.kind, x.date_ms, x.title);
         }
     }
 }
