@@ -18,6 +18,7 @@ import { SignalsPanel } from './panels/SignalsPanel';
 import { SymbolsPanel } from './panels/SymbolsPanel';
 import { useApp } from './store';
 import { startTradingPoll } from './trade';
+import { startDelistPoll } from './delistings';
 import { LiveUPnL } from './components/LiveUPnL';
 import { CapToggle } from './components/CapToggle';
 
@@ -149,6 +150,7 @@ export function App() {
     dock.getPanel('openorders')?.api.setTitle(`Open orders${account ? ` (${openOrders.length})` : ''}`);
   }, [account, openOrders.length, open]);
   useEffect(() => startTradingPoll(), []);
+  useEffect(() => startDelistPoll(), []);
 
   useEffect(() => {
     if (inTauri) void api.environment().then(setEnv);

@@ -5,6 +5,7 @@ import { openChart } from '../dock';
 import { snapToTick } from '../ladderMath';
 import { useApp } from '../store';
 import { closeOrder } from '../sizing';
+import { DelistNote } from '../components/DelistNote';
 import { MarginModeToggle } from '../components/MarginModeToggle';
 import { orderFromForm, quantityFor, refreshTrading, submitOrder } from '../trade';
 import type { OrderKind } from '../types';
@@ -252,6 +253,7 @@ export function OrdersPanel() {
         onChange={(v) => patch({ size: String(v) })}
       />
 
+      <DelistNote symbol={symbol} />
       <MarginModeToggle symbol={symbol} />
       <SliderField label="Leverage" value={lev} min={1} max={maxLev} step={1} digits={0} suffix="x" sub={`max ${maxLev}x for ${symbol} · applied to the symbol when you release the slider`} onChange={(v) => setLev(Math.round(v))} onCommit={() => void commitLeverage()} />
 

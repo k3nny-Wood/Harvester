@@ -16,6 +16,7 @@ import { DRAWING_GROUPS } from './drawingTools';
 import { ChartBases } from './ChartBases';
 import { ChartFills } from './ChartFills';
 import { ChartSmc } from './ChartSmc';
+import { ChartDelistBanner } from './ChartDelistBanner';
 import { ChartPriceLine } from './ChartPriceLine';
 import { ChartVolumeProfile } from './ChartVolumeProfile';
 import { ChartTrading } from './ChartTrading';
@@ -247,6 +248,7 @@ function ChartBody() {
       <ChartFills chart={chart} />
       <ChartBases chart={chart} />
       <ChartSmc chart={chart} />
+      <ChartDelistBanner />
       {tfPopup && <div className={`tf-popup${tfPopup.bad ? ' bad' : ''}`}>{tfPopup.text}</div>}
       <ChartPriceLine chart={chart} />
       <ChartVolumeProfile chart={chart} />

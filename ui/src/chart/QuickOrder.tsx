@@ -9,6 +9,7 @@ import { maxPct, sizeFromPct } from '../sizing';
 import { useApp } from '../store';
 import { refreshTrading } from '../trade';
 import type { LeverageBracket, OrderAck, OrderRequest, Side } from '../types';
+import { DelistNote } from '../components/DelistNote';
 import { MarginModeToggle } from '../components/MarginModeToggle';
 import { getProjector } from './projector';
 import { averagePrice, ladderRungs, MAX_RUNGS, MIN_RUNGS, type RungWeights } from './quickLadder';
@@ -539,6 +540,7 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
             ×
           </button>
         </div>
+        <DelistNote symbol={symbol} />
         <div className="muted quick-note">
           {kind === 'STOP' ? `Stop-limit: triggers at the entry price, limit ${(LIMIT_OFFSET * 100).toFixed(1)}% beyond it.` : `Limit order: the entry is on the near side of the market, so it waits as a normal limit order.`} Drag the boxes on the chart or type prices; double-click a box to place the order. Tick “Ladder” to spread the entry over several orders.
         </div>

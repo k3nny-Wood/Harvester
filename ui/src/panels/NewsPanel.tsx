@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, inTauri } from '../api';
 import { useActiveChart } from '../chartStore';
+import { DelistNote } from '../components/DelistNote';
 import { useApp } from '../store';
 import type { NewsItem, NewsKind, NewsResult } from '../types';
 
@@ -92,6 +93,7 @@ export function NewsPanel() {
           {loading ? '…' : '⟳'}
         </button>
       </div>
+      <DelistNote symbol={symbol} />
       {error && <div className="warn pad">News: {error}</div>}
       {!result && loading && <div className="muted pad">Loading the feeds…</div>}
       {result && (

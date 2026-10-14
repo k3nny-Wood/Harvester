@@ -190,6 +190,16 @@ export interface ArmedBracket {
   createdMs: number;
 }
 
+/** A futures contract Binance is delisting, or a spot delisting announcement for its coin. */
+export interface Delisting {
+  symbol: string;
+  /** scheduled: settles on dateMs and still trades; settling: settling now or just settled; spot: only the spot market has been announced */
+  kind: 'scheduled' | 'settling' | 'spot';
+  dateMs: number;
+  title: string;
+  url: string;
+}
+
 export type NewsKind = 'news' | 'listing' | 'delisting' | 'notice';
 
 export interface NewsItem {

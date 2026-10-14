@@ -2006,3 +2006,45 @@ button.mini {
   padding: 6px 10px;
   font-size: 11px;
 }
+
+/* delisting warnings */
+.delist-note {
+  margin: 4px 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
+}
+.delist-note.danger {
+  background: rgba(208, 69, 75, 0.18);
+  border: 1px solid var(--down);
+  color: #ff8c92;
+}
+.delist-note.warn {
+  background: rgba(224, 163, 61, 0.16);
+  border: 1px solid #e0a33d;
+  color: #f0c36d;
+}
+.delist-banner {
+  position: absolute;
+  left: 50%;
+  top: 34px;
+  transform: translateX(-50%);
+  z-index: 55;
+  max-width: 70%;
+}
+.delist-banner .delist-note {
+  margin: 0;
+  background-color: rgba(15, 22, 32, 0.92);
+}
+.delist-mark {
+  font-weight: 700;
+}
+.delist-mark.danger {
+  color: var(--down);
+}
+.delist-mark.warn {
+  color: #e0a33d;
+}

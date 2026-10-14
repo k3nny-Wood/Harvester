@@ -7,6 +7,7 @@ import { confirmDialog } from '../confirm';
 import { openChart } from '../dock';
 import { useApp } from '../store';
 import { refreshTrading } from '../trade';
+import { delistingFor, describeDelisting, useDelistings } from '../delistings';
 import { defaultExitPrice, exitState } from '../positionExits';
 import { AddSizeModal, type AddSizeTarget } from '../components/AddSizeModal';
 import type { ArmedBracket, OrderRecord, TradeRecord } from '../types';
@@ -28,7 +29,19 @@ function NoKeys() {
 }
 
 function SymbolLink({ symbol }: { symbol: string }) {
-  return <a onClick={() => openChart(symbol)}>{symbol}</a>;
+  const list = useDelistings((s) => s.list);
+  const d = delistingFor(symbol, list);
+  return (
+    <>
+      <a onClick={() => openChart(symbol)}>{symbol}</a>
+      {d && (
+        <span className={`delist-mark ${d.kind === 'spot' ? 'warn' : 'danger'}`} title={describeDelisting(d, Date.now()).text}>
+          {' '}
+          ⚠
+        </span>
+      )}
+    </>
+  );
 }
 
 /** Open positions with unrealised P&L, return on margin, and close buttons. */
