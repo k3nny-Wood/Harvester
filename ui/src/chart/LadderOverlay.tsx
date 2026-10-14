@@ -45,6 +45,11 @@ interface Geometry {
  * All drawing is a DOM/SVG layer over the chart so it can be dragged smoothly; the exact, rounded and
  * validated rungs come from the Rust core.
  */
+/** The ladder's order count after `change` wheel steps, kept between the smallest and the largest ladder. */
+export function stepCount(count: number, change: number): number {
+  return Math.min(50, Math.max(2, Math.round(count) + change));
+}
+
 export function LadderOverlay({ chart, host }: { chart: Vela | null; host: RefObject<HTMLDivElement | null> }) {
   const chartId = useChartId();
   const d = useChart((s) => s.ladder);
@@ -108,6 +113,29 @@ export function LadderOverlay({ chart, host }: { chart: Vela | null; host: RefOb
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [patch, reset, chartId]);
+
+  // Mouse wheel over the chart changes the number of orders while the ladder is being drawn or adjusted (wheel up = more, down = fewer).
+  // It listens before the chart does and swallows the wheel, so the chart does not zoom at the same time.
+  const countRef = useRef(d.count);
+  countRef.current = d.count;
+  const wheelAcc = useRef(0);
+  useEffect(() => {
+    const el = host.current;
+    if (!el || (d.phase !== 'end' && d.phase !== 'armed')) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      wheelAcc.current += e.deltaY;
+      // one step per notch (about 100); a trackpad's small movements add up to a step
+      const steps = Math.trunc(wheelAcc.current / 100);
+      if (steps === 0) return;
+      wheelAcc.current -= steps * 100;
+      const next = stepCount(countRef.current, -steps);
+      if (next !== countRef.current) patch({ count: next });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false, capture: true });
+    return () => el.removeEventListener('wheel', onWheel, true);
+  }, [host, d.phase, patch]);
 
   // Exact rungs from the Rust core, debounced while the trader drags / slides.
   const spec = useMemo(() => (d.phase === 'armed' || d.phase === 'end' ? buildSpec(symbol, d) : null), [symbol, d]);
@@ -239,7 +267,7 @@ export function LadderOverlay({ chart, host }: { chart: Vela | null; host: RefOb
         </svg>
       )}
 
-      {d.phase === 'end' && <div className="ladder-banner">Click to set the END of the ladder · Esc cancels</div>}
+      {d.phase === 'end' && <div className="ladder-banner">Click to set the END of the ladder · mouse wheel: number of orders ({d.count}) · Esc cancels</div>}
 
       {d.phase === 'armed' && g && yStart != null && yEnd != null && (
         <LadderCard
