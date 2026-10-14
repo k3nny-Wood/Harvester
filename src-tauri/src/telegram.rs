@@ -1,7 +1,9 @@
 //! Harvester's Telegram bot (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID in the .env file): a summary of the account every 30 minutes, and
-//! commands to ask for it, the positions, the orders, the scanner and chart pictures, and `/close SYMBOL`.
+//! commands to ask for it, the positions, the orders, the scanner and chart pictures, and a few commands that trade, plus alerts.
 //!
-//! Safety: `/close` is the only command that trades: it market-closes ONE named position (reduce-only, so it can never open or flip one).
+//! Commands that trade: `/close SYMBOL` (reduce-only: it can never open or flip a position), `/stop` and `/tp` (a reduce-only exit for the whole
+//! position, refused on the wrong side of the price), and `/long` / `/short`, which only PREPARE an order: it is sent by `/confirm` within a minute,
+//! and never for a symbol that already has a position.
 //!  * only messages from TELEGRAM_CHAT_ID are answered; everything else is ignored without a reply;
 //!  * messages that were waiting when Harvester started, and messages older than 2 minutes, are never acted on;
 //!  * the token is only used in requests to api.telegram.org and never written to a log.
@@ -10,8 +12,14 @@ use crate::cardimg::{self, Block};
 use crate::chartimg::{self, ChartData, Line};
 use crate::market::Market;
 use crate::scanner::SignalReader;
-use crate::trading::{Account, OpenOrder, Trading};
+use crate::news::NewsHub;
+use crate::trading::{Account, OpenOrder, OrderRequest, OrderType, Side, Trading};
+use harvester_core::alerts::{self, AlertState, ExitKind, Level};
 use harvester_core::report::{self, Command, OrderRow, PositionRow, Summary};
+use rust_decimal::prelude::ToPrimitive;
+use std::collections::HashSet;
+use std::sync::Mutex;
+use std::time::Instant;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,6 +28,18 @@ const MAX_AGE_SECS: i64 = 120;
 const REPORT_EVERY: Duration = Duration::from_secs(30 * 60);
 const FIRST_REPORT_AFTER: Duration = Duration::from_secs(60);
 const DEFAULT_TIMEFRAME: &str = "15m";
+const CONFIRM_WITHIN: Duration = Duration::from_secs(60);
+const WATCH_EVERY: Duration = Duration::from_secs(20);
+/// a scanner entry must score this much (or more) to be sent as an alert; TELEGRAM_SIGNAL_MIN_SCORE changes it, 0 turns these alerts off
+const DEFAULT_SIGNAL_SCORE: u8 = 85;
+
+/// A /long or /short waiting for its /confirm.
+struct Pending {
+    symbol: String,
+    long: bool,
+    qty: f64,
+    expires: Instant,
+}
 
 struct Bot {
     http: reqwest::Client,
@@ -28,6 +48,7 @@ struct Bot {
     trading: Arc<Trading>,
     market: Arc<Market>,
     signals: SignalReader,
+    pending: Mutex<Option<Pending>>,
 }
 
 fn env_label(t: &Trading) -> &'static str {
@@ -236,6 +257,99 @@ impl Bot {
         }
     }
 
+    /// Set the stop-loss or take-profit of a position: moved when there is one, placed (for the whole position) when there is not.
+    async fn set_exit(&self, kind: ExitKind, symbol: &str, level: Level) {
+        let name = if kind == ExitKind::Stop { "Stop-loss" } else { "Take-profit" };
+        let acc = match self.trading.account().await {
+            Ok(a) => a,
+            Err(e) => return self.say(&report::esc(&e)).await,
+        };
+        let Some(p) = acc.positions.iter().find(|p| p.symbol == symbol && p.amount != 0.0) else {
+            return self.say(&format!("No open position in {}.", report::esc(symbol))).await;
+        };
+        let long = p.amount > 0.0;
+        let target = match alerts::resolve_exit(kind, long, p.mark_price, level) {
+            Ok(t) => t,
+            Err(e) => return self.say(&report::esc(&e)).await,
+        };
+        let open = match self.trading.open_orders(Some(symbol)).await {
+            Ok(o) => o,
+            Err(e) => return self.say(&report::esc(&e)).await,
+        };
+        let exit_side = if long { "SELL" } else { "BUY" };
+        let wanted = if kind == ExitKind::Stop { "STOP" } else { "TAKE_PROFIT" };
+        let existing = open.iter().find(|o| o.reduce_only && o.side == exit_side && (o.order_type.starts_with(wanted) || (kind == ExitKind::Take && o.order_type == "LIMIT")));
+        let result = match existing {
+            Some(o) if o.order_type == "LIMIT" => self.trading.modify(symbol, o.order_id, false, Some(target), None, None).await.map(|_| format!("moved from {}", report::price(o.price))),
+            Some(o) => self.trading.modify(symbol, o.order_id, o.conditional, None, Some(target), None).await.map(|_| format!("moved from {}", report::price(o.stop_price))),
+            None => {
+                let req = OrderRequest {
+                    symbol: symbol.to_string(),
+                    side: if long { Side::Sell } else { Side::Buy },
+                    order_type: if kind == ExitKind::Stop { OrderType::StopMarket } else { OrderType::TakeProfitMarket },
+                    quantity: p.amount.abs(),
+                    price: None,
+                    stop_price: Some(target),
+                    post_only: false,
+                    reduce_only: true,
+                    client_id: None,
+                };
+                self.trading.place(req).await.map(|_| "placed for the whole position".to_string())
+            }
+        };
+        match result {
+            Ok(how) => self.say(&format!("<b>{name}</b> for {} {}: {how}, now {} (price {})", report::esc(symbol), if long { "LONG" } else { "SHORT" }, report::price(target), report::price(p.mark_price))).await,
+            Err(e) => self.say(&format!("Could not set the {} for {}: {}", name.to_lowercase(), report::esc(symbol), report::esc(&e))).await,
+        }
+    }
+
+    /// Prepare a market order for /long or /short and ask for /confirm. Nothing is sent yet.
+    async fn prepare_open(&self, long: bool, symbol: &str, margin: f64) {
+        let acc = match self.trading.account().await {
+            Ok(a) => a,
+            Err(e) => return self.say(&report::esc(&e)).await,
+        };
+        if acc.positions.iter().any(|p| p.symbol == symbol && p.amount != 0.0) {
+            return self.say(&format!("{} already has a position. /long and /short only open a new one: use the app to add to it, or /close it.", report::esc(symbol))).await;
+        }
+        if margin > acc.available_balance {
+            return self.say(&format!("Not enough available balance: {} wanted, {} available.", report::money(margin), report::money(acc.available_balance))).await;
+        }
+        let prepared = async {
+            let lev = self.trading.leverage(symbol).await?.leverage.max(1) as f64;
+            let mark = self.market.mark_price(symbol).await?;
+            let filters = self.market.symbol_filters(symbol).await?;
+            let qty = filters.round_quantity(margin * lev / mark).to_f64().unwrap_or(0.0);
+            if qty <= 0.0 {
+                return Err("That margin is too small for one contract of this symbol.".to_string());
+            }
+            Ok((lev, mark, qty))
+        }
+        .await;
+        let (lev, mark, qty) = match prepared {
+            Ok(x) => x,
+            Err(e) => return self.say(&format!("Could not prepare {}: {}", report::esc(symbol), report::esc(&e))).await,
+        };
+        *self.pending.lock().unwrap() = Some(Pending { symbol: symbol.to_string(), long, qty, expires: Instant::now() + CONFIRM_WITHIN });
+        self.say(&format!(
+            "<b>{} {}</b>: {} {} at market (about {}), {}x, margin {} for a position of about {}.\nNo stop-loss is set by this: add one with /stop {} 2%.\nSend <b>/confirm</b> within 60 seconds, or /cancel.",
+            if long { "LONG" } else { "SHORT" }, report::esc(symbol), qty, report::esc(symbol.strip_suffix("USDT").unwrap_or(symbol)), report::price(mark), lev, report::money(margin), report::money(qty * mark), report::esc(symbol.strip_suffix("USDT").unwrap_or(symbol)),
+        ))
+        .await;
+    }
+
+    async fn confirm_open(&self) {
+        let pending = self.pending.lock().unwrap().take();
+        let Some(p) = pending.filter(|p| p.expires > Instant::now()) else {
+            return self.say("Nothing is waiting for confirmation (or it timed out). Send /long or /short again.").await;
+        };
+        let req = OrderRequest { symbol: p.symbol.clone(), side: if p.long { Side::Buy } else { Side::Sell }, order_type: OrderType::Market, quantity: p.qty, price: None, stop_price: None, post_only: false, reduce_only: false, client_id: None };
+        match self.trading.place(req).await {
+            Ok(ack) => self.say(&format!("<b>Sent</b>: {} {} {} at market ({}). Set a stop with /stop {} 2%.", if p.long { "LONG" } else { "SHORT" }, ack.quantity, report::esc(&p.symbol), report::esc(&ack.status.to_lowercase()), report::esc(p.symbol.strip_suffix("USDT").unwrap_or(&p.symbol)))).await,
+            Err(e) => self.say(&format!("Could not open {}: {}", report::esc(&p.symbol), report::esc(&e))).await,
+        }
+    }
+
     async fn handle(&self, text: &str) {
         match report::parse_command(text) {
             Command::NotACommand => {}
@@ -284,6 +398,13 @@ impl Bot {
                     Err(e) => self.say(&format!("Could not close {}: {}", report::esc(&symbol), report::esc(&e))).await,
                 }
             }
+            Command::Exit { kind, symbol, level } => self.set_exit(kind, &symbol, level).await,
+            Command::Open { long, symbol, margin } => self.prepare_open(long, &symbol, margin).await,
+            Command::Confirm => self.confirm_open().await,
+            Command::Cancel => {
+                let had = self.pending.lock().unwrap().take().is_some();
+                self.say(if had { "Cancelled: nothing was sent." } else { "Nothing was waiting." }).await
+            }
             Command::Charts => match self.snapshot().await {
                 Ok((acc, orders)) => {
                     let mut rows = position_rows(&acc, &orders);
@@ -319,14 +440,14 @@ fn chrono_free_time() -> String {
 }
 
 /// Start the bot if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set.
-pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader) {
+pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader, news: Arc<NewsHub>) {
     let token = std::env::var("TELEGRAM_BOT_TOKEN").unwrap_or_default().trim().to_string();
     let chat = std::env::var("TELEGRAM_CHAT_ID").unwrap_or_default().trim().to_string();
     if token.is_empty() || chat.is_empty() {
         println!("[telegram] disabled: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the .env file");
         return;
     }
-    let bot = Arc::new(Bot { http: reqwest::Client::builder().timeout(Duration::from_secs(45)).build().unwrap_or_default(), token, chat, trading, market, signals });
+    let bot = Arc::new(Bot { http: reqwest::Client::builder().timeout(Duration::from_secs(45)).build().unwrap_or_default(), token, chat, trading, market, signals, pending: Mutex::new(None) });
 
     // the summary: one a minute after start, then every 30 minutes
     let reporter = bot.clone();
@@ -344,6 +465,48 @@ pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader) 
                 Err(e) => eprintln!("[telegram] summary skipped: {e}"),
             }
             tokio::time::sleep(REPORT_EVERY).await;
+        }
+    });
+
+    // alerts: the account is looked at every 20 seconds and compared with the last look
+    let watcher = bot.clone();
+    tauri::async_runtime::spawn(async move {
+        let min_score: u8 = std::env::var("TELEGRAM_SIGNAL_MIN_SCORE").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(DEFAULT_SIGNAL_SCORE);
+        let mut state = AlertState::default();
+        let (mut seen_signals, mut told_delistings): (HashSet<String>, HashSet<String>) = (HashSet::new(), HashSet::new());
+        let mut seeded = false;
+        let mut round: u32 = 0;
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        loop {
+            round = round.wrapping_add(1);
+            let mut held: Vec<PositionRow> = Vec::new();
+            if let Ok((acc, orders)) = watcher.snapshot().await {
+                held = position_rows(&acc, &orders);
+                for e in state.update(&held) {
+                    watcher.say(&alerts::format_event(&e)).await;
+                }
+            }
+            // a delisting of a coin that is held, told once (checked about every 4 minutes)
+            if round % 12 == 1 && !held.is_empty() {
+                for d in news.delistings(false).await {
+                    let Some(p) = held.iter().find(|p| p.symbol == d.symbol) else { continue };
+                    if told_delistings.insert(format!("{}-{}", d.symbol, d.date_ms)) {
+                        watcher.say(&format!("⚠️ <b>{} is being delisted</b> on {}. You hold a {} position.\n{}", report::esc(p.symbol.strip_suffix("USDT").unwrap_or(&p.symbol)), alerts::ymd(d.date_ms), if p.amount > 0.0 { "LONG" } else { "SHORT" }, report::esc(&d.title))).await;
+                    }
+                }
+            }
+            // a very strong scanner entry, told once; what is there at start-up is not announced
+            if min_score > 0 {
+                let strong: Vec<_> = watcher.signals.signals().into_iter().filter(|s| matches!(s.kind, harvester_core::signals::SignalKind::Crack | harvester_core::signals::SignalKind::Drop) && s.score >= min_score).collect();
+                if seeded {
+                    for s in strong.iter().filter(|s| !seen_signals.contains(&s.id)).take(3) {
+                        watcher.say(&format!("<b>Scanner</b>: {} {} score {} at {}", report::esc(s.symbol.strip_suffix("USDT").unwrap_or(&s.symbol)), format!("{:?}", s.kind).to_lowercase(), s.score, report::price(s.price))).await;
+                    }
+                }
+                seen_signals.extend(strong.into_iter().map(|s| s.id));
+                seeded = true;
+            }
+            tokio::time::sleep(WATCH_EVERY).await;
         }
     });
 

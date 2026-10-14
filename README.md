@@ -152,5 +152,9 @@ Put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the `.env` file (a bot from @
 | `/chart SYMBOL [timeframe]` | a chart picture, e.g. `/chart BTC 1h`, with your position's entry, stop, target, liquidation and open orders drawn on it |
 | `/charts` | a picture of every open position (up to 6, worst first) |
 | `/close SYMBOL` | market-closes that whole position at once, e.g. `/close BTC` |
+| `/stop SYMBOL LEVEL`, `/tp SYMBOL LEVEL` | set or move the stop-loss / take-profit of a position (the whole position, reduce-only). LEVEL is a price or a distance: `/stop BTC 95000`, `/stop BTC 2%`. Refused on the wrong side of the price |
+| `/long SYMBOL USDT`, `/short SYMBOL USDT` | prepare a market order with that much margin (position = margin x the symbol's leverage); nothing is sent until `/confirm` within 60 s (`/cancel` drops it). Refused when the symbol already has a position |
 
-`/close` is the only command that trades: it sends one reduce-only market order for the named position (it can never open or flip one) and does nothing if there is no such position. Only your chat is answered, commands older than two minutes are ignored, and the bot token is never logged. Use a bot of its own: two programs polling one bot (for example the MarketScanner V2 bot) would fight over its messages.
+**Alerts** arrive by themselves (the account is checked every 20 s): a position opened, grown, shrunk or closed (with "stop-loss / take-profit hit" when the last price was at it), a position closer than 10% to its liquidation price, a delisting of a coin you hold, and scanner entries scoring 85 or more (`TELEGRAM_SIGNAL_MIN_SCORE` in `.env` changes that, 0 turns them off).
+
+The commands that trade are `/close`, `/stop`, `/tp` (all reduce-only, they can never open or flip a position) and `/long` / `/short` (which need `/confirm`). Only your chat is answered, commands older than two minutes are ignored, and the bot token is never logged. Use a bot of its own: two programs polling one bot (for example the MarketScanner V2 bot) would fight over its messages.

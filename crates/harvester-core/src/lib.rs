@@ -8,6 +8,7 @@ pub mod lab;
 pub mod marketdata;
 pub mod ladder;
 pub mod movers;
+pub mod alerts;
 pub mod report;
 pub mod delist;
 pub mod news;

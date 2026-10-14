@@ -1,6 +1,8 @@
 //! The texts of Harvester's Telegram bot: the periodic summary, the position and order lists, and the parsing of a command the user types.
 //! Pure formatting (Telegram HTML); fetching the data and sending the messages is done in the app.
 
+use crate::alerts::{parse_level, ExitKind, Level};
+
 /// Telegram's HTML needs these three escaped.
 pub fn esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
@@ -199,6 +201,12 @@ pub enum Command {
     Charts,
     /// close the whole position of this symbol at market
     Close(String),
+    /// set (or move) the stop-loss or take-profit of a position
+    Exit { kind: ExitKind, symbol: String, level: Level },
+    /// open a position at market with this much margin (asks to be confirmed first)
+    Open { long: bool, symbol: String, margin: f64 },
+    Confirm,
+    Cancel,
     /// the command was not understood; the text is what was typed
     Unknown(String),
     /// a usage problem the user should be told about
@@ -215,7 +223,11 @@ pub const HELP: &str = "<b>Harvester commands</b>\n\
 /chart SYMBOL [timeframe] - a chart picture (e.g. /chart BTC 1h), with your position and orders drawn on it\n\
 /charts - a picture of every open position\n\
 /close SYMBOL - close that position at market, at once (e.g. /close BTC)\n\
-\nThe summary arrives by itself every 30 minutes. /close is the only command that trades.";
+/stop SYMBOL LEVEL - set or move the stop-loss: a price or a distance (/stop BTC 95000, /stop BTC 2%)\n\
+/tp SYMBOL LEVEL - the same for the take-profit\n\
+/long SYMBOL USDT, /short SYMBOL USDT - open a position at market with that much margin; asks for /confirm first\n\
+/cancel - drop a pending /long or /short\n\
+\nAlerts arrive by themselves: a position opened or closed (stop-loss / take-profit hit), close to liquidation, a delisting of a coin you hold, a very strong scanner entry. The summary comes every 30 minutes.";
 
 const TIMEFRAMES: &[&str] = &["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"];
 
@@ -243,6 +255,25 @@ pub fn parse_command(text: &str) -> Command {
         "orders" => Command::Orders,
         "signals" => Command::Signals,
         "charts" => Command::Charts,
+        "stop" | "tp" => {
+            let kind = if name == "stop" { ExitKind::Stop } else { ExitKind::Take };
+            match args.as_slice() {
+                [sym, lvl] => match (normalize_symbol(sym), parse_level(lvl)) {
+                    (Some(symbol), Some(level)) => Command::Exit { kind, symbol, level },
+                    _ => Command::Usage("Use a symbol and a price or a percentage, for example /stop BTC 95000 or /stop BTC 2%"),
+                },
+                _ => Command::Usage("Usage: /stop SYMBOL LEVEL or /tp SYMBOL LEVEL. LEVEL is a price (95000) or a distance from the price (2%)."),
+            }
+        }
+        "long" | "short" => match args.as_slice() {
+            [sym, amount] => match (normalize_symbol(sym), amount.parse::<f64>().ok().filter(|a| a.is_finite() && *a > 0.0)) {
+                (Some(symbol), Some(margin)) => Command::Open { long: name == "long", symbol, margin },
+                _ => Command::Usage("Use a symbol and the margin in USDT, for example /long BTC 100"),
+            },
+            _ => Command::Usage("Usage: /long SYMBOL USDT or /short SYMBOL USDT (the margin to put in; the position is that times the leverage)"),
+        },
+        "confirm" => Command::Confirm,
+        "cancel" => Command::Cancel,
         "close" => match args.as_slice() {
             [sym] => match normalize_symbol(sym) {
                 Some(symbol) => Command::Close(symbol),
@@ -343,6 +374,19 @@ mod tests {
         assert!(matches!(parse_command("/close"), Command::Usage(_)));
         assert!(matches!(parse_command("/close btc eth"), Command::Usage(_)), "two symbols is ambiguous: nothing is closed");
         assert!(matches!(parse_command("/close b;tc"), Command::Usage(_)));
+        assert_eq!(parse_command("/stop btc 2%"), Command::Exit { kind: ExitKind::Stop, symbol: "BTCUSDT".into(), level: Level::Pct(2.0) });
+        assert_eq!(parse_command("/tp ETH 3500.5"), Command::Exit { kind: ExitKind::Take, symbol: "ETHUSDT".into(), level: Level::Price(3500.5) });
+        assert!(matches!(parse_command("/stop btc"), Command::Usage(_)));
+        assert!(matches!(parse_command("/stop btc -5"), Command::Usage(_)));
+        assert!(matches!(parse_command("/tp btc abc"), Command::Usage(_)));
+        assert_eq!(parse_command("/long btc 100"), Command::Open { long: true, symbol: "BTCUSDT".into(), margin: 100.0 });
+        assert_eq!(parse_command("/short eth 25.5"), Command::Open { long: false, symbol: "ETHUSDT".into(), margin: 25.5 });
+        assert!(matches!(parse_command("/long btc"), Command::Usage(_)));
+        assert!(matches!(parse_command("/long btc 0"), Command::Usage(_)));
+        assert!(matches!(parse_command("/long btc -5"), Command::Usage(_)));
+        assert!(matches!(parse_command("/short btc ten"), Command::Usage(_)));
+        assert_eq!(parse_command("/confirm"), Command::Confirm);
+        assert_eq!(parse_command("/cancel"), Command::Cancel);
         assert_eq!(parse_command("/nope"), Command::Unknown("nope".into()));
         assert_eq!(parse_command("hello there"), Command::NotACommand);
         assert_eq!(parse_command("   "), Command::NotACommand);
