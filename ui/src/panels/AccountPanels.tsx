@@ -154,9 +154,9 @@ export function PositionsPanel() {
                   <button title="Add to this position (with its stop-loss and take-profit resized)" onClick={() => setAddFor({ kind: 'position', symbol: p.symbol, amount: p.amount, mark: p.markPrice })}>
                     + Add
                   </button>
-                  {[0.25, 0.5, 1].map((f) => (
+                  {[0.25, 0.33, 0.5, 0.66, 1].map((f) => (
                     <button key={f} onClick={() => void close(p.symbol, f)}>
-                      {f * 100}%
+                      {Math.round(f * 100)}%
                     </button>
                   ))}
                 </td>
