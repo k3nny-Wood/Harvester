@@ -139,3 +139,17 @@ Harvester reads Binance's futures `exchangeInfo` every 10 minutes: a perpetual w
 The **AI Analyst** tab (View > AI Analyst) asks Claude for an analysis of the chart in focus. It sends one request with: the candles and computed indicators (EMA 20/50/200, RSI, MACD, ATR, Bollinger, swing highs and lows, volume profile) on the chart's timeframe and on 1h, 4h and 1d, the QFL base zones and SMC zones, the latest news and any delisting warning for the coin, your position, stop-loss, take-profit and open orders, and (optionally) a picture of the chart. The answer is a strict JSON document: a bias with a confidence (50 = no edge), key levels, scenarios with their invalidation, reasons, risks and a comment on your position. Pick Haiku 5.5 (cheaper, faster) or Sonnet 5.5; the token counts of each call are shown. The key is `ANTHROPIC_API_KEY` in `.env`; it stays in the Rust side and is never sent to the page. Everything sent is what the request shows: candles, indicators, news, your position and the picture, nothing else.
 
 "On chart" draws its key levels as dotted lines and a small arrow for its bias, labelled "AI opinion". Every analysis is saved (`%APPDATA%\Harvester\ai_log.json`), and the **Track record** tab scores each directional call against the real price 4, 12 and 24 hours later and sets the hit rate next to how often price simply rose in the same periods. Language models cannot reliably predict price: treat the call as an opinion until the track record, over dozens of analyses, says otherwise.
+
+## Telegram bot
+
+Put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the `.env` file (a bot from @BotFather; the chat id is your own chat with it) and restart. Harvester then sends a **summary every 30 minutes** (equity and change, positions with entry / stop / target / liquidation, a warning for any position without a stop-loss, open orders, the scanner's best entries) and answers commands:
+
+| Command | Does |
+|---|---|
+| `/status` | the summary now |
+| `/positions`, `/orders` | open positions and orders |
+| `/signals` | the scanner's best entries |
+| `/chart SYMBOL [timeframe]` | a chart picture, e.g. `/chart BTC 1h`, with your position's entry, stop, target, liquidation and open orders drawn on it |
+| `/charts` | a picture of every open position (up to 6, worst first) |
+
+The bot only reads: it cannot place, change or cancel an order. Only your chat is answered, commands older than two minutes are ignored, and the bot token is never logged. Use a bot of its own: two programs polling one bot (for example the MarketScanner V2 bot) would fight over its messages.

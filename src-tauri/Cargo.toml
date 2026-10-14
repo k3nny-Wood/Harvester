@@ -22,3 +22,5 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 dotenvy = "0.15"
+plotters = "0.3"
+image = { version = "0.25", default-features = false, features = ["png"] }

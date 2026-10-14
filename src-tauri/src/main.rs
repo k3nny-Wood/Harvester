@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod brackets;
+mod chartimg;
+mod telegram;
 mod held;
 mod movers;
 mod lab;
@@ -364,6 +366,7 @@ fn main() {
             { let hub = state.news.clone(); tauri::async_runtime::spawn(async move { hub.load_names().await; }); }
             held::start(app.handle().clone(), state.trading.clone(), state.held.clone());
             movers::start(app.handle().clone(), state.market.clone(), state.scanner.injector(), state.movers.clone());
+            telegram::start(state.trading.clone(), state.market.clone(), state.scanner.reader());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

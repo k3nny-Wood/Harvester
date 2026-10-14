@@ -105,6 +105,18 @@ struct Inner {
     last_emit: Option<Instant>,
 }
 
+/// See [`Scanner::reader`].
+#[derive(Clone)]
+pub struct SignalReader {
+    inner: Arc<Mutex<Inner>>,
+}
+
+impl SignalReader {
+    pub fn signals(&self) -> Vec<Signal> {
+        sorted(&self.inner.lock().unwrap())
+    }
+}
+
 #[derive(Default)]
 pub struct Scanner {
     inner: Arc<Mutex<Inner>>,
@@ -293,6 +305,11 @@ impl Scanner {
             }
         }
         emit_signals(app, &mut g, true);
+    }
+
+    /// A read-only view of the current signals that other tasks can hold on to.
+    pub fn reader(&self) -> SignalReader {
+        SignalReader { inner: self.inner.clone() }
     }
 
     pub fn injector(&self) -> Injector {
