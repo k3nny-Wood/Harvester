@@ -6,6 +6,7 @@
 //!  * messages that were waiting when Harvester started, and messages older than 2 minutes, are never acted on;
 //!  * the token is only used in requests to api.telegram.org and never written to a log.
 
+use crate::cardimg::{self, Block};
 use crate::chartimg::{self, ChartData, Line};
 use crate::market::Market;
 use crate::scanner::SignalReader;
@@ -139,13 +140,14 @@ impl Bot {
         self.signals.signals().into_iter().filter(|s| matches!(s.kind, harvester_core::signals::SignalKind::Crack | harvester_core::signals::SignalKind::Near | harvester_core::signals::SignalKind::Drop)).take(5).map(|s| (s.symbol, format!("{:?}", s.kind).to_lowercase(), s.score)).collect()
     }
 
-    async fn summary_text(&self, session_start: Option<f64>, previous: Option<f64>) -> Result<(String, f64), String> {
+    /// The summary as a picture's blocks, the same as text for when a picture cannot be sent, and the equity.
+    async fn summary(&self, session_start: Option<f64>, previous: Option<f64>, all: bool) -> Result<(Vec<Block>, String, f64), String> {
         let (acc, orders) = self.snapshot().await?;
         let rows = position_rows(&acc, &orders);
         let equity = acc.wallet_balance + acc.unrealized_pnl;
         let signals = self.top_signals();
         let time = chrono_free_time();
-        let text = report::format_summary(&Summary {
+        let summary = Summary {
             env: env_label(&self.trading),
             time: &time,
             wallet: acc.wallet_balance,
@@ -156,8 +158,21 @@ impl Bot {
             positions: &rows,
             open_orders: orders.len(),
             signals: &signals,
-        });
-        Ok((text, equity))
+        };
+        Ok((cardimg::summary_card(&summary, all), report::format_summary(&summary), equity))
+    }
+
+    /// Send a card as a picture (a phone scrambles aligned text); if that fails the plain text goes instead.
+    async fn card(&self, blocks: Vec<Block>, fallback: &str, caption: &str) {
+        match tokio::task::spawn_blocking(move || cardimg::render(&blocks)).await {
+            Ok(Ok(png)) => match self.photo(png, caption).await {
+                Ok(()) => return,
+                Err(e) => eprintln!("[telegram] sending the picture failed: {e}"),
+            },
+            Ok(Err(e)) => eprintln!("[telegram] drawing the picture failed: {e}"),
+            Err(e) => eprintln!("[telegram] drawing the picture failed: {e}"),
+        }
+        self.say(fallback).await;
     }
 
     async fn chart(&self, symbol: &str, timeframe: &str) {
@@ -227,16 +242,22 @@ impl Bot {
             Command::Help => self.say(report::HELP).await,
             Command::Usage(u) => self.say(u).await,
             Command::Unknown(name) => self.say(&format!("Unknown command /{}. Send /help for the list.", report::esc(&name))).await,
-            Command::Status => match self.summary_text(None, None).await {
-                Ok((t, _)) => self.say(&t).await,
+            Command::Status => match self.summary(None, None, false).await {
+                Ok((blocks, text, _)) => self.card(blocks, &text, "Harvester status").await,
                 Err(e) => self.say(&report::esc(&e)).await,
             },
-            Command::Positions => match self.snapshot().await {
-                Ok((acc, orders)) => self.say(&report::format_positions(&position_rows(&acc, &orders))).await,
+            Command::Positions => match self.summary(None, None, true).await {
+                Ok((blocks, _, _)) => {
+                    let (acc, orders) = match self.snapshot().await {
+                        Ok(x) => x,
+                        Err(e) => return self.say(&report::esc(&e)).await,
+                    };
+                    self.card(blocks, &report::format_positions(&position_rows(&acc, &orders)), "Harvester positions").await
+                }
                 Err(e) => self.say(&report::esc(&e)).await,
             },
             Command::Orders => match self.snapshot().await {
-                Ok((_, orders)) => self.say(&report::format_orders(&orders)).await,
+                Ok((_, orders)) => self.card(cardimg::orders_card(env_label(&self.trading), &chrono_free_time(), &orders), &report::format_orders(&orders), "Open orders").await,
                 Err(e) => self.say(&report::esc(&e)).await,
             },
             Command::Signals => {
@@ -300,9 +321,9 @@ pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader) 
         tokio::time::sleep(FIRST_REPORT_AFTER).await;
         let (mut session_start, mut previous) = (None, None);
         loop {
-            match reporter.summary_text(session_start, previous).await {
-                Ok((text, equity)) => {
-                    reporter.say(&text).await;
+            match reporter.summary(session_start, previous, false).await {
+                Ok((blocks, text, equity)) => {
+                    reporter.card(blocks, &text, "Harvester summary").await;
                     session_start.get_or_insert(equity);
                     previous = Some(equity);
                 }

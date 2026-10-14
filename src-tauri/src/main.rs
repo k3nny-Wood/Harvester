@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod brackets;
+mod cardimg;
 mod chartimg;
 mod telegram;
 mod held;
