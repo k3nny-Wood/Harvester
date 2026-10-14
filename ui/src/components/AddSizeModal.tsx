@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { addQuantity, floorQty, maxAddPct } from '../addSize';
 import { formatPrice } from '../ladderMath';
+import { CapToggle } from './CapToggle';
 import { useApp } from '../store';
 import { refreshTrading } from '../trade';
 import type { Side, SymbolFilters } from '../types';
@@ -145,9 +146,16 @@ export function AddSizeModal({ target, onClose }: { target: AddSizeTarget; onClo
               </span>
             </div>
             {cap > 0 && sliderMax > 0 && sliderMax < 100 && wallet > 0 && (
-              <div className="muted quick-note">One order is limited to {cap} USDT of position value (MAX_ORDER_NOTIONAL in the .env file): that is why the slider stops at {sliderMax.toFixed(1)}%.</div>
+              <div className="muted quick-note">
+                One order is limited to {cap} USDT of position value (MAX_ORDER_NOTIONAL in the .env file): that is why the slider stops at {sliderMax.toFixed(1)}%. <CapToggle />
+              </div>
             )}
-            {sliderMax <= 0 && cap > 0 && <div className="warn quick-note">This order is already at the safety cap of {cap} USDT (MAX_ORDER_NOTIONAL).</div>}
+            {sliderMax <= 0 && cap > 0 && (
+              <div className="warn quick-note">
+                This order is already at the safety cap of {cap} USDT (MAX_ORDER_NOTIONAL). <CapToggle />
+              </div>
+            )}
+            {cap === 0 && trading?.capOverride && <div className="muted quick-note">The safety cap is off for this session: the slider is not limited. <CapToggle /></div>}
             {target.kind === 'order' && target.conditional && <div className="muted quick-note">A stop / take-profit cannot be amended: it is replaced by a bigger one at the same trigger (the old one is put back if that fails).</div>}
             {target.kind === 'order' && !target.conditional && <div className="muted quick-note">The order keeps its price. A bigger order goes to the back of the queue at that price.</div>}
             {target.kind === 'position' && mode === 'MARKET' && (
