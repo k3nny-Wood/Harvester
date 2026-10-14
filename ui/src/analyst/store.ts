@@ -69,7 +69,7 @@ export const useAnalyst = create<AnalystStore>((set, get) => ({
     const { symbol, timeframe, markPrice } = store.getState();
     set({ running: true, error: '' });
     try {
-      const input = await gatherInput(symbol, timeframe, note);
+      const input = await gatherInput(symbol, timeframe, note, get().latest[symbol]);
       const chart = velaRegistry.get(chartId);
       const image = get().includeImage && chart ? chartJpeg(chart) : null;
       const price = markPrice || input.frames[0].candles[input.frames[0].candles.length - 1].close;

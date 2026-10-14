@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildContext, candleTable, fmt, summarizeFrame, type AnalystInput } from '../src/analyst/context';
 import type { Kline } from '../src/types';
+import { costUsd, formatCost } from '../src/analyst/cost';
 
 function series(n: number, start = 100): Kline[] {
   let p = start;
@@ -92,5 +93,50 @@ describe('the text the model reads', () => {
   it('a cross-margin position without a liquidation price says it cannot be reached', () => {
     const t = buildContext(base({ position: { side: 'LONG', size: 10, entry: 100, mark: 101, pnl: 10, roePct: 5, leverage: 5, isolated: false, liquidation: 0 } }));
     expect(t).toContain('none (cross margin, not reachable)');
+  });
+});
+
+const deriv = {
+  fundingPct: 0.005, fundingAvgPct: 0.01, nextFundingMs: null, basisPct: 0.31, openInterestUsd: 5_853_593, openInterestChangePct: -1.5, openInterestHours: 24,
+  longShortRatio: 2.0075, longShortChange: 0.03, takerRatio: 0.69, takerRatioAvg: 0.89, volume24hUsd: 3_594_045, change24hPct: -1.08, bidDepthUsd: 1200, askDepthUsd: 800, bookBidShare: 0.6,
+};
+
+describe('derivatives, the BTC backdrop and the previous analysis', () => {
+  it('writes positioning data, the BTC lines and the previous call into the text', () => {
+    const t = buildContext(
+      base({
+        market: deriv,
+        btc: { market: deriv, change1hPct: 0.4, change4hPct: -1.2 },
+        previous: { createdMs: Date.UTC(2026, 9, 14, 9, 0), bias: 'bullish', confidence: 58, price: 99.5, summary: 'Holding above support', levels: [{ kind: 'support', price: 97 }] },
+      }),
+    );
+    expect(t).toContain('POSITIONING AND DERIVATIVES');
+    expect(t).toContain('funding 0.0050%');
+    expect(t).toContain('open interest 5.85M USDT, -1.5%');
+    expect(t).toContain('long/short account ratio 2.01');
+    expect(t).toContain('60% bids');
+    expect(t).toContain('BTC BACKDROP');
+    expect(t).toContain('BTCUSDT moved +0.40% over the last hour and -1.20%');
+    expect(t).toContain('PREVIOUS ANALYSIS');
+    expect(t).toContain('bullish, 58% confidence');
+    expect(t).toContain('support 97');
+  });
+
+  it('leaves the sections out when there is nothing to show', () => {
+    const t = buildContext(base());
+    expect(t).not.toContain('POSITIONING');
+    expect(t).not.toContain('BTC BACKDROP');
+    expect(t).not.toContain('PREVIOUS ANALYSIS');
+  });
+});
+
+describe('what an analysis costs', () => {
+  it('uses the list price of the model', () => {
+    expect(costUsd('claude-haiku-5-5', { inputTokens: 10_000, outputTokens: 2000 })).toBeCloseTo(0.002, 9);
+    expect(costUsd('claude-sonnet-5-5', { inputTokens: 10_000, outputTokens: 2000 })).toBeCloseTo(0.04, 9);
+    expect(costUsd('something-else', { inputTokens: 1, outputTokens: 1 })).toBeNull();
+    expect(formatCost(0.002)).toBe('$0.0020');
+    expect(formatCost(0.04)).toBe('$0.04');
+    expect(formatCost(null)).toBe('n/a');
   });
 });

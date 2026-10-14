@@ -19,7 +19,7 @@ Be honest about uncertainty. Nobody can reliably predict the next move of a cryp
 most analyses belong between 45 and 65, and a number above 75 needs several timeframes and indicators clearly agreeing. Prefer `neutral` when the evidence is mixed. \
 Say what would make the idea wrong (an invalidation level) and what the trader should watch. \
 If the trader has a position, comment on it (its stop and take-profit, its distance to liquidation, a scheduled delisting). \
-Keep the summary under 120 words and give at most 6 key levels, 4 scenarios, 6 reasons and 5 risks. This is analysis, not financial advice.";
+Funding, open interest, the long/short ratio, taker flow and order-book balance describe positioning: use them as context (crowded longs, a squeeze setup, thin books), not as certainties. \nIf a PREVIOUS ANALYSIS is given, say in `what_changed` what is different now (bias, levels, what played out) in under 40 words, and leave it empty when there is none. \nKeep the summary under 120 words and give at most 6 key levels, 4 scenarios, 6 reasons and 5 risks. This is analysis, not financial advice.";
 
 /// The JSON schema of the answer.
 pub fn analysis_schema() -> Value {
@@ -27,7 +27,7 @@ pub fn analysis_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["bias", "confidence", "horizon_hours", "summary", "key_levels", "scenarios", "reasons", "risks", "position_note"],
+        "required": ["bias", "confidence", "horizon_hours", "summary", "key_levels", "scenarios", "reasons", "risks", "position_note", "what_changed"],
         "properties": {
             "bias": { "type": "string", "enum": ["bullish", "bearish", "neutral"] },
             "confidence": { "type": "integer" },
@@ -41,7 +41,8 @@ pub fn analysis_schema() -> Value {
                 "properties": { "name": { "type": "string" }, "condition": { "type": "string" }, "outcome": { "type": "string" } } } },
             "reasons": strings,
             "risks": strings,
-            "position_note": { "type": "string" }
+            "position_note": { "type": "string" },
+            "what_changed": { "type": "string" }
         }
     })
 }
@@ -118,6 +119,9 @@ pub struct Analysis {
     pub risks: Vec<String>,
     #[serde(alias = "position_note", default)]
     pub position_note: String,
+    /// how this differs from the previous analysis of the symbol, empty when there was none
+    #[serde(alias = "what_changed", default)]
+    pub what_changed: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -252,7 +256,7 @@ mod tests {
                     "bias": "bullish", "confidence": 58, "horizon_hours": 12, "summary": " Holding above the 50 EMA. ",
                     "key_levels": [{"price": 0.381, "kind": "support", "note": "swing low"}, {"price": -1.0, "kind": "target", "note": "bad"}, {"price": 0.42, "kind": "invalidation", "note": ""}],
                     "scenarios": [{"name": "Continuation", "condition": "closes above 0.40", "outcome": "targets 0.43"}],
-                    "reasons": ["RSI 55"], "risks": ["delisting 20 Oct"], "position_note": "Stop is tight"})).unwrap()}
+                    "reasons": ["RSI 55"], "risks": ["delisting 20 Oct"], "position_note": "Stop is tight", "what_changed": "Bias flipped"})).unwrap()}
             ],
             "usage": {"input_tokens": 4200, "output_tokens": 900}
         })
@@ -267,6 +271,7 @@ mod tests {
         assert_eq!(a.key_levels.len(), 2, "the level with a negative price is dropped");
         assert_eq!(a.key_levels[0].kind, LevelKind::Support);
         assert_eq!(a.position_note, "Stop is tight");
+        assert_eq!(a.what_changed, "Bias flipped");
         assert_eq!(u, Usage { input_tokens: 4200, output_tokens: 900 });
     }
 
@@ -281,7 +286,7 @@ mod tests {
 
     #[test]
     fn out_of_range_values_are_pulled_in() {
-        let a = Analysis { bias: Bias::Neutral, confidence: 250, horizon_hours: 0, summary: String::new(), key_levels: vec![Level { price: f64::NAN, kind: LevelKind::Support, note: String::new() }], scenarios: vec![], reasons: vec!["x".into(); 20], risks: vec![], position_note: String::new() };
+        let a = Analysis { bias: Bias::Neutral, confidence: 250, horizon_hours: 0, summary: String::new(), key_levels: vec![Level { price: f64::NAN, kind: LevelKind::Support, note: String::new() }], scenarios: vec![], reasons: vec!["x".into(); 20], risks: vec![], position_note: String::new(), what_changed: String::new() };
         let s = sanitize(a);
         assert_eq!(s.confidence, 100);
         assert_eq!(s.horizon_hours, 1);

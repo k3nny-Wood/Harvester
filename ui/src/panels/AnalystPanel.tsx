@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, inTauri } from '../api';
 import { useActiveChart } from '../chartStore';
+import { costUsd, formatCost } from '../analyst/cost';
 import { useAnalyst } from '../analyst/store';
 import { useApp } from '../store';
 import type { AiEntry, AiModel, AiTrack } from '../types';
@@ -32,9 +33,15 @@ function Result({ e, now }: { e: AiEntry; now: number }) {
         <u />
       </div>
       <div className="muted ai-meta">
-        {e.symbol} {e.timeframe} · {ago(e.createdMs, now)} · {e.model.replace('claude-', '')} · {e.usage.inputTokens.toLocaleString()} in / {e.usage.outputTokens.toLocaleString()} out tokens{e.withImage ? ' · with picture' : ''}
+        {e.symbol} {e.timeframe} · {ago(e.createdMs, now)} · {e.model.replace('claude-', '')} · {e.usage.inputTokens.toLocaleString()} in / {e.usage.outputTokens.toLocaleString()} out tokens · ~{formatCost(costUsd(e.model, e.usage))}{e.withImage ? ' · with picture' : ''}
       </div>
       <p className="ai-summary">{a.summary}</p>
+      {a.whatChanged && (
+        <div className="ai-pos">
+          <b>Since last time: </b>
+          {a.whatChanged}
+        </div>
+      )}
       {a.positionNote && (
         <div className="ai-pos">
           <b>Your position: </b>
@@ -114,6 +121,9 @@ function TrackRecord() {
     <div className="ai-track">
       <div className="muted ai-note">
         Each directional call is scored against the real price {r.horizons.map((h) => `${h.hours} h`).join(', ')} later. “Always up” is how often price simply rose over the same periods: a bullish bias has to beat that, and a bearish one has to beat its opposite, to mean anything.
+      </div>
+      <div className="muted" title="Estimated from list prices and the tokens used">
+        Cost of the {track.entries.length} listed analyses: ~{formatCost(track.entries.reduce((sum, { entry }) => sum + (costUsd(entry.model, entry.usage) ?? 0), 0))}
       </div>
       <div className="muted">
         {r.analyses} analyses · {r.directional} directional · {r.neutral} neutral

@@ -144,6 +144,33 @@ impl AiHub {
         Ok(entry)
     }
 
+    /// Funding, open interest, positioning, taker flow, 24 hour numbers and book balance of a symbol, from Binance's public futures endpoints.
+    /// A feed that fails is left as a gap.
+    pub async fn market(&self, symbol: &str) -> Result<harvester_core::marketdata::Derivatives, String> {
+        if symbol.is_empty() || !symbol.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Err("Bad symbol.".into());
+        }
+        let get = |path: String| async move {
+            let url = format!("https://fapi.binance.com{path}");
+            match self.http.get(&url).send().await {
+                Ok(r) if r.status().is_success() => r.json::<Value>().await.unwrap_or(Value::Null),
+                _ => Value::Null,
+            }
+        };
+        let s = symbol.to_uppercase();
+        let (premium, funding, oi_now, oi_hist, ls, taker, ticker, depth) = tokio::join!(
+            get(format!("/fapi/v1/premiumIndex?symbol={s}")),
+            get(format!("/fapi/v1/fundingRate?symbol={s}&limit=9")),
+            get(format!("/fapi/v1/openInterest?symbol={s}")),
+            get(format!("/futures/data/openInterestHist?symbol={s}&period=1h&limit=24")),
+            get(format!("/futures/data/globalLongShortAccountRatio?symbol={s}&period=1h&limit=24")),
+            get(format!("/futures/data/takerlongshortRatio?symbol={s}&period=1h&limit=24")),
+            get(format!("/fapi/v1/ticker/24hr?symbol={s}")),
+            get(format!("/fapi/v1/depth?symbol={s}&limit=500")),
+        );
+        Ok(harvester_core::marketdata::assemble(&premium, &funding, &oi_now, &oi_hist, &ls, &taker, &ticker, &depth))
+    }
+
     /// Score the logged analyses against what price did afterwards (real 1-hour candles from Binance) and summarise.
     pub async fn track(&self) -> Result<Track, String> {
         let entries = self.history(None, 200);
@@ -195,7 +222,7 @@ mod tests {
             timeframe: "15m".into(),
             model: "claude-haiku-5-5".into(),
             price: 100.0,
-            analysis: Analysis { bias: Bias::Bullish, confidence: 55, horizon_hours: 12, summary: "s".into(), key_levels: vec![Level { price: 99.0, kind: LevelKind::Support, note: String::new() }], scenarios: vec![], reasons: vec![], risks: vec![], position_note: String::new() },
+            analysis: Analysis { bias: Bias::Bullish, confidence: 55, horizon_hours: 12, summary: "s".into(), key_levels: vec![Level { price: 99.0, kind: LevelKind::Support, note: String::new() }], scenarios: vec![], reasons: vec![], risks: vec![], position_note: String::new(), what_changed: String::new() },
             usage: Usage { input_tokens: 10, output_tokens: 5 },
             with_image: false,
         }

@@ -5,6 +5,7 @@ pub mod decimal;
 pub mod filters;
 pub mod held;
 pub mod lab;
+pub mod marketdata;
 pub mod ladder;
 pub mod movers;
 pub mod delist;

@@ -159,6 +159,12 @@ fn ai_history(state: State<'_, AppState>, symbol: Option<String>) -> Vec<ai::Log
     state.ai.history(symbol.as_deref(), 50)
 }
 
+/// Derivatives and positioning data of a symbol for the analyst.
+#[tauri::command]
+async fn ai_market(state: State<'_, AppState>, symbol: String) -> Result<harvester_core::marketdata::Derivatives, String> {
+    state.ai.market(&symbol).await
+}
+
 /// How the logged analyses did against what price did afterwards.
 #[tauri::command]
 async fn ai_track(state: State<'_, AppState>) -> Result<ai::Track, String> {
@@ -363,7 +369,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
             qfl_zones, smc_zones_cmd, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_params, scanner_sources,
-            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, news_for, open_url, delistings, ai_models, ai_analyze, ai_history, ai_track, bracket_add, bracket_list, bracket_cancel, cancel_order, modify_order, resize_exits, order_history, trade_history, symbol_leverage, leverage_brackets, cancel_all_orders, close_position, set_leverage, set_margin_type, set_cap_override
+            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, news_for, open_url, delistings, ai_models, ai_analyze, ai_history, ai_track, ai_market, bracket_add, bracket_list, bracket_cancel, cancel_order, modify_order, resize_exits, order_history, trade_history, symbol_leverage, leverage_brackets, cancel_all_orders, close_position, set_leverage, set_margin_type, set_cap_override
         ])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");

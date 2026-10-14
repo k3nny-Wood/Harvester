@@ -1,4 +1,4 @@
-import type { BaseZone, Kline, SmcZone } from '../types';
+import type { BaseZone, Derivatives, Kline, SmcZone } from '../types';
 import { atr, bollinger, ema, last, macd, rsi, sma, swings, volumeProfile } from './indicators';
 
 export interface Frame {
@@ -34,6 +34,34 @@ export interface AnalystInput {
   position?: PositionInfo;
   openOrders: Array<{ side: string; type: string; price: number; qty: number; reduceOnly: boolean }>;
   userNote?: string;
+  /** funding, open interest, positioning and the book of this symbol */
+  market?: Derivatives;
+  /** the same for BTCUSDT, with its recent moves (left out when the symbol is BTC itself) */
+  btc?: { market: Derivatives; change1hPct: number | null; change4hPct: number | null };
+  /** the last analysis of this symbol, when recent */
+  previous?: { createdMs: number; bias: string; confidence: number; price: number; summary: string; levels: Array<{ kind: string; price: number }> };
+}
+
+function usd(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return 'n/a';
+  const a = Math.abs(n);
+  return a >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : a >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : a >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : n.toFixed(0);
+}
+
+/** The positioning data as lines of text. */
+export function marketLines(m: Derivatives, label = ''): string[] {
+  const p = label ? `${label}: ` : '';
+  const out: string[] = [];
+  out.push(`${p}24h change ${pct(m.change24hPct)}, 24h volume ${usd(m.volume24hUsd)} USDT`);
+  out.push(
+    `${p}funding ${m.fundingPct == null ? 'n/a' : m.fundingPct.toFixed(4) + '%'} per period (average of the last settled periods ${m.fundingAvgPct == null ? 'n/a' : m.fundingAvgPct.toFixed(4) + '%'}; positive = longs pay shorts); mark vs index ${pct(m.basisPct, 3)}`,
+  );
+  out.push(`${p}open interest ${usd(m.openInterestUsd)} USDT, ${pct(m.openInterestChangePct, 1)} over the last ${m.openInterestHours ?? 'n/a'} hours`);
+  out.push(
+    `${p}long/short account ratio ${m.longShortRatio == null ? 'n/a' : m.longShortRatio.toFixed(2)} (${m.longShortChange == null ? 'n/a' : (m.longShortChange >= 0 ? '+' : '') + m.longShortChange.toFixed(2)} over the history); taker buy/sell volume ratio ${m.takerRatio == null ? 'n/a' : m.takerRatio.toFixed(2)} last hour, ${m.takerRatioAvg == null ? 'n/a' : m.takerRatioAvg.toFixed(2)} average`,
+  );
+  if (m.bookBidShare != null) out.push(`${p}order book within 1% of the price: bids ${usd(m.bidDepthUsd)} vs asks ${usd(m.askDepthUsd)} USDT (${(m.bookBidShare * 100).toFixed(0)}% bids)`);
+  return out;
 }
 
 /** A price with about 6 significant digits, without trailing zeros: 0.0204700 -> 0.02047, 83778.8 -> 83778.8. */
@@ -123,6 +151,12 @@ export function buildContext(i: AnalystInput): string {
       lines.push(`SMC ${name} ${fmt(z.low)} - ${fmt(z.high)} (${z.bullish ? 'expected support' : 'expected resistance'}${z.partiallyMitigated ? ', partly filled' : ''}, ${z.sizePct.toFixed(2)}% tall)`);
     }
   }
+  if (i.market) {
+    lines.push('', '== POSITIONING AND DERIVATIVES (Binance futures) ==', ...marketLines(i.market));
+  }
+  if (i.btc) {
+    lines.push('', '== BTC BACKDROP ==', `BTCUSDT moved ${pct(i.btc.change1hPct)} over the last hour and ${pct(i.btc.change4hPct)} over the last 4 hours`, ...marketLines(i.btc.market, 'BTC'));
+  }
   if (i.news.length || i.delisting) {
     lines.push('', '== NEWS AND NOTICES ==');
     if (i.delisting) lines.push(`WARNING: ${i.delisting}`);
@@ -141,6 +175,15 @@ export function buildContext(i: AnalystInput): string {
   }
   if (i.openOrders.length) {
     lines.push('Open orders: ' + i.openOrders.map((o) => `${o.side} ${o.type} ${fmt(o.qty)} @ ${fmt(o.price)}${o.reduceOnly ? ' (reduce-only)' : ''}`).join('; '));
+  }
+  if (i.previous) {
+    const v = i.previous;
+    lines.push(
+      '',
+      '== PREVIOUS ANALYSIS OF THIS SYMBOL ==',
+      `${utc(v.createdMs)} UTC, price then ${fmt(v.price)} (now ${fmt(price)}): ${v.bias}, ${v.confidence}% confidence. Summary: ${v.summary}`,
+      `Its levels: ${v.levels.map((l) => `${l.kind} ${fmt(l.price)}`).join(', ') || 'none'}`,
+    );
   }
   if (i.userNote?.trim()) lines.push('', '== THE TRADER ASKS ==', i.userNote.trim());
   lines.push('', 'Give your analysis now in the required JSON format.');

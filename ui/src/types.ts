@@ -211,6 +211,26 @@ export interface AiAnalysis {
   reasons: string[];
   risks: string[];
   positionNote: string;
+  whatChanged: string;
+}
+
+export interface Derivatives {
+  fundingPct: number | null;
+  fundingAvgPct: number | null;
+  nextFundingMs: number | null;
+  basisPct: number | null;
+  openInterestUsd: number | null;
+  openInterestChangePct: number | null;
+  openInterestHours: number | null;
+  longShortRatio: number | null;
+  longShortChange: number | null;
+  takerRatio: number | null;
+  takerRatioAvg: number | null;
+  volume24hUsd: number | null;
+  change24hPct: number | null;
+  bidDepthUsd: number | null;
+  askDepthUsd: number | null;
+  bookBidShare: number | null;
 }
 
 export interface AiEntry {
