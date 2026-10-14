@@ -66,6 +66,8 @@ pub enum Block {
 }
 
 const PAD: i32 = 24;
+const LOGO: i32 = 72;
+const LOGO_PNG: &[u8] = include_bytes!("../icons/icon.png");
 const TITLE: u32 = 36;
 const BIG: u32 = 54;
 const BODY: u32 = 27;
@@ -77,7 +79,7 @@ fn text_width(text: &str, size: u32) -> i32 {
 
 fn block_height(b: &Block) -> i32 {
     match b {
-        Block::Title(_) => 56,
+        Block::Title(_) => LOGO + 14,
         Block::Big(..) => 76,
         Block::Line(..) => 42,
         Block::Gap => 18,
@@ -115,7 +117,7 @@ pub fn render(blocks: &[Block]) -> Result<Vec<u8>, String> {
         };
         for b in blocks {
             match b {
-                Block::Title(t) => put(t, PAD, y, TITLE, TEXT)?,
+                Block::Title(t) => put(t, PAD + LOGO + 18, y + (LOGO - TITLE as i32) / 2 - 4, TITLE, TEXT)?,
                 Block::Big(t, tone) => put(t, PAD, y, BIG, tone.color())?,
                 Block::Line(t, tone) => put(t, PAD, y + 3, BODY, tone.color())?,
                 Block::Gap => {}
@@ -139,9 +141,29 @@ pub fn render(blocks: &[Block]) -> Result<Vec<u8>, String> {
         }
         root.present().map_err(|e| e.to_string())?;
     }
+    if matches!(blocks.first(), Some(Block::Title(_))) {
+        draw_logo(&mut buf, width, PAD, PAD);
+    }
     let mut png = Vec::new();
     image::codecs::png::PngEncoder::new(&mut png).write_image(&buf, width, height, image::ExtendedColorType::Rgb8).map_err(|e| e.to_string())?;
     Ok(png)
+}
+
+/// The Harvester logo, scaled to LOGO pixels, blended onto the card at (x0, y0). A logo that cannot be read is left out.
+fn draw_logo(buf: &mut [u8], width: u32, x0: i32, y0: i32) {
+    let Ok(img) = image::load_from_memory_with_format(LOGO_PNG, image::ImageFormat::Png) else { return };
+    let logo = image::imageops::resize(&img.to_rgba8(), LOGO as u32, LOGO as u32, image::imageops::FilterType::Lanczos3);
+    for (lx, ly, px) in logo.enumerate_pixels() {
+        let (x, y) = (x0 as u32 + lx, y0 as u32 + ly);
+        let i = ((y * width + x) * 3) as usize;
+        if i + 2 >= buf.len() {
+            continue;
+        }
+        let a = px[3] as u32;
+        for c in 0..3 {
+            buf[i + c] = ((px[c] as u32 * a + buf[i + c] as u32 * (255 - a)) / 255) as u8;
+        }
+    }
 }
 
 fn coin(symbol: &str) -> String {
