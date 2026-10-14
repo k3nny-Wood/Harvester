@@ -105,8 +105,8 @@ export function exitsMustWait(q: Quick, mark: number): boolean {
 }
 
 /**
- * Quick bracket order. Hover the chart and press F (long) or D (short): the entry is a stop-limit at the price under the pointer
- * (a plain limit when that price is on the near side of the market), with a take-profit and a stop-loss. The three lines can be dragged
+ * Quick bracket order. Hover the chart and press F (long) or D (short): the entry starts at the current price (drag it to where the order should wait: a stop-limit
+ * when that price is beyond the market, a plain limit on the near side), with a take-profit and a stop-loss around it. The three lines can be dragged
  * and a panel sets amount and leverage. OK places the entry together with its take-profit and stop-loss (both reduce-only, sized to the entry).
  */
 export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObject<HTMLDivElement | null> }) {
@@ -166,8 +166,10 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
 
   const open = useCallback(
     (side: Side) => {
+      // the setup starts at the current price, with the take-profit and stop-loss around it: the lines are then dragged to where they should be
+      const last = snapToTick(mark, filters?.tickSize);
       const raw = lastY.current != null ? priceAt(lastY.current) : null;
-      const entry = raw ?? snapToTick(mark, filters?.tickSize);
+      const entry = last > 0 ? last : (raw ?? 0); // the price under the pointer only when no price is known yet
       if (!(entry > 0)) return;
       setQ({ side, entry, ...defaultBracket(side, entry, tickSize) });
       setLad((l) => ({ ...l, end: defaultLadderEnd(side, entry, tickSize) }));
