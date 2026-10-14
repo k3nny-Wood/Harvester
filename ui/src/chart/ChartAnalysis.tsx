@@ -58,14 +58,14 @@ export function ChartAnalysis({ chart }: { chart: Vela | null }) {
           return (
             <g key={i}>
               <line x1={x0} x2={x1} y1={y} y2={y} stroke={COLORS[l.kind]} strokeWidth={1} strokeDasharray="2 5" opacity={0.85} />
-              <text x={x0 + 8} y={y - 4} className="trade-label" fill={COLORS[l.kind]}>
+              <text x={(x0 + x1) / 2} y={y - 4} textAnchor="middle" className="trade-label" fill={COLORS[l.kind]}>
                 {`AI ${l.kind} ${formatPrice(l.price, precision)}${l.note ? ' · ' + l.note : ''}`}
               </text>
             </g>
           );
         })}
         {yP != null && (
-          <g transform={`translate(${x1 - 175}, ${yP})`}>
+          <g transform={`translate(${(x0 + x1) / 2}, ${yP})`}>
             {a.bias !== 'neutral' && <polygon points={a.bias === 'bullish' ? '0,-8 -9,8 9,8' : '0,8 -9,-8 9,-8'} transform={`translate(0, ${a.bias === 'bullish' ? -22 : 22})`} fill={bias.color} />}
             {a.bias === 'neutral' && <rect x={-8} y={-30} width={16} height={16} transform="rotate(45 0 -22)" fill={bias.color} opacity={0.8} />}
             <text y={a.bias === 'bearish' ? 44 : -40} textAnchor="middle" fill={bias.color} className="trade-label">
