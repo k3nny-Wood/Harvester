@@ -3,6 +3,7 @@ import type { Vela } from '@luxalgo/vela';
 import { api } from '../api';
 import { useChart, useChartId } from '../chartStore';
 import { formatPrice, snapToTick } from '../ladderMath';
+import { floorQty } from '../addSize';
 import { estimateLiquidation } from '../liquidation';
 import { maxPct, sizeFromPct } from '../sizing';
 import { useApp } from '../store';
@@ -329,8 +330,24 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
     return undone;
   };
 
-  const place = async () => {
-    if (busy || problems.length || rungTooSmall || !(qty > 0)) return;
+  /** `asMarket`: enter at once at the market price (the whole amount in one order, the ladder ignored) instead of waiting at the chosen level. */
+  const place = async (asMarket = false) => {
+    // a market entry happens at the current price, so the exits are checked against that, not against the level on the chart
+    const eff: Quick = asMarket ? { ...q, entry: mark } : q;
+    const effProblems = asMarket ? bracketProblems(eff) : problems;
+    const effWaits = asMarket ? exitsMustWait(eff, mark) : waits;
+    const marketQty = asMarket && mark > 0 ? floorQty(notional / mark, stepSize) : 0;
+    const effRungs = asMarket ? [{ price: mark, qty: marketQty }] : rungs;
+    if (busy) return;
+    if (asMarket && effProblems.length) {
+      useApp.getState().toast(`Market entry: ${effProblems[0]}`, 'warn');
+      return;
+    }
+    if (asMarket && (!(marketQty > 0) || marketQty * mark < minNotional)) {
+      useApp.getState().toast(`Market entry: the amount is below the exchange's minimum order size (${minNotional} USDT).`, 'warn');
+      return;
+    }
+    if (!asMarket && (problems.length || rungTooSmall || !(qty > 0))) return;
     setBusy(true);
     const app = useApp.getState();
     const placed: OrderAck[] = [];
@@ -340,26 +357,27 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
         initialLev.current = lev;
       }
       const limit = (p: number) => snapToTick(p * (long ? 1 + LIMIT_OFFSET : 1 - LIMIT_OFFSET), filters?.tickSize);
-      for (const [i, rung] of rungs.entries()) {
+      for (const [i, rung] of effRungs.entries()) {
         const k = entryKind(q.side, rung.price, mark);
-        const req: OrderRequest =
-          k === 'STOP' ? { symbol, side: q.side, type: 'STOP', quantity: rung.qty, stopPrice: rung.price, price: limit(rung.price) } : { symbol, side: q.side, type: 'LIMIT', quantity: rung.qty, price: rung.price };
+        const req: OrderRequest = asMarket
+          ? { symbol, side: q.side, type: 'MARKET', quantity: rung.qty }
+          : k === 'STOP' ? { symbol, side: q.side, type: 'STOP', quantity: rung.qty, stopPrice: rung.price, price: limit(rung.price) } : { symbol, side: q.side, type: 'LIMIT', quantity: rung.qty, price: rung.price };
         try {
           placed.push(await api.placeOrder(req));
         } catch (e) {
           const undone = await rollback(placed);
-          throw new Error(`order ${i + 1} of ${rungs.length} @ ${formatPrice(rung.price, precision)} was refused (${e}). ${placed.length ? `${undone} of the ${placed.length} orders before it were cancelled.` : 'Nothing was placed.'}`);
+          throw new Error(`order ${i + 1} of ${effRungs.length} @ ${formatPrice(rung.price, precision)} was refused (${e}). ${placed.length ? `${undone} of the ${placed.length} orders before it were cancelled.` : 'Nothing was placed.'}`);
         }
       }
       // the protective orders cover the whole entry, and are reduce-only so they can never open a position
       const total = placed.reduce((a, x) => a + x.quantity, 0);
       const single = placed.length === 1 ? placed[0] : null;
       const exit = (type: 'TAKE_PROFIT_MARKET' | 'STOP_MARKET', stopPrice: number): OrderRequest => ({ symbol, side: side2, type, quantity: total, stopPrice, reduceOnly: true });
-      const what = rungs.length > 1 ? `${rungs.length}-order ${long ? 'long' : 'short'} ladder ${formatPrice(q.entry, precision)} to ${formatPrice(rungs[rungs.length - 1].price, precision)}` : `${long ? 'long' : 'short'} ${kind === 'STOP' ? 'stop-limit' : 'limit'} entry @ ${formatPrice(q.entry, precision)}`;
-      if (waits) {
+      const what = asMarket ? `${long ? 'long' : 'short'} market entry` : rungs.length > 1 ? `${rungs.length}-order ${long ? 'long' : 'short'} ladder ${formatPrice(q.entry, precision)} to ${formatPrice(rungs[rungs.length - 1].price, precision)}` : `${long ? 'long' : 'short'} ${kind === 'STOP' ? 'stop-limit' : 'limit'} entry @ ${formatPrice(q.entry, precision)}`;
+      if (effWaits) {
         // the exits are on the wrong side of the market for now: Harvester sends them the moment the entry has filled
         try {
-          await api.bracketAdd({ symbol, long, takeProfit: q.tp, stopLoss: q.sl, entryOrderId: single && single.status !== 'HELD' ? single.orderId : 0, entryConditional: single ? single.conditional : false, quantity: total });
+          await api.bracketAdd({ symbol, long, takeProfit: q.tp, stopLoss: q.sl, entryOrderId: !asMarket && single && single.status !== 'HELD' ? single.orderId : 0, entryConditional: single ? single.conditional : false, quantity: total });
         } catch (e) {
           await rollback(placed);
           throw new Error(`could not arm the take-profit / stop-loss (${e}); the entry orders were cancelled`);
@@ -408,6 +426,15 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
           </text>
           <title>Grab to move · double-click to place the order</title>
         </g>
+        {which === 'entry' && (
+          <g className="line-tag" transform={`translate(${offX + plotW - TAG_W - 2 - 22}, ${y - 9})`} style={{ cursor: 'pointer' }} onClick={() => canTrade && void place(true)}>
+            <rect width={18} height={18} rx={3} fill="#0f1620" fillOpacity={0.45} stroke={color} />
+            <text x={9} y={12.5} textAnchor="middle" fill={color}>
+              M
+            </text>
+            <title>Market: enter now at the market price instead of waiting for this level, with the take-profit and stop-loss</title>
+          </g>
+        )}
         <text x={offX + 8} y={y - 4} className="trade-label" fill={color}>
           {label}
         </text>
