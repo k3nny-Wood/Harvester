@@ -10,6 +10,7 @@ import { refreshTrading } from '../trade';
 import { delistingFor, describeDelisting, useDelistings } from '../delistings';
 import { defaultExitPrice, exitState } from '../positionExits';
 import { AddSizeModal, type AddSizeTarget } from '../components/AddSizeModal';
+import { LeverageModal } from '../components/LeverageModal';
 import type { ArmedBracket, OrderRecord, TradeRecord } from '../types';
 
 function money(n: number, digits = 2): string {
@@ -50,6 +51,7 @@ export function PositionsPanel() {
   const account = useApp((s) => s.account);
   const toast = useApp((s) => s.toast);
   const [addFor, setAddFor] = useState<AddSizeTarget | null>(null);
+  const [levFor, setLevFor] = useState<{ symbol: string; notional: number; isolated: boolean } | null>(null);
   const openOrders = useApp((s) => s.orders);
   const live = useLiveMarks(account?.positions.map((p) => p.symbol) ?? []);
   if (trading && !trading.hasCredentials) return <NoKeys />;
@@ -164,6 +166,9 @@ export function PositionsPanel() {
                       + TP
                     </button>
                   )}
+                  <button title="Raise the leverage of this position (up only)" onClick={() => setLevFor({ symbol: p.symbol, notional: Math.abs(p.amount) * p.markPrice, isolated: p.isolated })}>
+                    Lev
+                  </button>
                   <button title="Add to this position (with its stop-loss and take-profit resized)" onClick={() => setAddFor({ kind: 'position', symbol: p.symbol, amount: p.amount, mark: p.markPrice })}>
                     + Add
                   </button>
@@ -179,6 +184,7 @@ export function PositionsPanel() {
         </tbody>
       </table>
       {addFor && <AddSizeModal target={addFor} onClose={() => setAddFor(null)} />}
+      {levFor && <LeverageModal {...levFor} onClose={() => setLevFor(null)} />}
     </div>
   );
 }
