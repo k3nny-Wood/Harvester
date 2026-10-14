@@ -17,6 +17,7 @@ import { SignalsPanel } from './panels/SignalsPanel';
 import { SymbolsPanel } from './panels/SymbolsPanel';
 import { useApp } from './store';
 import { startTradingPoll } from './trade';
+import { LiveUPnL } from './components/LiveUPnL';
 
 const LAYOUT_KEY = 'harvester.layout.v6';
 
@@ -230,7 +231,7 @@ export function App() {
               Available <b>{account.availableBalance.toFixed(2)}</b>
             </span>
             <span>
-              uPnL <b className={account.unrealizedPnl >= 0 ? 'up' : 'down'}>{account.unrealizedPnl.toFixed(2)}</b>
+              uPnL <LiveUPnL fallback={account.unrealizedPnl} />
             </span>
           </div>
         )}

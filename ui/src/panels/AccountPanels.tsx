@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useLiveMarks } from '../liveMarks';
+import { withLiveMarks } from '../livePositions';
 import { chartRegistry } from '../chartStore';
 import { confirmDialog } from '../confirm';
 import { openChart } from '../dock';
@@ -41,10 +42,7 @@ export function PositionsPanel() {
   if (trading && !trading.hasCredentials) return <NoKeys />;
   if (!account) return <div className="panel pad muted">Loading the account…</div>;
   // the REST read can be seconds old: show Binance's live mark price and the profit it implies (linear contracts)
-  const positions = account.positions.map((p) => {
-    const mark = live[p.symbol] ?? p.markPrice;
-    return { ...p, markPrice: mark, unrealizedPnl: live[p.symbol] ? p.amount * (mark - p.entryPrice) : p.unrealizedPnl };
-  });
+  const positions = withLiveMarks(account.positions, live);
 
   // a stop-loss / take-profit for the whole position, reduce-only, placed a little way from the price: its line and box appear on the chart,
   // where they can be dragged to the level wanted
