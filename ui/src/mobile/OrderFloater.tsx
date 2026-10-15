@@ -9,7 +9,7 @@ import { refreshTrading } from '../trade';
 import type { OrderAck, OrderRequest, Side, SymbolFilters } from '../types';
 import { fmtPrice } from './chartMath';
 import { exitsWait, resolveBoth } from './exits';
-import { useFloater } from './floaterStore';
+import { loadSaved, save, useFloater } from './floaterStore';
 
 /** The default side for a level: above the price you would sell there (short), below it you would buy (long). */
 export function sideFor(price: number, mark: number): Side {
@@ -17,11 +17,12 @@ export function sideFor(price: number, mark: number): Side {
 }
 
 /**
- * The small order box that opens where the chart was pressed and held: a limit order (or, when the level is beyond the price, a stop-limit)
+ * The order dock that opens at the bottom of the chart when the chart is pressed and held (it takes the place of the Long / Short buttons, so
+ * nothing covers the chart): a limit order (or, when the level is beyond the price, a stop-limit)
  * at that price. The SL and TP buttons add a stop-loss and a take-profit to the order (their lines appear on the chart and can be dragged);
  * without them the order is just the entry. Exits that cannot be placed yet wait for the entry to fill.
  */
-export function OrderFloater({ symbol, mark, onClose, onHeight, style }: { symbol: string; mark: number; onClose: () => void; /** the box's natural height, so the tab can decide whether it fits above the lines */ onHeight: (h: number) => void; style: React.CSSProperties }) {
+export function OrderFloater({ symbol, mark, onClose }: { symbol: string; mark: number; onClose: () => void }) {
   const f = useFloater((s) => s.f)!;
   const patch = useFloater((s) => s.patch);
   const account = useApp((s) => s.account);
@@ -31,16 +32,13 @@ export function OrderFloater({ symbol, mark, onClose, onHeight, style }: { symbo
   const [lev, setLev] = useState(1);
   const [maxLev, setMaxLev] = useState(20);
   const [startLev, setStartLev] = useState(1);
-  const [pct, setPct] = useState(5);
+  const [pct, setPct] = useState(() => loadSaved().pct);
+  // the amount and leverage sit behind the ⋯ button; the exits' percentages too
+  const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState('');
   const tick = filters?.tickSize;
-  const ref = useRef<HTMLDivElement>(null);
-  // tell the tab how tall the box wants to be (after every render)
-  useEffect(() => {
-    const h = ref.current?.scrollHeight;
-    if (h) onHeight(h);
-  });
+  useEffect(() => save({ pct }), [pct]);
 
   // the price box follows the level when it is moved by the handle on the chart (not while the price is being typed)
   const typed = useRef(false);
@@ -205,9 +203,10 @@ export function OrderFloater({ symbol, mark, onClose, onHeight, style }: { symbo
     );
   };
 
+  const coinName = symbol.replace('USDT', '');
   return (
-    <div ref={ref} className="m-floater" style={style} onPointerDown={(e) => e.stopPropagation()}>
-      <div className="m-fl-head">
+    <div className="m-dock" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="m-dock-row">
         <input
           type="text"
           inputMode="decimal"
@@ -228,29 +227,39 @@ export function OrderFloater({ symbol, mark, onClose, onHeight, style }: { symbo
           <button className={long ? 'on buy' : ''} onClick={() => patch({ side: 'BUY' })}>Buy</button>
           <button className={!long ? 'on sell' : ''} onClick={() => patch({ side: 'SELL' })}>Sell</button>
         </div>
+        <button className={`m-dock-more${expanded ? ' on' : ''}`} onClick={() => setExpanded((v) => !v)} aria-label="Amount, leverage and exit settings" title="Amount, leverage and exit settings">
+          {expanded ? '▾' : '⋯'}
+        </button>
+        <button className="m-dock-x" onClick={onClose} aria-label="Close">×</button>
       </div>
-      <div className="m-fl-noterow">
-        <div className="m-fl-note">
-          {entryOk ? `${kind === 'STOP' ? 'Stop-limit' : 'Limit'} · ${(entry / mark - 1) * 100 >= 0 ? '+' : ''}${((entry / mark - 1) * 100).toFixed(2)}% vs price` : ' '}
+      <div className="m-dock-info">
+        <span>{entryOk ? `${kind === 'STOP' ? 'Stop-limit' : 'Limit'} ${(entry / mark - 1) * 100 >= 0 ? '+' : ''}${((entry / mark - 1) * 100).toFixed(2)}%` : ' '}</span>
+        <span>{qty > 0 ? qty : 0} {coinName} ≈ {(qty * entry || 0).toFixed(0)} USDT · {usedPct.toFixed(1)}% · {lev}x</span>
+        {slPrice != null && <span className="down">risk {risk.toFixed(2)}</span>}
+        {tpPrice != null && <span className="up">reward {reward.toFixed(2)}</span>}
+      </div>
+      {expanded && (
+        <div className="m-dock-settings">
+          <div className="m-fl-pair">
+            <label>
+              <span>Amount <b>{usedPct.toFixed(1)}%</b></span>
+              <input type="range" min={0} max={100} step={0.5} value={pct} onChange={(e) => setPct(Number(e.target.value))} />
+            </label>
+            <label>
+              <span>Leverage <b>{lev}x</b></span>
+              <input type="range" min={1} max={maxLev} step={1} value={lev} onChange={(e) => setLev(Number(e.target.value))} />
+            </label>
+          </div>
+          {f.useSl || f.useTp ? (
+            <div className={`m-fl-pair${f.useSl && f.useTp ? '' : ' one'}`}>
+              {f.useSl && box('sl')}
+              {f.useTp && box('tp')}
+            </div>
+          ) : (
+            <div className="m-dock-hint">Press SL and / or TP to add a stop-loss and a take-profit. Their lines can also be dragged on the chart.</div>
+          )}
         </div>
-        <button className="m-x" onClick={onClose} aria-label="Close">×</button>
-      </div>
-      <div className="m-fl-pair">
-        <label>
-          <span>Amount <b>{usedPct.toFixed(1)}%</b></span>
-          <input type="range" min={0} max={100} step={0.5} value={pct} onChange={(e) => setPct(Number(e.target.value))} />
-        </label>
-        <label>
-          <span>Leverage <b>{lev}x</b></span>
-          <input type="range" min={1} max={maxLev} step={1} value={lev} onChange={(e) => setLev(Number(e.target.value))} />
-        </label>
-      </div>
-      {(f.useSl || f.useTp) && <div className={`m-fl-pair${f.useSl && f.useTp ? '' : ' one'}`}>{f.useSl && box('sl')}{f.useTp && box('tp')}</div>}
-      <div className="m-fl-sum">
-        {qty > 0 ? qty : 0} {symbol.replace('USDT', '')} · ≈ {(qty * entry || 0).toFixed(2)} USDT
-        {slPrice != null && <> · <span className="down">risk {risk.toFixed(2)}</span></>}
-        {tpPrice != null && <> · <span className="up">reward {reward.toFixed(2)}</span></>}
-      </div>
+      )}
       <div className="m-apply-row">
         <button
           className={`m-market ${long ? 'buy' : 'sell'}`}

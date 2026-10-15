@@ -187,7 +187,6 @@ export function ScannerTab() {
 
 // ---------------------------------------------------------------- chart
 
-const FLOATER_W = 300;
 
 /**
  * While an order that is on the exchange is being moved: just the large readout (old price, new price, % change) beside its line. There is no
@@ -222,56 +221,6 @@ function adjustStyle(tab: HTMLElement | null, bounds: { top: number; bottom: num
   return y - ADJUST_GAP - 4 >= ADJUST_H ? { bottom: th - y + ADJUST_GAP } : { top: y + ADJUST_GAP };
 }
 
-const FLOATER_GAP = 14;
-
-/**
- * Where the order box goes: above the highest line of the order so every line stays in view; when that does not leave room for the box it
- * flicks to below the lowest line; when the lines span the chart and there is no room outside them it goes on the entry line (above or below
- * it); only when it fits nowhere does it take the side with more room and scroll inside. `h` is the height the box wants.
- */
-function floaterLayout(startY: number, tab: HTMLElement | null, bounds: { top: number; bottom: number; entry: number | null } | null, h: number): React.CSSProperties {
-  // the box stays inside the chart itself: it never reaches the Long / Short buttons below it or the rows above it
-  const tabRect = tab?.getBoundingClientRect();
-  const chartRect = tab?.querySelector('.m-chart')?.getBoundingClientRect();
-  const areaTop = tabRect && chartRect ? chartRect.top - tabRect.top : 0;
-  const areaBottom = tabRect && chartRect ? chartRect.bottom - tabRect.top : tab?.clientHeight ?? 600;
-  const w = tab?.clientWidth ?? 360;
-  const th = tab?.clientHeight ?? 600;
-  const width = Math.min(FLOATER_W, w - 16);
-  const left = 8; // against the left edge of the chart
-  const top = bounds?.top ?? startY;
-  const bottom = bounds?.bottom ?? startY;
-  const above = top - areaTop - FLOATER_GAP - 4;
-  const below = areaBottom - bottom - FLOATER_GAP - 4;
-  if (above >= h) return { left, width, bottom: th - top + FLOATER_GAP };
-  if (below >= h) return { left, width, top: bottom + FLOATER_GAP };
-  // the lines run (nearly) from the top of the chart to the bottom, so there is no room outside them: the box goes on the entry line instead,
-  // above it or below it, wherever it fits (it is see-through, so the lines behind it stay visible)
-  if (bounds?.entry != null) {
-    const e = bounds.entry;
-    const aboveEntry = e - areaTop - FLOATER_GAP - 4;
-    const belowEntry = areaBottom - e - FLOATER_GAP - 4;
-    if (aboveEntry >= h) return { left, width, bottom: th - e + FLOATER_GAP };
-    if (belowEntry >= h) return { left, width, top: e + FLOATER_GAP };
-    return aboveEntry >= belowEntry ? { left, width, bottom: th - e + FLOATER_GAP, maxHeight: Math.max(120, aboveEntry) } : { left, width, top: e + FLOATER_GAP, maxHeight: Math.max(120, belowEntry) };
-  }
-  return above >= below ? { left, width, bottom: th - top + FLOATER_GAP, maxHeight: Math.max(120, above) } : { left, width, top: bottom + FLOATER_GAP, maxHeight: Math.max(120, below) };
-}
-
-/** The order box is drawn at this fraction of its natural size (the box is laid out full size and scaled, so everything in it shrinks together). */
-const FLOATER_SCALE = 0.7;
-
-/**
- * The style of the order box: where it goes (see floaterLayout, worked out with the height the box really takes once scaled) and the scale itself,
- * anchored at the edge nearest the lines so it stays right beside them.
- */
-function floaterStyle(startY: number, tab: HTMLElement | null, bounds: { top: number; bottom: number; entry: number | null } | null, h: number): React.CSSProperties {
-  const base = floaterLayout(startY, tab, bounds, h * FLOATER_SCALE);
-  const fromBottom = base.bottom != null;
-  const maxHeight = typeof base.maxHeight === 'number' ? base.maxHeight / FLOATER_SCALE : undefined;
-  return { ...base, maxHeight, transform: `scale(${FLOATER_SCALE})`, transformOrigin: fromBottom ? 'left bottom' : 'left top' };
-}
-
 export function ChartTab() {
   const { symbol, timeframe, openChart, setTimeframe } = useMobile();
   const symbols = useApp((s) => s.symbols);
@@ -287,7 +236,6 @@ export function ChartTab() {
   const tabRef = useRef<HTMLDivElement>(null);
   // where the pending order's line is, in the coordinates of the tab
   const [bounds, setBounds] = useState<{ top: number; bottom: number; entry: number | null } | null>(null);
-  const [floaterH, setFloaterH] = useState(250);
   const [error, setError] = useState('');
   const toast = useApp((s) => s.toast);
   // an order that is on the exchange and is being moved: double-tap its line, drag the handle, press Apply
@@ -543,11 +491,7 @@ export function ChartTab() {
           }}
           onTap={({ price, tol }) => {
             // while an order is being moved a tap away from its line cancels the move; a tap on the line may be the first half of the double tap that sets it
-            if (adjust) {
-              if (Math.abs(adjust.price - price) > tol) setAdjust(null);
-              return;
-            }
-            useFloater.getState().close();
+            if (adjust && Math.abs(adjust.price - price) > tol) setAdjust(null);
           }}
           onDoubleTap={({ price, tol }) => startAdjust(price, tol)}
           onPendingDoubleTap={(id) => id === 'adjust' && void applyAdjust()}
@@ -559,20 +503,13 @@ export function ChartTab() {
             useFloater.getState().open(p.price, sideFor(p.price, mark), p.y - rect.top);
           }}
         />}
-      <div className="m-trade-bar">
-        <button className="m-buy" disabled={!trading?.hasCredentials || !(mark > 0)} onClick={() => setTrade('BUY')}>Long</button>
-        <button className="m-sell" disabled={!trading?.hasCredentials || !(mark > 0)} onClick={() => setTrade('SELL')}>Short</button>
-      </div>
-      {floater && (
-        <OrderFloater
-          key={floater.id}
-          symbol={symbol}
-          mark={mark}
-          onClose={() => useFloater.getState().close()}
-          onHeight={(h) => setFloaterH((cur) => (Math.abs(cur - h) > 1 ? h : cur))}
-          style={floaterStyle(floater.y, tabRef.current, bounds, floaterH)}
-        />
+      {!floater && (
+        <div className="m-trade-bar">
+          <button className="m-buy" disabled={!trading?.hasCredentials || !(mark > 0)} onClick={() => setTrade('BUY')}>Long</button>
+          <button className="m-sell" disabled={!trading?.hasCredentials || !(mark > 0)} onClick={() => setTrade('SELL')}>Short</button>
+        </div>
       )}
+      {floater && <OrderFloater key={floater.id} symbol={symbol} mark={mark} onClose={() => useFloater.getState().close()} />}
       {adjust && <AdjustReadout adjust={adjust} style={adjustStyle(tabRef.current, bounds)} />}
       {trade && <TradeSheet side={trade} symbol={symbol} mark={mark} onClose={() => setTrade(null)} />}
     </div>

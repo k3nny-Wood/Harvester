@@ -1149,3 +1149,116 @@
   font-weight: 700;
   line-height: 1;
 }
+
+/* the order dock: where the Long / Short buttons are while an order is being set up; nothing covers the chart */
+.m-dock {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 8px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+.m-dock-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.m-app .m-dock-row input[type='text'] {
+  flex: 1;
+  min-width: 70px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  border-radius: 8px;
+}
+.m-app .m-dock .m-toggle {
+  min-width: 38px;
+  min-height: 38px;
+  height: 38px;
+  padding: 0 8px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.m-app .m-dock .m-seg button {
+  min-height: 38px;
+  height: 38px;
+  padding: 0 9px;
+  font-size: 13px;
+}
+.m-app .m-dock .m-seg button:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.m-app .m-dock .m-seg button:last-child {
+  border-radius: 0 8px 8px 0;
+}
+.m-app .m-dock-more,
+.m-app .m-dock-x {
+  min-width: 34px;
+  width: 34px;
+  min-height: 38px;
+  height: 38px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  border-radius: 8px;
+}
+.m-app .m-dock-more.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.m-dock-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--muted);
+}
+.m-dock-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.m-app .m-dock .m-fl-pair {
+  gap: 10px;
+}
+.m-app .m-dock .m-fl-pair label > span {
+  font-size: 12px;
+}
+.m-app .m-dock .m-fl-pair input[type='range'] {
+  height: 26px;
+}
+.m-app .m-dock .m-fl-box input[type='text'] {
+  height: 36px;
+  min-height: 36px;
+  padding: 0 52px 0 30px;
+  font-size: 14px;
+}
+.m-app .m-dock .m-apply-row {
+  margin-top: 0;
+  gap: 8px;
+}
+.m-app .m-dock .m-primary,
+.m-app .m-dock .m-market {
+  min-height: 44px;
+  height: 44px;
+  font-size: 15px;
+  border-radius: 8px;
+}
+.m-app .m-dock .m-market {
+  width: 54px;
+  font-size: 18px;
+}
+
+.m-dock-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.m-dock input[type='range'] {
+  accent-color: var(--accent);
+}
