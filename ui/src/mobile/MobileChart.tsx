@@ -254,11 +254,11 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const a = axis.current;
     if (a) {
-      // dragging down stretches the chart (a smaller price range), dragging up squashes it
+      // dragging down squashes the chart (a larger price range), dragging up stretches it
       const dy = e.clientY - a.startY;
       if (Math.abs(dy) > 4) a.moved = true;
       const mid = (a.lo + a.hi) / 2;
-      const span = Math.max(mid * 1e-4, (a.hi - a.lo) / Math.exp(dy / 200));
+      const span = Math.max(mid * 1e-4, (a.hi - a.lo) * Math.exp(dy / 200));
       setManual({ lo: mid - span / 2, hi: mid + span / 2 });
       return;
     }
