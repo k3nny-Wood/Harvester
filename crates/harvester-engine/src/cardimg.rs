@@ -67,7 +67,7 @@ pub enum Block {
 
 const PAD: i32 = 24;
 const LOGO: i32 = 72;
-const LOGO_PNG: &[u8] = include_bytes!("../icons/logo.png");
+const LOGO_PNG: &[u8] = include_bytes!("../assets/logo.png");
 const TITLE: u32 = 36;
 const BIG: u32 = 54;
 const BODY: u32 = 27;

@@ -1,0 +1,12 @@
+[package]
+name = "harvester-server"
+description = "Harvester without a window: the Telegram bot, the alerts and the scanner, for a machine that runs all day (a server, or a PC that is left on)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+harvester-core = { path = "../harvester-core" }
+harvester-engine = { path = "../harvester-engine" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+dotenvy = "0.15"

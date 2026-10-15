@@ -13,7 +13,7 @@ use harvester_core::signals::spike_signal;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::AppHandle;
+use crate::events::Events;
 use tokio_tungstenite::tungstenite::Message;
 
 pub type SharedDetector = Arc<Mutex<MoverDetector>>;
@@ -38,11 +38,11 @@ pub fn parse_tickers(text: &str) -> Vec<(String, u64, f64, f64)> {
     .unwrap_or_default()
 }
 
-pub fn start(app: AppHandle, market: Arc<Market>, injector: Injector, detector: SharedDetector) {
+pub fn start(app: Events, market: Arc<Market>, injector: Injector, detector: SharedDetector) {
     // a worker fetches the 1-minute candles for the thumbnails one at a time, so a market-wide move cannot hammer the API
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Spike>(64);
     let (worker_app, worker_inj, worker_market) = (app.clone(), injector.clone(), market.clone());
-    tauri::async_runtime::spawn(async move {
+    crate::rt::spawn(async move {
         while let Some(spike) = rx.recv().await {
             let candles: Vec<Candle> = worker_market.mainnet_klines(&spike.symbol, "1m", 70, None).await.map(|k| k.iter().map(|k| Candle::new(k.time, k.open, k.high, k.low, k.close, k.volume)).collect()).unwrap_or_default();
             worker_inj.add(&worker_app, spike_signal(&spike, &candles, 60));
@@ -50,7 +50,7 @@ pub fn start(app: AppHandle, market: Arc<Market>, injector: Injector, detector: 
         }
     });
 
-    tauri::async_runtime::spawn(async move {
+    crate::rt::spawn(async move {
         let url = format!("{}/ws/!ticker@arr", Env::Live.ws_base());
         let mut backoff = 2u64;
         loop {

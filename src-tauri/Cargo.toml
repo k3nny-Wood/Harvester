@@ -10,17 +10,10 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 harvester-core = { path = "../crates/harvester-core" }
+harvester-engine = { path = "../crates/harvester-engine" }
 tauri = { version = "2", features = [] }
 serde.workspace = true
 serde_json.workspace = true
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 rust_decimal.workspace = true
-tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
-futures-util = "0.3"
-hmac = "0.12"
-sha2 = "0.10"
-hex = "0.4"
 dotenvy = "0.15"
-plotters = "0.3"
-image = { version = "0.25", default-features = false, features = ["png"] }

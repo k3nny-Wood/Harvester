@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use crate::events::Events;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,7 +75,7 @@ fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
-fn emit_progress(app: &AppHandle, phase: &str, done: usize, total: usize) {
+fn emit_progress(app: &Events, phase: &str, done: usize, total: usize) {
     let _ = app.emit("lab-progress", LabProgress { phase: phase.to_string(), done, total });
 }
 
@@ -92,7 +92,7 @@ impl Lab {
         Ok(())
     }
 
-    pub async fn run(&self, app: AppHandle, market: Arc<Market>, req: LabRequest) -> Result<LabReport, String> {
+    pub async fn run(&self, app: Events, market: Arc<Market>, req: LabRequest) -> Result<LabReport, String> {
         self.begin()?;
         let out = self.run_inner(&app, &market, req).await;
         self.running.store(false, Ordering::SeqCst);
@@ -100,7 +100,7 @@ impl Lab {
     }
 
     /// Download (or read from the cache) the 15 m candles of the busiest perpetuals from `from_ms` to now.
-    async fn load_candles(&self, app: &AppHandle, market: &Arc<Market>, universe: usize, from_ms: u64) -> Result<HashMap<String, Vec<Candle>>, String> {
+    async fn load_candles(&self, app: &Events, market: &Arc<Market>, universe: usize, from_ms: u64) -> Result<HashMap<String, Vec<Candle>>, String> {
         emit_progress(app, "listing symbols", 0, 0);
         let symbols: Vec<String> = market.mainnet_top_symbols(universe).await?;
         let _ = std::fs::create_dir_all(cache_dir());
@@ -132,7 +132,7 @@ impl Lab {
         Ok(all)
     }
 
-    async fn run_inner(&self, app: &AppHandle, market: &Arc<Market>, req: LabRequest) -> Result<LabReport, String> {
+    async fn run_inner(&self, app: &Events, market: &Arc<Market>, req: LabRequest) -> Result<LabReport, String> {
         let universe = req.universe.clamp(5, 120);
         let warm = warmup_days(&req.config);
         let total_days = req.days.clamp(14, 400) + warm;
@@ -142,7 +142,7 @@ impl Lab {
         emit_progress(app, "simulating", 0, 0);
         let cfg = req.config.clone();
         let runs = req.luck_runs.clamp(0, 200);
-        let mut report = tauri::async_runtime::spawn_blocking(move || run_lab(&all, &cfg, trade_from, runs)).await.map_err(|e| e.to_string())?;
+        let mut report = crate::rt::spawn_blocking(move || run_lab(&all, &cfg, trade_from, runs)).await.map_err(|e| e.to_string())?;
         report.base.equity = thin(&report.base.equity, 400);
         emit_progress(app, "done", 1, 1);
         Ok(report)

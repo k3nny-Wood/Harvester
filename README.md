@@ -158,3 +158,16 @@ Put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the `.env` file (a bot from @
 **Alerts** arrive by themselves (the account is checked every 20 s): a position opened, grown, shrunk or closed (with "stop-loss / take-profit hit" when the last price was at it), a position closer than 10% to its liquidation price, a delisting of a coin you hold, and scanner entries scoring 85 or more (`TELEGRAM_SIGNAL_MIN_SCORE` in `.env` changes that, 0 turns them off).
 
 The commands that trade are `/close`, `/stop`, `/tp` (all reduce-only, they can never open or flip a position) and `/long` / `/short` (which need `/confirm`). Only your chat is answered, commands older than two minutes are ignored, and the bot token is never logged. Use a bot of its own: two programs polling one bot (for example the MarketScanner V2 bot) would fight over its messages.
+
+## Headless mode (no window)
+
+`harvester-server` runs the Telegram bot, its alerts and the scanner without the desktop window, for a PC that is left on or a server:
+
+```
+cargo run --release -p harvester-server
+```
+
+It reads the same `.env` file as the app (`HARVESTER_ENV`, the Binance keys, `TELEGRAM_*`). The engine behind both programs lives in `crates/harvester-engine`, which has no GUI dependency, so the server builds on a plain Linux machine without a desktop toolkit.
+
+- **One Telegram bot, one program.** Two programs cannot poll one bot. Run the server and the desktop app together only with `HARVESTER_TELEGRAM=off` set for the app, or close the app.
+- **Held and armed orders** (take-profit / stop-loss waiting for an entry to fill, limit orders waiting for the price band) are processed by whichever program has them. The desktop app does it by default; set `HARVESTER_SERVER_ORDERS=1` for the server to do it, and then do not run the app at the same time.

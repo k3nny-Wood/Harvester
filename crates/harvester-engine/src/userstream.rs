@@ -10,7 +10,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use crate::events::Events;
 use tokio_tungstenite::tungstenite::Message;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -32,13 +32,13 @@ pub fn classify(text: &str) -> Option<&'static str> {
     }
 }
 
-fn emit_status(app: &AppHandle, connected: bool) {
+fn emit_status(app: &Events, connected: bool) {
     let _ = app.emit("userstream", UserStreamStatus { connected });
 }
 
 /// Run the stream for the lifetime of the app; it follows the selected environment and reconnects with backoff.
-pub fn start(app: AppHandle, trading: Arc<Trading>) {
-    tauri::async_runtime::spawn(async move {
+pub fn start(app: Events, trading: Arc<Trading>) {
+    crate::rt::spawn(async move {
         let mut backoff = 2u64;
         loop {
             let env = trading.env();
@@ -58,7 +58,7 @@ pub fn start(app: AppHandle, trading: Arc<Trading>) {
 }
 
 /// One connection. Returns when the stream drops, the key expires or the environment changes.
-async fn run_once(app: &AppHandle, trading: &Arc<Trading>, env: Env) -> Result<(), String> {
+async fn run_once(app: &Events, trading: &Arc<Trading>, env: Env) -> Result<(), String> {
     let key = trading.listen_key_start().await?;
     let url = format!("{}/ws/{}", env.ws_base(), key);
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.map_err(|e| e.to_string())?;

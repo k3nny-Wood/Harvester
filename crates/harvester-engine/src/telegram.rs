@@ -447,11 +447,16 @@ pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader, 
         println!("[telegram] disabled: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the .env file");
         return;
     }
+    // two programs must not poll one bot: HARVESTER_TELEGRAM=off keeps this one out of it (for example while the headless server runs)
+    if matches!(std::env::var("HARVESTER_TELEGRAM").unwrap_or_default().trim().to_lowercase().as_str(), "off" | "0" | "false" | "no") {
+        println!("[telegram] switched off by HARVESTER_TELEGRAM");
+        return;
+    }
     let bot = Arc::new(Bot { http: reqwest::Client::builder().timeout(Duration::from_secs(45)).build().unwrap_or_default(), token, chat, trading, market, signals, pending: Mutex::new(None) });
 
     // the summary: one a minute after start, then every 30 minutes
     let reporter = bot.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::rt::spawn(async move {
         reporter.say(&format!("<b>Harvester started</b> · {}\nSummary every 30 minutes. /help for the commands.", env_label(&reporter.trading))).await;
         tokio::time::sleep(FIRST_REPORT_AFTER).await;
         let (mut session_start, mut previous) = (None, None);
@@ -470,7 +475,7 @@ pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader, 
 
     // alerts: the account is looked at every 20 seconds and compared with the last look
     let watcher = bot.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::rt::spawn(async move {
         let min_score: u8 = std::env::var("TELEGRAM_SIGNAL_MIN_SCORE").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(DEFAULT_SIGNAL_SCORE);
         let mut state = AlertState::default();
         let (mut seen_signals, mut told_delistings): (HashSet<String>, HashSet<String>) = (HashSet::new(), HashSet::new());
@@ -511,7 +516,7 @@ pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader, 
     });
 
     // the commands
-    tauri::async_runtime::spawn(async move {
+    crate::rt::spawn(async move {
         // whatever was waiting before this start is NOT acted on: skip to the newest update
         let mut offset: i64 = 0;
         if let Ok(v) = bot.call("getUpdates", json!({"offset": -1, "timeout": 0})).await {

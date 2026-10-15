@@ -7,8 +7,8 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter};
-use tauri::async_runtime::JoinHandle;
+use crate::events::Events;
+use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -51,10 +51,10 @@ impl Streams {
     }
 
     /// Start (or restart) the stream for a symbol / interval.
-    pub fn subscribe(&self, app: AppHandle, env: Env, symbol: &str, interval: &str) {
+    pub fn subscribe(&self, app: Events, env: Env, symbol: &str, interval: &str) {
         let key = Self::key(symbol, interval);
         let url = format!("{}/ws/{}@kline_{}", env.ws_base(), symbol.to_lowercase(), interval);
-        let task = tauri::async_runtime::spawn(async move {
+        let task = crate::rt::spawn(async move {
             let mut backoff = 1u64;
             loop {
                 match tokio_tungstenite::connect_async(&url).await {

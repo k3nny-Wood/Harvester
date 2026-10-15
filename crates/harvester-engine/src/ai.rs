@@ -277,7 +277,7 @@ mod live {
     #[tokio::test]
     #[ignore]
     async fn live_analysis() {
-        dotenvy::from_path(concat!(env!("CARGO_MANIFEST_DIR"), "/../.env")).ok();
+        dotenvy::from_path(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.env")).ok();
         let hub = AiHub::open(std::env::temp_dir().join(format!("harvester_ai_live_{}.json", now_ms())));
         let context = "Analyse TESTUSDT (Binance USDT perpetual). The trader's chart is on the 15m timeframe. Last price: 100.\n\
 == INDICATORS BY TIMEFRAME ==\n[15m] last close 100; change over 10 candles +0.4%, over 50 candles +1.1%\n  EMA20 99.6 (price +0.40%); EMA50 99.0 (price +1.01%); EMA200 97.5 (price +2.56%)\n  RSI14 57; MACD histogram 0.12 (rising)\n  ATR14 0.6 (0.60% of price)\n  recent swing highs: 101.2\n  recent swing lows: 98.4\n\n\

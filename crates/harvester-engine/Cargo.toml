@@ -1,0 +1,24 @@
+[package]
+name = "harvester-engine"
+description = "Harvester's exchange-facing engine: Binance market data and trading, the scanner, held and armed orders, the Telegram bot. No window and no GUI toolkit: the desktop app and the headless server both build on it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+harvester-core = { path = "../harvester-core" }
+serde.workspace = true
+serde_json.workspace = true
+rust_decimal.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+plotters = "0.3"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+dotenvy = "0.15"

@@ -45,7 +45,7 @@ pub fn parse_marks(text: &str) -> Vec<(String, f64)> {
 }
 
 pub fn start(trading: Arc<Trading>, marks: Marks) {
-    tauri::async_runtime::spawn(async move {
+    crate::rt::spawn(async move {
         let mut backoff = 2u64;
         loop {
             let env = trading.env();

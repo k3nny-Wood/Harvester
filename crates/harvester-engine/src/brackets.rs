@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use crate::events::Events;
 
 const MAX_AGE_MS: u64 = 7 * 24 * 3600 * 1000;
 /// Consecutive checks (about 2 s apart) with the entry neither open nor a position before the bracket is given up.
@@ -123,8 +123,8 @@ fn exit_request(b: &Bracket, qty: f64, kind: OrderType, trigger: f64) -> OrderRe
     OrderRequest { symbol: b.symbol.clone(), side: if b.long { Side::Sell } else { Side::Buy }, order_type: kind, quantity: qty, price: None, stop_price: Some(trigger), post_only: false, reduce_only: true, client_id: None }
 }
 
-pub fn start(app: AppHandle, trading: Arc<Trading>, store: Arc<BracketStore>) {
-    tauri::async_runtime::spawn(async move {
+pub fn start(app: Events, trading: Arc<Trading>, store: Arc<BracketStore>) {
+    crate::rt::spawn(async move {
         let mut missing: HashMap<String, u32> = HashMap::new();
         loop {
             tokio::time::sleep(Duration::from_secs(2)).await;

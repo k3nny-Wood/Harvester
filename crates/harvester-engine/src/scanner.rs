@@ -9,13 +9,13 @@ use crate::market::{Env, Market};
 use crate::stream::parse_kline_value;
 use futures_util::{stream, StreamExt};
 use harvester_core::candle::Candle;
-use harvester_core::signals::{analyse, analyse_drop, ScoreParts, Signal, SignalKind, SignalParams};
+use harvester_core::signals::{analyse, analyse_drop, Signal, SignalKind, SignalParams};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::async_runtime::JoinHandle;
-use tauri::{AppHandle, Emitter};
+use tokio::task::JoinHandle;
+use crate::events::Events;
 use tokio_tungstenite::tungstenite::Message;
 
 const MAX_CANDLES: usize = 700;
@@ -153,11 +153,11 @@ fn refresh_counts(inner: &mut Inner) {
     inner.status.dump_count = count(SignalKind::Dump);
 }
 
-fn emit_status(app: &AppHandle, inner: &Inner) {
+fn emit_status(app: &Events, inner: &Inner) {
     let _ = app.emit("scanner-status", inner.status.clone());
 }
 
-fn emit_signals(app: &AppHandle, inner: &mut Inner, force: bool) {
+fn emit_signals(app: &Events, inner: &mut Inner, force: bool) {
     if !force && inner.last_emit.map_or(false, |t| t.elapsed() < Duration::from_millis(800)) {
         return;
     }
@@ -168,7 +168,7 @@ fn emit_signals(app: &AppHandle, inner: &mut Inner, force: bool) {
 }
 
 /// Run the engine for one symbol and fold the result into the signal map.
-fn analyse_symbol(app: &AppHandle, inner: &mut Inner, symbol: &str) {
+fn analyse_symbol(app: &Events, inner: &mut Inner, symbol: &str) {
     let Some(candles) = inner.buffers.get(symbol) else { return };
     let cfg = inner.config.clone();
     let now = now_ms();
@@ -281,7 +281,7 @@ impl Scanner {
     }
 
     /// Turn the QFL source on or off without restarting: its entries leave the list at once.
-    pub fn set_sources(&self, app: &AppHandle, sources: Sources) {
+    pub fn set_sources(&self, app: &Events, sources: Sources) {
         let mut g = self.inner.lock().unwrap();
         g.config.sources = sources;
         if !sources.qfl {
@@ -294,7 +294,7 @@ impl Scanner {
     }
 
     /// New rules (drop size, crack depth, ...) apply at once: every symbol already loaded is analysed again with them. No restart, no reload.
-    pub fn set_params(&self, app: &AppHandle, params: SignalParams) {
+    pub fn set_params(&self, app: &Events, params: SignalParams) {
         let mut g = self.inner.lock().unwrap();
         g.config.params = params;
         let symbols: Vec<String> = g.buffers.keys().cloned().collect();
@@ -326,7 +326,7 @@ impl Scanner {
     }
 
     /// (Re)start with a configuration. Existing signals are cleared because they belong to the old timeframe.
-    pub fn start(&self, app: AppHandle, market: Arc<Market>, config: ScannerConfig) {
+    pub fn start(&self, app: Events, market: Arc<Market>, config: ScannerConfig) {
         self.stop();
         {
             let mut g = self.inner.lock().unwrap();
@@ -342,7 +342,7 @@ impl Scanner {
             emit_status(&app, &g);
         }
         let inner = self.inner.clone();
-        let task = tauri::async_runtime::spawn(async move { run(app, market, inner, config).await });
+        let task = crate::rt::spawn(async move { run(app, market, inner, config).await });
         *self.task.lock().unwrap() = Some(task);
     }
 }
@@ -355,7 +355,7 @@ pub struct Injector {
 
 impl Injector {
     /// Add a sudden-move signal (ignored while the Movers source is off) and tell the UI.
-    pub fn add(&self, app: &AppHandle, signal: Signal) {
+    pub fn add(&self, app: &Events, signal: Signal) {
         let mut g = self.inner.lock().unwrap();
         if !g.config.sources.movers {
             return;
@@ -367,7 +367,7 @@ impl Injector {
         emit_signals(app, &mut g, true);
     }
 
-    pub fn set_state(&self, app: &AppHandle, state: String) {
+    pub fn set_state(&self, app: &Events, state: String) {
         let mut g = self.inner.lock().unwrap();
         if g.status.mover_state != state {
             g.status.mover_state = state;
@@ -380,7 +380,7 @@ impl Injector {
     }
 }
 
-fn set_phase(app: &AppHandle, inner: &Arc<Mutex<Inner>>, phase: &str, error: Option<String>) {
+fn set_phase(app: &Events, inner: &Arc<Mutex<Inner>>, phase: &str, error: Option<String>) {
     let mut g = inner.lock().unwrap();
     g.status.phase = phase.to_string();
     g.status.error = error;
@@ -388,7 +388,7 @@ fn set_phase(app: &AppHandle, inner: &Arc<Mutex<Inner>>, phase: &str, error: Opt
 }
 
 /// First pass: the recent candles of every symbol, many requests at once. Drops are live as soon as this is done.
-async fn fast_seed(app: &AppHandle, market: &Arc<Market>, inner: &Arc<Mutex<Inner>>, symbols: &[String], timeframe: &str) {
+async fn fast_seed(app: &Events, market: &Arc<Market>, inner: &Arc<Mutex<Inner>>, symbols: &[String], timeframe: &str) {
     let mut results = stream::iter(symbols.iter().cloned())
         .map(|sym| {
             let m = market.clone();
@@ -419,7 +419,7 @@ async fn fast_seed(app: &AppHandle, market: &Arc<Market>, inner: &Arc<Mutex<Inne
 }
 
 /// Second pass, in the background while the live feed already runs: the long history of every symbol, for the QFL bases.
-async fn full_seed(app: &AppHandle, market: &Arc<Market>, inner: &Arc<Mutex<Inner>>, symbols: &[String], timeframe: &str) {
+async fn full_seed(app: &Events, market: &Arc<Market>, inner: &Arc<Mutex<Inner>>, symbols: &[String], timeframe: &str) {
     let total = symbols.len();
     let mut results = stream::iter(symbols.iter().cloned())
         .map(|sym| {
@@ -454,7 +454,7 @@ async fn full_seed(app: &AppHandle, market: &Arc<Market>, inner: &Arc<Mutex<Inne
 }
 
 /// The live feed: ONE combined kline websocket for all symbols. Returns when the connection ends.
-async fn live_session(app: &AppHandle, market: &Arc<Market>, inner: &Arc<Mutex<Inner>>, symbols: &[String], timeframe: &str) -> Result<(), String> {
+async fn live_session(app: &Events, market: &Arc<Market>, inner: &Arc<Mutex<Inner>>, symbols: &[String], timeframe: &str) -> Result<(), String> {
     let streams: Vec<String> = symbols.iter().map(|s| format!("{}@kline_{}", s.to_lowercase(), timeframe)).collect();
     let env: Env = market.env();
     let url = format!("{}/stream?streams={}", env.ws_base(), streams.join("/"));
@@ -509,7 +509,7 @@ async fn live_session(app: &AppHandle, market: &Arc<Market>, inner: &Arc<Mutex<I
     Ok(())
 }
 
-async fn run(app: AppHandle, market: Arc<Market>, inner: Arc<Mutex<Inner>>, cfg: ScannerConfig) {
+async fn run(app: Events, market: Arc<Market>, inner: Arc<Mutex<Inner>>, cfg: ScannerConfig) {
     let mut backoff = 2u64;
     loop {
         // 1. the universe
@@ -555,6 +555,7 @@ async fn run(app: AppHandle, market: Arc<Market>, inner: Arc<Mutex<Inner>>, cfg:
 
 #[cfg(test)]
 mod tests {
+    use harvester_core::signals::ScoreParts;
     use super::*;
 
     fn c(t: u64, close: f64) -> Candle {

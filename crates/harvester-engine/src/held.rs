@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use crate::events::Events;
 
 const MAX_HELD: usize = 60;
 /// An order is only sent when its price is this far (percent of the market price) inside the band's edge.
@@ -243,8 +243,8 @@ pub async fn move_to_held(trading: &Arc<Trading>, store: &HeldStore, symbol: &st
 }
 
 /// The watcher: every few seconds, send every waiting order whose price the band has reached.
-pub fn start(app: AppHandle, trading: Arc<Trading>, store: Arc<HeldStore>) {
-    tauri::async_runtime::spawn(async move {
+pub fn start(app: Events, trading: Arc<Trading>, store: Arc<HeldStore>) {
+    crate::rt::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(3)).await;
             let waiting = store.waiting(trading.env());

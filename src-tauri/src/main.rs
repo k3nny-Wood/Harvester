@@ -1,20 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod brackets;
-mod cardimg;
-mod chartimg;
-mod telegram;
-mod held;
-mod movers;
-mod lab;
-mod ai;
-mod marks;
-mod news;
-mod userstream;
-mod market;
-mod scanner;
-mod stream;
-mod trading;
+use harvester_engine::events::{Events, Sink};
+use harvester_engine::{ai, brackets, held, lab, market, marks, movers, news, scanner, stream, telegram, trading, userstream};
 
 use harvester_core::filters::SymbolFilters;
 use harvester_core::ladder::{build_ladder, LadderPreview, LadderSpec};
@@ -31,7 +18,20 @@ use scanner::{Scanner, ScannerConfig, ScannerStatus, Sources};
 use std::sync::{Arc, Mutex};
 use stream::Streams;
 use trading::{Account, LeverageInfo, OpenOrder, OrderAck, OrderRecord, OrderRequest, Trading, TradingStatus, TradeRecord};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+/// Forwards the engine's events to the window.
+struct TauriSink(AppHandle);
+
+impl Sink for TauriSink {
+    fn emit(&self, event: &str, payload: serde_json::Value) {
+        let _ = self.0.emit(event, payload);
+    }
+}
+
+fn ev(app: &AppHandle) -> Events {
+    Events::new(TauriSink(app.clone()))
+}
 
 struct AppState {
     lab: Lab,
@@ -74,7 +74,7 @@ async fn get_klines(state: State<'_, AppState>, symbol: String, interval: String
 
 #[tauri::command]
 fn subscribe_klines(app: AppHandle, state: State<'_, AppState>, symbol: String, interval: String) {
-    state.streams.subscribe(app, state.market.env(), &symbol, &interval);
+    state.streams.subscribe(ev(&app), state.market.env(), &symbol, &interval);
 }
 
 #[tauri::command]
@@ -301,19 +301,19 @@ fn scanner_config(state: State<'_, AppState>) -> ScannerConfig {
 /// Switch the QFL signal source on or off (no restart).
 #[tauri::command]
 fn scanner_sources(app: AppHandle, state: State<'_, AppState>, sources: Sources) {
-    state.scanner.set_sources(&app, sources);
+    state.scanner.set_sources(&ev(&app), sources);
 }
 
 /// Restart the scanner with a new configuration (timeframe, universe size, thresholds).
 /// New signal rules (drop %, crack depth, ...) for the running scanner.
 #[tauri::command]
 fn scanner_params(app: AppHandle, state: State<'_, AppState>, params: harvester_core::signals::SignalParams) {
-    state.scanner.set_params(&app, params);
+    state.scanner.set_params(&ev(&app), params);
 }
 
 #[tauri::command]
 fn scanner_configure(app: AppHandle, state: State<'_, AppState>, config: ScannerConfig) {
-    state.scanner.start(app, state.market.clone(), config);
+    state.scanner.start(ev(&app), state.market.clone(), config);
 }
 
 /// The QFL support zones of a symbol / timeframe for the chart to draw: bases at nearly the same price combined (Pine-exact detector
@@ -344,7 +344,7 @@ fn lab_default_config() -> LabConfig {
 /// Backtest the QFL ladder as one shared account over recent history (public data; downloads and caches candles).
 #[tauri::command]
 async fn lab_run(app: AppHandle, state: State<'_, AppState>, request: LabRequest) -> Result<LabReport, String> {
-    state.lab.run(app, state.market.clone(), request).await
+    state.lab.run(ev(&app), state.market.clone(), request).await
 }
 
 #[tauri::command]
@@ -356,17 +356,24 @@ fn main() {
     let _ = dotenvy::dotenv(); // keys and limits from a .env file (searched upwards from the working directory)
     let env = Env::from_name(&std::env::var("HARVESTER_ENV").unwrap_or_default());
     let market = Arc::new(Market::new(env));
+    // the engine's background tasks run on Tauri's runtime
+    match tauri::async_runtime::handle() {
+        tauri::async_runtime::RuntimeHandle::Tokio(h) => harvester_engine::rt::init(h.clone()),
+        #[allow(unreachable_patterns)]
+        _ => {}
+    }
     tauri::Builder::default()
         .manage(AppState { lab: Lab::default(), ai: Arc::new(ai::AiHub::open(ai::default_path())), news: Arc::new(news::NewsHub::new(news::default_names_path())), brackets: Arc::new(BracketStore::open(brackets::default_path())), marks: Default::default(), movers: Arc::new(Mutex::new(MoverDetector::new(MoverParams::default()))), held: Arc::new(HeldStore::open(held::default_path())), market: market.clone(), streams: Streams::default(), scanner: Scanner::default(), trading: Arc::new(Trading::new(market)) })
         .setup(|app| {
             let state = app.state::<AppState>();
-            state.scanner.start(app.handle().clone(), state.market.clone(), ScannerConfig::default());
-            userstream::start(app.handle().clone(), state.trading.clone());
-            brackets::start(app.handle().clone(), state.trading.clone(), state.brackets.clone());
+            let events = ev(app.handle());
+            state.scanner.start(events.clone(), state.market.clone(), ScannerConfig::default());
+            userstream::start(events.clone(), state.trading.clone());
+            brackets::start(events.clone(), state.trading.clone(), state.brackets.clone());
             marks::start(state.trading.clone(), state.marks.clone());
             { let hub = state.news.clone(); tauri::async_runtime::spawn(async move { hub.load_names().await; }); }
-            held::start(app.handle().clone(), state.trading.clone(), state.held.clone());
-            movers::start(app.handle().clone(), state.market.clone(), state.scanner.injector(), state.movers.clone());
+            held::start(events.clone(), state.trading.clone(), state.held.clone());
+            movers::start(events.clone(), state.market.clone(), state.scanner.injector(), state.movers.clone());
             telegram::start(state.trading.clone(), state.market.clone(), state.scanner.reader(), state.news.clone());
             Ok(())
         })
