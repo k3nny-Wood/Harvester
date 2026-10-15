@@ -4,6 +4,20 @@ import { api } from '../api';
 import { useActiveChart } from '../chartStore';
 import { openChart } from '../dock';
 import { useApp } from '../store';
+import { nextSort, sortSymbols, type SortDir, type SortKey } from '../symbolSort';
+
+const SORT_KEY = 'harvester.symbols.sort.v1';
+type Sort = { key: SortKey; dir: SortDir } | null;
+
+function loadSort(): Sort {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(SORT_KEY) ?? 'null');
+    if (v && ['name', 'change', 'volume'].includes(v.key) && ['asc', 'desc'].includes(v.dir)) return v;
+  } catch {
+    /* no remembered sort */
+  }
+  return null;
+}
 
 function compact(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
@@ -19,6 +33,23 @@ export function SymbolsPanel() {
   const delistings = useDelistings((s) => s.list);
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [sort, setSort] = useState<Sort>(loadSort);
+  const clickSort = (key: SortKey) =>
+    setSort((cur) => {
+      const next = nextSort(cur, key);
+      try {
+        window.localStorage.setItem(SORT_KEY, JSON.stringify(next));
+      } catch {
+        /* not remembered */
+      }
+      return next;
+    });
+  const head = (key: SortKey, label: string) => (
+    <button className={`sort-head${sort?.key === key ? ' on' : ''}`} onClick={() => clickSort(key)} title={`Sort by ${label.toLowerCase()} (click again to reverse)`}>
+      {label}
+      {sort?.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+    </button>
+  );
 
   useEffect(() => {
     let alive = true;
@@ -42,13 +73,19 @@ export function SymbolsPanel() {
 
   const rows = useMemo(() => {
     const q = query.trim().toUpperCase();
-    return symbols.filter((s) => !q || s.symbol.includes(q));
-  }, [symbols, query]);
+    return sortSymbols(symbols.filter((s) => !q || s.symbol.includes(q)), sort);
+  }, [symbols, query, sort]);
 
   return (
     <div className="panel symbols">
       <input className="search" placeholder={`Search ${symbols.length || ''} perpetuals…`} value={query} onChange={(e) => setQuery(e.target.value)} />
       {error && <div className="warn pad">{error}</div>}
+      <div className="symbol-head">
+        {head('name', 'Name')}
+        <span className="muted">Price</span>
+        {head('change', '24h %')}
+        {head('volume', 'Volume')}
+      </div>
       <div className="symbol-list">
         {rows.map((s) => (
           <button

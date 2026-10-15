@@ -2223,3 +2223,29 @@ button.mini {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+.symbol-head {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 0.8fr 0.6fr;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  text-align: right;
+}
+.symbol-head > :first-child {
+  text-align: left;
+}
+.sort-head {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: inherit;
+  cursor: pointer;
+}
+.sort-head:hover,
+.sort-head.on {
+  color: var(--accent);
+}
