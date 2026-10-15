@@ -1,0 +1,4 @@
+
+# files that run on the Linux server must keep Unix line endings
+deploy/*.sh text eol=lf
+deploy/*.service text eol=lf
