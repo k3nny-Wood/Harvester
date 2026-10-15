@@ -186,7 +186,7 @@ function AdjustBar({ adjust, busy, style, onPrice, onApply, onCancel }: { adjust
     <div className="m-adjust" style={style} onPointerDown={(e) => e.stopPropagation()}>
       <div className="m-adjust-name">
         <b>{name}</b>
-        <small>{fmtPrice(adjust.original)} → {change >= 0 ? '+' : ''}{change.toFixed(2)}%</small>
+        <small>{adjust.price === adjust.original ? 'drag, then double-tap' : `${fmtPrice(adjust.original)} → ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`}</small>
       </div>
       <input
         type="text"
@@ -322,7 +322,7 @@ export function ChartTab() {
   const pendingLines = useMemo<PendingLine[]>(() => {
     if (adjust) {
       const c = adjust.kind === 'sl' ? '#d0454b' : adjust.kind === 'tp' ? '#2e9b6f' : '#5b8def';
-      return [{ id: 'adjust', price: adjust.price, label: adjust.kind === 'order' ? 'move order' : `new ${adjust.kind.toUpperCase()}`, color: c, handle: adjust.kind === 'order' ? '⇕' : adjust.kind.toUpperCase() }];
+      return [{ id: 'adjust', price: adjust.price, label: adjust.kind === 'order' ? 'move order' : `new ${adjust.kind.toUpperCase()}`, color: c, handle: adjust.kind === 'order' ? '⇕' : adjust.kind.toUpperCase(), edit: true }];
     }
     if (!floater) return [];
     const long = floater.side === 'BUY';
@@ -349,6 +349,11 @@ export function ChartTab() {
 
   /** A double tap near the line of an order that is on the exchange starts moving it. */
   const startAdjust = (price: number, tol: number): boolean => {
+    // already moving an order: a double tap on its line sets it, as a double tap on its handle does
+    if (adjust && Math.abs(adjust.price - price) <= tol) {
+      void applyAdjust();
+      return true;
+    }
     let best: { l: ChartLine; d: number } | null = null;
     for (const l of lines) {
       if (!l.adjust) continue;
@@ -366,6 +371,10 @@ export function ChartTab() {
     if (!adjust || adjusting) return;
     const { order: o, kind } = adjust;
     const price = snapToTick(adjust.price, tick);
+    if (adjust.price === adjust.original) {
+      toast('Drag the handle to the new level first, then double-tap to set it.', 'info');
+      return;
+    }
     if (kind !== 'order' && pos) {
       const res = resolveExit(kind === 'sl' ? 'stop' : 'take', pos.amount > 0, mark, { kind: 'price', value: price });
       if (!res.ok) {
@@ -439,6 +448,7 @@ export function ChartTab() {
           }}
           onTap={() => useFloater.getState().close()}
           onDoubleTap={({ price, tol }) => startAdjust(price, tol)}
+          onPendingDoubleTap={(id) => id === 'adjust' && void applyAdjust()}
           onLongPress={(p) => {
             const rect = tabRef.current?.getBoundingClientRect();
             if (!rect || !trading?.hasCredentials || !(mark > 0)) return;

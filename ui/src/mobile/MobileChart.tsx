@@ -20,9 +20,11 @@ export interface PendingLine {
   color: string;
   /** the text on its handle */
   handle: string;
+  /** an order that is being edited: its handle is drawn white */
+  edit?: boolean;
 }
 
-export function MobileChart({ candles, lines, pending = [], onPendingMove, onPendingBounds, onLongPress, onTap, onDoubleTap }: { candles: Kline[]; lines: ChartLine[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: () => void; /** a double tap at this price (`tol` = how far a line may be from it to count as hit); return true when it was used, else the chart jumps to the newest candle */ onDoubleTap?: (p: { price: number; tol: number }) => boolean }) {
+export function MobileChart({ candles, lines, pending = [], onPendingMove, onPendingBounds, onPendingDoubleTap, onLongPress, onTap, onDoubleTap }: { candles: Kline[]; lines: ChartLine[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number) => void; /** a double tap on a handle (without dragging it) */ onPendingDoubleTap?: (id: string) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: () => void; /** a double tap at this price (`tol` = how far a line may be from it to count as hit); return true when it was used, else the chart jumps to the newest candle */ onDoubleTap?: (p: { price: number; tol: number }) => boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 320, h: 300 });
@@ -247,6 +249,7 @@ export function MobileChart({ candles, lines, pending = [], onPendingMove, onPen
 
   // the handles on the order's lines: drag one up or down to move its line
   const dragId = useRef<string | null>(null);
+  const handleTap = useRef<{ t: number; moved: boolean; x: number; y: number }>({ t: 0, moved: false, x: 0, y: 0 });
   const priceAtY = (clientY: number): number | null => {
     const r = rangeRef.current;
     const top = box.current?.getBoundingClientRect().top;
@@ -281,17 +284,19 @@ export function MobileChart({ candles, lines, pending = [], onPendingMove, onPen
           <div
             key={pl.id}
             className="m-handle"
-            style={{ top: hy - 18, right: AXIS_W + 6 + i * 58, color: pl.color, borderColor: pl.color }}
+            style={pl.edit ? { top: hy - 18, right: AXIS_W + 6 + i * 58, color: '#101418', borderColor: '#ffffff', background: '#ffffff' } : { top: hy - 18, right: AXIS_W + 6 + i * 58, color: pl.color, borderColor: pl.color }}
             onPointerDown={(e) => {
               e.preventDefault();
               e.stopPropagation();
               (e.currentTarget as Element).setPointerCapture(e.pointerId);
               dragId.current = pl.id;
+              handleTap.current = { ...handleTap.current, moved: false, x: e.clientX, y: e.clientY };
               frozen.current = liveRange;
               setDragging(pl.id);
             }}
             onPointerMove={(e) => {
               if (dragId.current !== pl.id) return;
+              if (Math.hypot(e.clientX - handleTap.current.x, e.clientY - handleTap.current.y) > 6) handleTap.current.moved = true;
               const p = priceAtY(e.clientY);
               if (p != null) onPendingMove?.(pl.id, p);
             }}
@@ -300,6 +305,16 @@ export function MobileChart({ candles, lines, pending = [], onPendingMove, onPen
                 (e.currentTarget as Element).releasePointerCapture(e.pointerId);
               } catch {
                 /* already released */
+              }
+              // two quick taps on the handle (not a drag) are a double tap
+              if (!handleTap.current.moved) {
+                const now = Date.now();
+                if (now - handleTap.current.t < 350) {
+                  handleTap.current.t = 0;
+                  onPendingDoubleTap?.(pl.id);
+                } else {
+                  handleTap.current.t = now;
+                }
               }
               end();
             }}
