@@ -1047,3 +1047,8 @@
   font-size: 13px;
   color: #cfd6df;
 }
+
+/* the readout is only text: touches go through it to the chart */
+.m-adjust-wrap > * {
+  pointer-events: none;
+}

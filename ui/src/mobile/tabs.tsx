@@ -169,22 +169,16 @@ export function ScannerTab() {
 
 const FLOATER_W = 300;
 
-/** The bar for moving an order that is on the exchange: what it is, the new price (typed or from the handle) and Apply / Cancel. */
-function AdjustBar({ adjust, busy, style, onPrice, onApply, onCancel }: { adjust: { kind: 'sl' | 'tp' | 'order'; order: OpenOrder; price: number; original: number }; busy: boolean; style: React.CSSProperties; onPrice: (p: number) => void; onApply: () => void; onCancel: () => void }) {
-  const [text, setText] = useState(String(adjust.price));
-  const typed = useRef(false);
-  useEffect(() => {
-    if (typed.current) {
-      typed.current = false;
-      return;
-    }
-    setText(String(adjust.price));
-  }, [adjust.price]);
+/**
+ * While an order that is on the exchange is being moved: just the large readout (old price, new price, % change) beside its line. There is no
+ * bar: drag the white handle, double-tap to set, tap elsewhere on the chart to cancel.
+ */
+function AdjustReadout({ adjust, style }: { adjust: { kind: 'sl' | 'tp' | 'order'; order: OpenOrder; price: number; original: number }; style: React.CSSProperties }) {
   const change = adjust.original > 0 ? (adjust.price / adjust.original - 1) * 100 : 0;
-  const name = adjust.kind === 'sl' ? 'Stop-loss' : adjust.kind === 'tp' ? 'Take-profit' : `${adjust.order.side.toLowerCase()} ${adjust.order.type.replace(/_/g, ' ').toLowerCase()}`;
   const moved = adjust.price !== adjust.original;
+  const name = adjust.kind === 'sl' ? 'Stop-loss' : adjust.kind === 'tp' ? 'Take-profit' : 'Order';
   return (
-    <div className={`m-adjust-wrap${style.top != null ? ' below' : ''}`} style={style} onPointerDown={(e) => e.stopPropagation()}>
+    <div className="m-adjust-wrap" style={style}>
       <div className="m-adjust-read">
         {moved ? (
           <>
@@ -192,38 +186,15 @@ function AdjustBar({ adjust, busy, style, onPrice, onApply, onCancel }: { adjust
             <i className={change >= 0 ? 'up' : 'down'}>{change >= 0 ? '+' : ''}{change.toFixed(2)}%</i>
           </>
         ) : (
-          <span className="m-adjust-hint">drag the handle, then double-tap to set</span>
+          <span className="m-adjust-hint">{name}: drag the handle, double-tap to set · tap elsewhere to cancel</span>
         )}
-      </div>
-      <div className="m-adjust">
-        <div className="m-adjust-name">
-          <b>{name}</b>
-        </div>
-        <input
-          type="text"
-          inputMode="decimal"
-          aria-label="New price"
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            const v = Number(e.target.value.replace(',', '.'));
-            if (Number.isFinite(v) && v > 0) {
-              typed.current = true;
-              onPrice(v);
-            }
-          }}
-        />
-        <button className="m-apply" disabled={busy || !moved} onClick={onApply}>
-          {busy ? '…' : 'Apply'}
-        </button>
-        <button className="m-x" onClick={onCancel} aria-label="Cancel">×</button>
       </div>
     </div>
   );
 }
 
-/** The adjust bar sits just above the line being moved (below it when there is no room above) and follows it while the handle is dragged. */
-const ADJUST_H = 74; // the bar and the large readout above it
+/** The readout sits just above the line being moved (below it when there is no room above) and follows it while the handle is dragged. */
+const ADJUST_H = 34; // the readout
 const ADJUST_GAP = 20;
 function adjustStyle(tab: HTMLElement | null, bounds: { top: number; bottom: number } | null): React.CSSProperties {
   const th = tab?.clientHeight ?? 600;
@@ -458,7 +429,14 @@ export function ChartTab() {
             const t = tabRef.current?.getBoundingClientRect().top ?? 0;
             setBounds({ top: top - t, bottom: bottom - t });
           }}
-          onTap={() => useFloater.getState().close()}
+          onTap={({ price, tol }) => {
+            // while an order is being moved a tap away from its line cancels the move; a tap on the line may be the first half of the double tap that sets it
+            if (adjust) {
+              if (Math.abs(adjust.price - price) > tol) setAdjust(null);
+              return;
+            }
+            useFloater.getState().close();
+          }}
           onDoubleTap={({ price, tol }) => startAdjust(price, tol)}
           onPendingDoubleTap={(id) => id === 'adjust' && void applyAdjust()}
           onLongPress={(p) => {
@@ -483,16 +461,7 @@ export function ChartTab() {
           style={floaterStyle(floater.y, tabRef.current, bounds, floaterH)}
         />
       )}
-      {adjust && (
-        <AdjustBar
-          adjust={adjust}
-          busy={adjusting}
-          style={adjustStyle(tabRef.current, bounds)}
-          onPrice={(price) => setAdjust((a) => (a ? { ...a, price } : a))}
-          onApply={() => void applyAdjust()}
-          onCancel={() => setAdjust(null)}
-        />
-      )}
+      {adjust && <AdjustReadout adjust={adjust} style={adjustStyle(tabRef.current, bounds)} />}
       {trade && <TradeSheet side={trade} symbol={symbol} mark={mark} onClose={() => setTrade(null)} />}
     </div>
   );
