@@ -778,9 +778,10 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
           ))}
         {barOpen && (
           <>
-            {selected != null && (
+            {(
               <button
                 className="m-draw-btn"
+                disabled={selected == null}
                 onClick={() => {
                   const list = drawings.filter((d) => d.id !== selected);
                   setDrawings(list);
@@ -788,7 +789,7 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
                   setSelected(null);
                 }}
                 aria-label="Delete the selected drawing"
-                title="Delete the selected drawing"
+                title="Delete the selected drawing: touch a drawing with the move tool first"
               >
                 🗑
               </button>
