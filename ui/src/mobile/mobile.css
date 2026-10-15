@@ -900,3 +900,99 @@
 .m-app .m-floater input[type='text'] {
   background: rgba(8, 12, 18, 0.35);
 }
+
+/* the order box, compact: smaller controls and tighter rows */
+.m-app .m-floater {
+  padding: 5px 7px 6px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+.m-app .m-floater .m-fl-head {
+  gap: 4px;
+}
+.m-app .m-floater .m-fl-head > input,
+.m-app .m-floater .m-fl-head input[type='text'] {
+  min-height: 30px;
+  height: 30px;
+  font-size: 15px;
+  padding: 0 7px;
+  border-radius: 6px;
+}
+.m-app .m-floater .m-toggle {
+  min-height: 30px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 6px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+.m-app .m-floater .m-seg button {
+  min-height: 30px;
+  height: 30px;
+  padding: 0 7px;
+  font-size: 12px;
+}
+.m-app .m-floater .m-seg button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.m-app .m-floater .m-seg button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+.m-app .m-floater .m-fl-note {
+  min-height: 13px;
+  margin: 1px 0;
+  font-size: 10px;
+  line-height: 13px;
+}
+.m-app .m-floater .m-fl-noterow .m-x {
+  min-height: 16px;
+  height: 16px;
+  min-width: 20px;
+  font-size: 14px;
+}
+.m-app .m-floater .m-fl-pair {
+  gap: 8px;
+}
+.m-app .m-floater .m-fl-pair label > span {
+  font-size: 11px;
+  line-height: 13px;
+}
+.m-app .m-floater .m-fl-pair input[type='range'] {
+  height: 18px;
+}
+.m-app .m-floater .m-fl-box {
+  margin-top: 1px;
+}
+.m-app .m-floater .m-fl-box input[type='text'] {
+  min-height: 28px;
+  height: 28px;
+  font-size: 13px;
+  padding: 0 52px 0 28px;
+}
+.m-fl-tag {
+  left: 8px;
+  font-size: 10px;
+}
+.m-fl-px {
+  font-size: 10px;
+}
+.m-app .m-floater .m-fl-sum {
+  margin: 2px 0 3px;
+  font-size: 11px;
+  line-height: 14px;
+}
+.m-app .m-floater .m-apply-row {
+  margin-top: 3px;
+  gap: 5px;
+}
+.m-app .m-floater .m-primary,
+.m-app .m-floater .m-market {
+  min-height: 32px;
+  height: 32px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+.m-app .m-floater .m-market {
+  width: 42px;
+  font-size: 15px;
+}
