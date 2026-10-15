@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Kline } from '../types';
+import { confirmDialog } from '../confirm';
+import { fibPrices, indexOfTime, loadDrawings, measureText, rayY, saveDrawings, spanOf, timeOfIndex, type Drawing, type DrawKind, type DrawPoint, type Tool } from './drawings';
 import { fmtPrice, MAX_VISIBLE, MIN_VISIBLE, priceRange, timeLabels, windowOf, zoomed, type ChartLine } from './chartMath';
 
 /** An executed order: when and at what average price. */
@@ -53,6 +55,29 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
   const rangeRef = useRef<{ lo: number; hi: number; h: number } | null>(null);
   const lastTap = useRef<{ t: number; x: number; y: number } | null>(null);
   const lastDouble = useRef(0);
+
+  // drawing tools: the toolbar at the left, the drawings of this symbol (kept on the phone), the one being drawn, and the last measurement
+  const drawSymbol = watermark?.symbol ?? '';
+  const [tool, setTool] = useState<Tool>('cursor');
+  const [barOpen, setBarOpen] = useState(() => {
+    try {
+      return window.localStorage.getItem('harvester.mobile.drawbar') !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const [drawings, setDrawings] = useState<Drawing[]>(() => loadDrawings(drawSymbol));
+  const [draft, setDraft] = useState<{ kind: Tool; a: DrawPoint; b: DrawPoint } | null>(null);
+  const draw = useRef<{ kind: Tool; a: DrawPoint } | null>(null);
+  const toolRef = useRef<Tool>('cursor');
+  toolRef.current = tool;
+  useEffect(() => {
+    setDrawings(loadDrawings(drawSymbol));
+    setDraft(null);
+    setTool('cursor');
+  }, [drawSymbol]);
+  const times = useMemo(() => candles.map((k) => k.time), [candles]);
+  const span = spanOf(times);
 
   useEffect(() => {
     const el = box.current;
@@ -182,6 +207,87 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
         g.stroke();
       }
     }
+    // drawings (and the one being drawn)
+    {
+      const xAt = (t: number) => (indexOfTime(times, t, span) - win.start) * step + step / 2;
+      g.save();
+      g.beginPath();
+      g.rect(0, 0, plotW, plotH);
+      g.clip();
+      g.font = '10px system-ui, sans-serif';
+      const items: Array<{ kind: Tool; a: DrawPoint; b: DrawPoint; temp?: boolean }> = [...drawings];
+      if (draft) items.push({ kind: draft.kind, a: draft.a, b: draft.b, temp: true });
+      for (const d of items) {
+        const x0 = xAt(d.a.t);
+        const y0 = y(d.a.p);
+        const x1 = xAt(d.b.t);
+        const y1 = y(d.b.p);
+        g.lineWidth = d.temp ? 1 : 1.5;
+        g.setLineDash(d.temp ? [4, 3] : []);
+        g.strokeStyle = '#f0b90b';
+        g.fillStyle = '#f0b90b';
+        g.textBaseline = 'bottom';
+        if (d.kind === 'trend' || d.kind === 'ray') {
+          g.beginPath();
+          g.moveTo(x0, y0);
+          const ex = d.kind === 'ray' ? (x1 >= x0 ? plotW : 0) : x1;
+          g.lineTo(ex, d.kind === 'ray' ? rayY(x0, y0, x1, y1, ex) : y1);
+          g.stroke();
+        } else if (d.kind === 'hline') {
+          g.beginPath();
+          g.moveTo(0, y0);
+          g.lineTo(plotW, y0);
+          g.stroke();
+          g.fillText(fmtPrice(d.a.p), 4, y0 - 2);
+        } else if (d.kind === 'rect') {
+          g.fillStyle = 'rgba(240, 185, 11, 0.12)';
+          g.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+          g.strokeRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+        } else if (d.kind === 'fib') {
+          const left = Math.min(x0, x1);
+          for (const f of fibPrices(d.a.p, d.b.p)) {
+            const fy = y(f.price);
+            g.strokeStyle = f.level === 0 || f.level === 1 ? '#8b98a5' : f.level === 0.618 ? '#2ee59d' : '#f0b90b';
+            g.fillStyle = g.strokeStyle;
+            g.beginPath();
+            g.moveTo(left, fy);
+            g.lineTo(plotW, fy);
+            g.stroke();
+            g.textAlign = 'left';
+            g.fillText(`${f.level} ${fmtPrice(f.price)}`, Math.max(2, left + 3), fy - 1);
+          }
+          g.strokeStyle = '#8b98a5';
+          g.setLineDash([3, 3]);
+          g.beginPath();
+          g.moveTo(x0, y0);
+          g.lineTo(x1, y1);
+          g.stroke();
+        } else if (d.kind === 'measure') {
+          const up = d.b.p >= d.a.p;
+          const col = up ? '#2ee59d' : '#ff5c63';
+          g.strokeStyle = col;
+          g.fillStyle = up ? 'rgba(46, 229, 157, 0.14)' : 'rgba(255, 92, 99, 0.14)';
+          g.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+          g.strokeRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+          const label = measureText(d.a, d.b, span);
+          g.font = '700 11px system-ui, sans-serif';
+          const tw = g.measureText(label).width + 10;
+          const lx = Math.max(2, Math.min(plotW - tw - 2, (x0 + x1) / 2 - tw / 2));
+          const ly = Math.max(16, Math.min(plotH - 4, up ? Math.min(y0, y1) - 4 : Math.max(y0, y1) + 18));
+          g.fillStyle = '#05080c';
+          g.fillRect(lx, ly - 14, tw, 18);
+          g.fillStyle = col;
+          g.textAlign = 'left';
+          g.fillText(label, lx + 5, ly);
+          g.font = '10px system-ui, sans-serif';
+        }
+        g.setLineDash([]);
+        g.textAlign = 'left';
+      }
+      g.restore();
+      g.lineWidth = 1;
+      g.textBaseline = 'middle';
+    }
     // the position and the orders
     for (const l of lines) {
       if (l.price < range.lo || l.price > range.hi) continue;
@@ -273,7 +379,7 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
       g.stroke();
     }
     g.textAlign = 'left';
-  }, [candles, lines, marks, pendingKey, watermark?.symbol, watermark?.timeframe, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, lines, marks, drawings, draft, pendingKey, watermark?.symbol, watermark?.timeframe, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doubleTap = (clientY: number) => {
     lastDouble.current = Date.now();
@@ -293,6 +399,16 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
   const cancelPress = () => {
     if (press.current) window.clearTimeout(press.current.timer);
   };
+  /** The chart point (time, price) under a finger. */
+  const pointAt = (clientX: number, clientY: number): DrawPoint | null => {
+    const bx = box.current?.getBoundingClientRect();
+    const r = rangeRef.current;
+    if (!bx || !r) return null;
+    const plotW = size.w - AXIS_W;
+    const st = plotW / Math.max(1, win.end - win.start);
+    const idx = (clientX - bx.left - st / 2) / st + win.start;
+    return { t: timeOfIndex(times, idx, span), p: r.hi - ((clientY - bx.top - 2) / (r.h - 4)) * (r.hi - r.lo) };
+  };
   const down = (e: React.PointerEvent) => {
     // the first finger of a touch cannot have company: anything left over from a lost pointerup is stale
     if (e.isPrimary) pointers.current.clear();
@@ -311,6 +427,16 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
       axis.current = { startY: e.clientY, lo: range.lo, hi: range.hi, moved: false };
       press.current = null;
       return;
+    }
+    // a drawing tool is chosen: this touch draws instead of panning
+    if (toolRef.current !== 'cursor' && pts.length === 1 && bx && e.clientX < bx.right - AXIS_W && e.clientY < bx.bottom - TIME_H) {
+      const pt = pointAt(e.clientX, e.clientY);
+      if (pt) {
+        draw.current = { kind: toolRef.current, a: pt };
+        setDraft({ kind: toolRef.current, a: pt, b: pt });
+        press.current = null;
+        return;
+      }
     }
     if (pts.length === 1 && onLongPress) {
       const top = box.current?.getBoundingClientRect().top ?? 0;
@@ -333,6 +459,12 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
   const move = (e: React.PointerEvent) => {
     if (!pointers.current.has(e.pointerId) || !gesture.current) return;
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (draw.current) {
+      const pt = pointAt(e.clientX, e.clientY);
+      const a = draw.current.a;
+      if (pt) setDraft({ kind: draw.current.kind, a, b: pt });
+      return;
+    }
     const ta = taxis.current;
     if (ta) {
       // dragging right squashes the chart (more candles), dragging left stretches it (fewer, wider candles)
@@ -382,6 +514,38 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
     }
   };
   const up = (e: React.PointerEvent) => {
+    if (draw.current) {
+      const cur = draw.current;
+      draw.current = null;
+      const pt = e.type === 'pointerup' ? pointAt(e.clientX, e.clientY) : null;
+      pointers.current.delete(e.pointerId);
+      gesture.current = null;
+      if (pt) {
+        if (cur.kind === 'hline') {
+          const list = [...drawings, { id: Date.now(), kind: 'hline' as DrawKind, a: cur.a, b: cur.a }];
+          setDrawings(list);
+          saveDrawings(drawSymbol, list);
+          setDraft(null);
+          setTool('cursor');
+        } else if (cur.kind === 'measure') {
+          setTool('cursor');
+          setDraft({ kind: 'measure', a: cur.a, b: pt }); // stays until the next drawing or a symbol change
+        } else {
+          const range = rangeRef.current;
+          const moved = Math.abs(pt.t - cur.a.t) / span > 0.3 || Math.abs(pt.p - cur.a.p) > ((range?.hi ?? 0) - (range?.lo ?? 0)) * 0.01;
+          if (moved) {
+            const list = [...drawings, { id: Date.now(), kind: cur.kind as DrawKind, a: cur.a, b: pt }];
+            setDrawings(list);
+            saveDrawings(drawSymbol, list);
+          }
+          setDraft(null);
+          setTool('cursor');
+        }
+      } else {
+        setDraft(null);
+      }
+      return;
+    }
     const ta = taxis.current;
     if (ta) {
       taxis.current = null;
@@ -473,6 +637,83 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
   return (
     <div ref={box} className="m-chart" data-visible={win.visible} data-offset={win.offset} data-manual={manual ? 1 : 0} data-lo={range ? range.lo.toFixed(2) : ""} data-hi={range ? range.hi.toFixed(2) : ""} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onContextMenu={(e) => e.preventDefault()} onDoubleClick={(e) => Date.now() - lastDouble.current > 600 && doubleTap(e.clientY)}>
       <canvas ref={canvas} style={{ width: size.w, height: size.h }} />
+      <div className="m-draw-bar" onPointerDown={(e) => e.stopPropagation()}>
+        <button
+          className="m-draw-btn"
+          onClick={() => {
+            setBarOpen((v) => {
+              try {
+                window.localStorage.setItem('harvester.mobile.drawbar', v ? '0' : '1');
+              } catch {
+                /* not remembered */
+              }
+              return !v;
+            });
+            setTool('cursor');
+          }}
+          aria-label={barOpen ? 'Hide the drawing tools' : 'Show the drawing tools'}
+          title="Drawing tools"
+        >
+          {barOpen ? '‹' : '✎'}
+        </button>
+        {barOpen &&
+          (
+            [
+              ['cursor', '↖', 'Move the chart'],
+              ['trend', '╱', 'Trend line: drag from start to end'],
+              ['ray', '↗', 'Ray: drag, the line continues to the right'],
+              ['hline', '─', 'Horizontal line: tap a price'],
+              ['rect', '▭', 'Rectangle: drag across'],
+              ['fib', 'Fib', 'Fibonacci retracement: drag from one end of a move to the other'],
+              ['measure', '↔', 'Measure: drag to see % and bars'],
+            ] as Array<[Tool, string, string]>
+          ).map(([t, icon, hint]) => (
+            <button
+              key={t}
+              className={`m-draw-btn${tool === t ? ' on' : ''}`}
+              onClick={() => {
+                setDraft(null);
+                setTool(t);
+              }}
+              aria-label={hint}
+              title={hint}
+            >
+              {icon}
+            </button>
+          ))}
+        {barOpen && (
+          <>
+            <button
+              className="m-draw-btn"
+              disabled={!drawings.length}
+              onClick={() => {
+                const list = drawings.slice(0, -1);
+                setDrawings(list);
+                saveDrawings(drawSymbol, list);
+              }}
+              aria-label="Undo the last drawing"
+              title="Undo the last drawing"
+            >
+              ↶
+            </button>
+            <button
+              className="m-draw-btn"
+              disabled={!drawings.length}
+              onClick={() => {
+                void confirmDialog(`Remove all ${drawings.length} drawing${drawings.length === 1 ? '' : 's'} on ${drawSymbol}?`, { confirmLabel: 'Remove all', danger: true }).then((ok) => {
+                  if (!ok) return;
+                  setDrawings([]);
+                  saveDrawings(drawSymbol, []);
+                });
+              }}
+              aria-label="Remove all drawings"
+              title="Remove all drawings"
+            >
+              ✕
+            </button>
+          </>
+        )}
+      </div>
       {range &&
         lines.map((l, i) => {
           if (!l.adjust || l.adjust.kind === 'order' || !onRemoveLine || l.price < range.lo || l.price > range.hi) return null;
