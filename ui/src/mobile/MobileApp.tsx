@@ -8,6 +8,7 @@ import { useScannerEvents } from '../scannerEvents';
 import { useApp } from '../store';
 import { startTradingPoll } from '../trade';
 import './mobile.css';
+import { useDragScroll } from './dragScroll';
 import { switchView, useMobile, type Tab } from './store';
 import { ChartTab, OrdersTab, PositionsTab, ScannerTab } from './tabs';
 
@@ -31,6 +32,7 @@ export function MobileApp() {
   const dismiss = useApp((s) => s.dismissToast);
   const live = useLivePositions();
   const [menu, setMenu] = useState(false);
+  const dragScroll = useDragScroll();
 
   useScannerEvents();
   useEffect(() => startTradingPoll(), []);
@@ -66,7 +68,7 @@ export function MobileApp() {
           </div>
         )}
       </header>
-      <main className="m-main">
+      <main className="m-main" ref={dragScroll}>
         {tab === 'positions' && <PositionsTab />}
         {tab === 'chart' && <ChartTab />}
         {tab === 'orders' && <OrdersTab />}

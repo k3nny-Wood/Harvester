@@ -14,6 +14,7 @@ import { useFloater } from './floaterStore';
 import { OrderFloater, sideFor } from './OrderFloater';
 import { pctText, resolveBoth, resolveExit } from './exits';
 import { snapToTick } from '../ladderMath';
+import { useDragScroll } from './dragScroll';
 import { nextSort, sortSymbols, type SortDir, type SortKey } from '../symbolSort';
 import type { OpenOrder } from '../types';
 import { TradeSheet } from './TradeSheet';
@@ -436,6 +437,7 @@ export function ChartTab() {
     };
   }, [adjust, pos]);
 
+  const dragScroll = useDragScroll();
   // every symbol, searchable and sortable by name, 24h change or volume (the choice is remembered)
   const [symSort, setSymSort] = useState<{ key: SortKey; dir: SortDir }>(loadSymSort);
   const clickSort = (key: SortKey) =>
@@ -478,7 +480,7 @@ export function ChartTab() {
       {picking && (
         <div className="m-picker">
           <input autoFocus placeholder={`Search ${symbols.length || ''} symbols`} value={query} onChange={(e) => setQuery(e.target.value)} />
-          <div className="m-picker-list">
+          <div className="m-picker-list" ref={dragScroll}>
             <div className="m-picker-head">
               {head('name', 'Name')}
               <span>Price</span>
