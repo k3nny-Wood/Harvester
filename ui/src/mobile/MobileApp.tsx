@@ -9,6 +9,7 @@ import { useApp } from '../store';
 import { startTradingPoll } from '../trade';
 import './mobile.css';
 import { useDragScroll } from './dragScroll';
+import { useFloater } from './floaterStore';
 import { switchView, useMobile, type Tab } from './store';
 import { ChartTab, OrdersTab, PositionsTab, ScannerTab } from './tabs';
 
@@ -32,6 +33,8 @@ export function MobileApp() {
   const dismiss = useApp((s) => s.dismissToast);
   const live = useLivePositions();
   const [menu, setMenu] = useState(false);
+  // while the order dock is open it takes the place of the bottom navigation (in portrait)
+  const docked = useFloater((s) => !!s.f);
   const dragScroll = useDragScroll();
 
   useScannerEvents();
@@ -52,7 +55,7 @@ export function MobileApp() {
   const open = live?.positions.filter((p) => p.amount !== 0).length ?? 0;
 
   return (
-    <div className="m-app">
+    <div className={`m-app${docked ? ' docked' : ''}`}>
       <header className="m-top">
         <img className="m-logo" src={logo} alt="" />
         <div className="m-equity">

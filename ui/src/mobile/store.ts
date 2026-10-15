@@ -69,7 +69,8 @@ export function wantsMobile(): boolean {
   } catch {
     /* no remembered choice */
   }
-  return window.matchMedia('(max-width: 820px)').matches;
+  // a narrow screen, or a phone held sideways (wide but short, with a touch screen)
+  return window.matchMedia('(max-width: 820px), (max-height: 520px) and (pointer: coarse)').matches;
 }
 
 /** Remember the other view and reload into it. */

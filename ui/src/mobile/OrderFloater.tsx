@@ -34,7 +34,8 @@ export function OrderFloater({ symbol, mark, onClose }: { symbol: string; mark: 
   const [startLev, setStartLev] = useState(1);
   const [pct, setPct] = useState(() => loadSaved().pct);
   // the amount and leverage sit behind the ⋯ button; the exits' percentages too
-  const [expanded, setExpanded] = useState(false);
+  // held sideways there is room beside the chart, so the settings start open
+  const [expanded, setExpanded] = useState(() => window.matchMedia('(orientation: landscape) and (max-height: 520px)').matches);
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState('');
   const tick = filters?.tickSize;

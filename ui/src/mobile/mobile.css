@@ -1262,3 +1262,125 @@
 .m-dock input[type='range'] {
   accent-color: var(--accent);
 }
+
+/* the order dock takes the place of the bottom navigation while it is open (portrait); it also keeps clear of the home bar */
+.m-dock {
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+}
+@media (orientation: portrait), (min-height: 521px) {
+  .m-app.docked .m-nav {
+    display: none;
+  }
+}
+
+/* a phone held sideways: a slim header, the navigation as a rail on the left, the order dock beside the chart */
+@media (orientation: landscape) and (max-height: 520px) {
+  .m-app {
+    display: grid;
+    grid-template-columns: calc(60px + env(safe-area-inset-left)) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    padding-top: 0;
+    padding-right: env(safe-area-inset-right);
+  }
+  .m-top {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 3px 10px;
+    gap: 8px;
+  }
+  .m-logo {
+    width: 22px;
+    height: 22px;
+  }
+  .m-equity {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .m-equity b {
+    font-size: 15px;
+  }
+  .m-equity small {
+    font-size: 11px;
+  }
+  .m-app .m-menu {
+    min-height: 30px;
+    min-width: 34px;
+    font-size: 16px;
+  }
+  .m-main {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .m-nav {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    flex-direction: column;
+    border-top: 0;
+    border-right: 1px solid var(--line);
+    padding: 0 0 0 env(safe-area-inset-left);
+  }
+  .m-nav button {
+    flex: 1;
+    min-height: 0;
+    font-size: 10px;
+  }
+  .m-nav-icon {
+    font-size: 16px;
+  }
+  .m-count {
+    top: 3px;
+  }
+  /* cards side by side */
+  .m-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    align-items: start;
+  }
+  /* the chart tab: the symbol row on top, the chart below it, and the dock to the right of the chart while an order is being set up */
+  .m-chart-tab {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  .m-chart-tab:has(.m-dock) {
+    grid-template-columns: minmax(0, 1fr) 390px;
+  }
+  .m-chart-head,
+  .m-picker {
+    grid-column: 1 / -1;
+  }
+  .m-chart-head {
+    grid-row: 1;
+    padding: 2px 10px;
+  }
+  .m-picker {
+    grid-row: 2;
+  }
+  .m-app .m-symbol,
+  .m-app .m-tf {
+    min-height: 32px;
+    height: 32px;
+    font-size: 15px;
+  }
+  .m-chart {
+    grid-row: 3;
+    grid-column: 1;
+    min-height: 0;
+  }
+  .m-dock {
+    grid-row: 3;
+    grid-column: 2;
+    overflow-y: auto;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+    padding-bottom: 8px;
+  }
+  .m-picker-list {
+    max-height: 70dvh;
+  }
+  .m-sheet {
+    max-width: 520px;
+    margin: 0 auto;
+  }
+}
