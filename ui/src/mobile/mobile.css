@@ -230,6 +230,7 @@
 }
 /* chart tab */
 .m-chart-tab {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -423,4 +424,95 @@
 /* the shared confirmation and login dialogs on a narrow screen */
 .m-app .modal {
   max-width: calc(100vw - 24px);
+}
+
+/* the order box that opens where the chart is pressed and held */
+.m-chart {
+  -webkit-touch-callout: none;
+}
+.m-floater {
+  position: absolute;
+  z-index: 55;
+  max-height: 78%;
+  overflow-y: auto;
+  padding: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  font-size: 14px;
+}
+.m-fl-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.m-fl-head > input {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+}
+.m-seg {
+  display: flex;
+}
+.m-seg button {
+  min-height: 42px;
+  border-radius: 0;
+  padding: 0 12px;
+}
+.m-seg button:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.m-seg button:last-child {
+  border-radius: 0 8px 8px 0;
+  border-left: 0;
+}
+.m-app .m-seg button.on.buy {
+  background: var(--up);
+  border-color: var(--up);
+  color: #fff;
+}
+.m-app .m-seg button.on.sell {
+  background: var(--down);
+  border-color: var(--down);
+  color: #fff;
+}
+.m-fl-note {
+  font-size: 12px;
+  margin: 4px 0;
+}
+.m-fl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0;
+}
+.m-fl-row > span {
+  width: 92px;
+  flex: none;
+  font-size: 13px;
+}
+.m-fl-row input[type='range'] {
+  flex: 1;
+  height: 30px;
+  accent-color: var(--accent);
+}
+.m-fl-in {
+  display: block;
+}
+.m-fl-in > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.m-fl-in small {
+  display: block;
+  min-height: 15px;
+  font-size: 11px;
+}
+.m-floater .m-primary {
+  min-height: 46px;
+}
+.m-floater .m-sum {
+  margin: 4px 0;
+  font-size: 12px;
 }

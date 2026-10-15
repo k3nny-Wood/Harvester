@@ -201,7 +201,7 @@ The desktop window and the browser share one code path: the engine (`harvester-e
 The same web page switches to a phone layout on a narrow screen (or with `?mobile=1`; `?desktop=1` forces the docked layout, and the ⋯ menu switches back). It has four tabs:
 
 - **Positions**: each position with live profit, entry, price, stop-loss, take-profit and liquidation; set or move the stop-loss and take-profit (a price or a distance such as `2%`), close half or all.
-- **Chart**: candles that you drag to pan and pinch to zoom, with your position and orders drawn on them; **Long** / **Short** opens a position at market with its stop-loss and take-profit (amount as a share of the account, leverage, exits as percentages), after a confirmation.
+- **Chart**: candles that you drag to pan and pinch to zoom, with your position and orders drawn on them. **Press and hold** a price on the chart to open a small order box there: a limit order at that level (a stop-limit when the level is beyond the price), Buy or Sell, amount, leverage, stop-loss and take-profit; the level is drawn as a line while the box is open, and a quick tap on the chart closes it. **Long** / **Short** opens a position at market with its stop-loss and take-profit (amount as a share of the account, leverage, exits as percentages), after a confirmation.
 - **Orders**: open orders, with cancel.
 - **Scanner**: the live signals; tap one to open its chart.
 

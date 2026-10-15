@@ -5,19 +5,24 @@ import { fmtPrice, priceRange, windowOf, zoomed, type ChartLine } from './chartM
 const UP = '#2e9b6f';
 const DOWN = '#d0454b';
 const AXIS_W = 62;
+const LONG_PRESS_MS = 450;
+const MOVE_SLOP = 8;
 const DEFAULT_VISIBLE = 70;
 
 /**
  * A small candlestick chart for the phone: drag to pan, pinch to zoom, double-tap to jump back to the newest candle. Horizontal lines mark the
  * position's entry, stop-loss, take-profit and liquidation and the open orders.
  */
-export function MobileChart({ candles, lines }: { candles: Kline[]; lines: ChartLine[] }) {
+export function MobileChart({ candles, lines, onLongPress, onTap }: { candles: Kline[]; lines: ChartLine[]; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: () => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 320, h: 300 });
   const [view, setView] = useState({ visible: DEFAULT_VISIBLE, offset: 0 });
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef<{ visible: number; offset: number; x: number; dist: number } | null>(null);
+  // press and hold: where the finger went down, the timer that fires after LONG_PRESS_MS, and whether it already fired (then the rest of the touch does nothing)
+  const press = useRef<{ x: number; y: number; timer: number; fired: boolean; moved: boolean } | null>(null);
+  const rangeRef = useRef<{ lo: number; hi: number; h: number } | null>(null);
 
   useEffect(() => {
     const el = box.current;
@@ -43,6 +48,7 @@ export function MobileChart({ candles, lines }: { candles: Kline[]; lines: Chart
     g.fillRect(0, 0, size.w, size.h);
     const shown = candles.slice(win.start, win.end);
     const range = priceRange(shown, lines);
+    rangeRef.current = range ? { lo: range.lo, hi: range.hi, h: size.h } : null;
     if (!range || !shown.length) {
       g.fillStyle = '#8b98a5';
       g.font = '13px system-ui, sans-serif';
@@ -114,15 +120,46 @@ export function MobileChart({ candles, lines }: { candles: Kline[]; lines: Chart
     }
   }, [candles, lines, size, win.start, win.end, win.offset]);
 
+  const cancelPress = () => {
+    if (press.current) window.clearTimeout(press.current.timer);
+  };
   const down = (e: React.PointerEvent) => {
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const pts = [...pointers.current.values()];
     gesture.current = { visible: win.visible, offset: win.offset, x: pts[0].x, dist: pts.length >= 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0 };
+    cancelPress();
+    if (pts.length === 1 && onLongPress) {
+      const top = box.current?.getBoundingClientRect().top ?? 0;
+      const [cx, cy] = [e.clientX, e.clientY];
+      const timer = window.setTimeout(() => {
+        const r = rangeRef.current;
+        if (!press.current || !r) return;
+        press.current.fired = true;
+        const price = r.hi - ((cy - top - 2) / (r.h - 4)) * (r.hi - r.lo);
+        if (price > 0) {
+          navigator.vibrate?.(15);
+          onLongPress({ price, x: cx, y: cy });
+        }
+      }, LONG_PRESS_MS);
+      press.current = { x: cx, y: cy, timer, fired: false, moved: false };
+    } else {
+      press.current = null;
+    }
   };
   const move = (e: React.PointerEvent) => {
     if (!pointers.current.has(e.pointerId) || !gesture.current) return;
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pr = press.current;
+    if (pr) {
+      if (pr.fired) return; // the press opened the order box: the finger that is still down does not pan the chart
+      if (Math.hypot(e.clientX - pr.x, e.clientY - pr.y) > MOVE_SLOP) {
+        pr.moved = true;
+        window.clearTimeout(pr.timer);
+      } else {
+        return; // a finger that has not really moved yet: neither a pan nor a press that was cancelled
+      }
+    }
     const pts = [...pointers.current.values()];
     const g = gesture.current;
     if (pts.length >= 2) {
@@ -139,6 +176,13 @@ export function MobileChart({ candles, lines }: { candles: Kline[]; lines: Chart
     }
   };
   const up = (e: React.PointerEvent) => {
+    const pr = press.current;
+    if (pr) {
+      window.clearTimeout(pr.timer);
+      // a quick touch that did not move is a tap
+      if (!pr.fired && !pr.moved && e.type === 'pointerup') onTap?.();
+      press.current = null;
+    }
     pointers.current.delete(e.pointerId);
     const pts = [...pointers.current.values()];
     // a finger lifted from a pinch: carry on dragging with the other one from where the view is now
@@ -146,7 +190,7 @@ export function MobileChart({ candles, lines }: { candles: Kline[]; lines: Chart
   };
 
   return (
-    <div ref={box} className="m-chart" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onDoubleClick={() => setView({ visible: DEFAULT_VISIBLE, offset: 0 })}>
+    <div ref={box} className="m-chart" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onContextMenu={(e) => e.preventDefault()} onDoubleClick={() => setView({ visible: DEFAULT_VISIBLE, offset: 0 })}>
       <canvas ref={canvas} style={{ width: size.w, height: size.h }} />
     </div>
   );

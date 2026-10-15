@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, onKline } from '../api';
 import { confirmDialog } from '../confirm';
 import { useLivePositions } from '../livePositions';
@@ -10,7 +10,9 @@ import { fmtPrice, type ChartLine } from './chartMath';
 import { ExitSheet } from './ExitSheet';
 import { MobileChart } from './MobileChart';
 import { TIMEFRAMES, useMobile } from './store';
+import { OrderFloater, sideFor, type FloaterState } from './OrderFloater';
 import { TradeSheet } from './TradeSheet';
+import type { Side } from '../types';
 
 const coin = (s: string) => s.replace('USDT', '');
 const signed = (n: number, d = 2) => `${n >= 0 ? '+' : '-'}$${Math.abs(n).toFixed(d)}`;
@@ -162,6 +164,17 @@ export function ScannerTab() {
 
 // ---------------------------------------------------------------- chart
 
+const FLOATER_W = 330;
+
+/** Where the order box goes: beside the pressed level, on the side of it that has room, inside the tab. */
+function floaterStyle(f: { x: number; y: number }, tab: HTMLElement | null): React.CSSProperties {
+  const w = tab?.clientWidth ?? 360;
+  const h = tab?.clientHeight ?? 600;
+  const width = Math.min(FLOATER_W, w - 16);
+  const left = Math.max(8, Math.min(w - width - 8, f.x - width / 2));
+  return f.y > h * 0.5 ? { left, width, bottom: h - f.y + 14 } : { left, width, top: f.y + 14 };
+}
+
 export function ChartTab() {
   const { symbol, timeframe, openChart, setTimeframe } = useMobile();
   const symbols = useApp((s) => s.symbols);
@@ -172,6 +185,9 @@ export function ChartTab() {
   const [query, setQuery] = useState('');
   const [picking, setPicking] = useState(false);
   const [trade, setTrade] = useState<'BUY' | 'SELL' | null>(null);
+  // the order box opened by pressing and holding the chart, and the side it is set to (drawn as a line on the chart)
+  const [floater, setFloater] = useState<(FloaterState & { side: Side }) | null>(null);
+  const tabRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
 
   // history, then live candles
@@ -198,6 +214,8 @@ export function ChartTab() {
     };
   }, [symbol, timeframe]);
 
+  useEffect(() => setFloater(null), [symbol, timeframe]);
+
   const pos = live?.positions.find((p) => p.symbol === symbol && p.amount !== 0);
   const mark = pos?.markPrice || candles[candles.length - 1]?.close || 0;
   const lines = useMemo<ChartLine[]>(() => {
@@ -213,8 +231,9 @@ export function ChartTab() {
       if (pos && o.reduceOnly) continue;
       out.push({ price: o.stopPrice && !o.price ? o.stopPrice : o.price, label: `${o.side.toLowerCase()} ${o.type.replace(/_/g, ' ').toLowerCase()}`, color: '#5b8def', dashed: true });
     }
+    if (floater) out.push({ price: floater.price, label: `${floater.side === 'BUY' ? 'buy' : 'sell'} here`, color: floater.side === 'BUY' ? '#2e9b6f' : '#d0454b', dashed: true });
     return out;
-  }, [pos, orders, symbol]);
+  }, [pos, orders, symbol, floater]);
 
   const matches = useMemo(() => {
     const q = query.trim().toUpperCase();
@@ -222,7 +241,7 @@ export function ChartTab() {
   }, [symbols, query]);
 
   return (
-    <div className="m-chart-tab">
+    <div className="m-chart-tab" ref={tabRef}>
       <div className="m-chart-head">
         <button className="m-symbol" onClick={() => setPicking((v) => !v)}>
           {coin(symbol)} <small>▾</small>
@@ -251,11 +270,32 @@ export function ChartTab() {
           </button>
         ))}
       </div>
-      {error ? <div className="m-warn">{error}</div> : <MobileChart candles={candles} lines={lines} />}
+      {error ? <div className="m-warn">{error}</div> : <MobileChart
+          candles={candles}
+          lines={lines}
+          onTap={() => setFloater(null)}
+          onLongPress={(p) => {
+            const rect = tabRef.current?.getBoundingClientRect();
+            if (!rect || !trading?.hasCredentials || !(mark > 0)) return;
+            setPicking(false);
+            setFloater({ price: p.price, x: p.x - rect.left, y: p.y - rect.top, side: sideFor(p.price, mark) });
+          }}
+        />}
       <div className="m-trade-bar">
         <button className="m-buy" disabled={!trading?.hasCredentials || !(mark > 0)} onClick={() => setTrade('BUY')}>Long</button>
         <button className="m-sell" disabled={!trading?.hasCredentials || !(mark > 0)} onClick={() => setTrade('SELL')}>Short</button>
       </div>
+      {floater && (
+        <OrderFloater
+          symbol={symbol}
+          mark={mark}
+          state={floater}
+          onClose={() => setFloater(null)}
+          onPrice={(price, side) => setFloater((f) => (f ? { ...f, price, side } : f))}
+          onSide={(side) => setFloater((f) => (f ? { ...f, side } : f))}
+          style={floaterStyle(floater, tabRef.current)}
+        />
+      )}
       {trade && <TradeSheet side={trade} symbol={symbol} mark={mark} onClose={() => setTrade(null)} />}
     </div>
   );
