@@ -173,3 +173,25 @@ It reads the same `.env` file as the app (`HARVESTER_ENV`, the Binance keys, `TE
 - **Held and armed orders** (take-profit / stop-loss waiting for an entry to fill, limit orders waiting for the price band) are processed by whichever program has them. The desktop app does it by default; set `HARVESTER_SERVER_ORDERS=1` for the server to do it, and then do not run the app at the same time.
 
 **Knowing it is alive.** The start message names the program ("headless server" or "desktop app"). `/health` in Telegram shows the uptime, whether the Binance account can be read, the scanner's state and the latest error. The program tells you by itself when the account cannot be read for 2 minutes (or the keys are rejected, at once), when the scanner has been stuck for 5 minutes, and when each of them works again. Everything it logs goes to the console and to `harvester.log` (in `%APPDATA%\Harvester`, cut at 2 MB). If the program dies, nothing can tell you: the missing 30-minute summary is the sign.
+
+## Web version (a browser instead of the desktop window)
+
+`harvester-server` can serve the same page to a browser, with every command and live update the desktop window has. In `.env` set:
+
+```
+HARVESTER_WEB_BIND=127.0.0.1:8787      # this computer only; use another device's reachable address (a Tailscale address) to open it from there
+HARVESTER_WEB_TOKEN=a-long-password    # at least 12 characters: the page asks for it once and remembers it in that browser
+```
+
+Then build the page once and start the server:
+
+```
+pnpm --dir ui build
+cargo run --release -p harvester-server
+```
+
+and open http://127.0.0.1:8787. The server refuses to start without a token. Every call (and the live-update socket) needs it as an `Authorization: Bearer` header; other websites cannot send that header, so they cannot place orders through the server. Do not put the server on the open internet: use a private network such as Tailscale.
+
+In web mode the server runs everything the desktop app runs: the scanner, the account stream, held and armed orders, and the Telegram bot. So do not run the desktop app at the same time (or start it with `HARVESTER_TELEGRAM=off`, and expect both to try to process held / armed orders). While developing the page, `pnpm --dir ui dev` serves it on port 1420 and forwards `/api` and `/ws` to the server on 8787.
+
+The desktop window and the browser share one code path: the engine (`harvester-engine::core::Core`) answers every command, the window reaches it through one Tauri command and the browser through `POST /api/<command>`.

@@ -1,9 +1,7 @@
-import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { hasBackend, inTauri, invoke, listen, type Unlisten } from './transport';
 import type { Derivatives, AiEntry, AiModel, AiTrack, Delisting, NewsResult, SignalParams, LeverageBracket, Account, ArmedBracket, MoverParams, HeldEvent, HeldOrder, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
 
-/** True when running inside the Tauri shell (false in a plain browser, e.g. `vite` on its own). */
-export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+export { hasBackend, inTauri };
 
 export const api = {
   environment: () => invoke<Env>('environment'),
@@ -34,7 +32,8 @@ export const api = {
   aiMarket: (symbol: string) => invoke<Derivatives>('ai_market', { symbol }),
   delistings: (force = false) => invoke<Delisting[]>('delistings', { force }),
   newsFor: (symbol: string, force = false) => invoke<NewsResult>('news_for', { symbol, force }),
-  openUrl: (url: string) => invoke<void>('open_url', { url }),
+  // the desktop window opens it with the default browser; a browser page opens it itself
+  openUrl: (url: string): Promise<void> => (inTauri ? invoke<void>('open_url', { url }) : Promise.resolve(void window.open(url, '_blank', 'noopener,noreferrer'))),
   markPrices: (symbols: string[]) => invoke<Record<string, number>>('mark_prices', { symbols }),
   scannerParams: (params: SignalParams) => invoke<void>('scanner_params', { params }),
   moversConfig: () => invoke<MoverParams>('movers_config'),
@@ -64,36 +63,36 @@ export const api = {
   previewLadder: (spec: LadderSpec, referencePrice: number) => invoke<LadderPreview>('preview_ladder', { spec, referencePrice }),
 };
 
-export function onKline(handler: (e: KlineEvent) => void): Promise<UnlistenFn> {
-  return listen<KlineEvent>('kline', (ev) => handler(ev.payload));
+export function onKline(handler: (e: KlineEvent) => void): Promise<Unlisten> {
+  return listen<KlineEvent>('kline', handler);
 }
 
-export function onSignals(handler: (s: Signal[]) => void): Promise<UnlistenFn> {
-  return listen<Signal[]>('signals', (ev) => handler(ev.payload));
+export function onSignals(handler: (s: Signal[]) => void): Promise<Unlisten> {
+  return listen<Signal[]>('signals', handler);
 }
 
-export function onSignalNew(handler: (s: Signal) => void): Promise<UnlistenFn> {
-  return listen<Signal>('signal-new', (ev) => handler(ev.payload));
+export function onSignalNew(handler: (s: Signal) => void): Promise<Unlisten> {
+  return listen<Signal>('signal-new', handler);
 }
 
-export function onScannerStatus(handler: (s: ScannerStatus) => void): Promise<UnlistenFn> {
-  return listen<ScannerStatus>('scanner-status', (ev) => handler(ev.payload));
+export function onScannerStatus(handler: (s: ScannerStatus) => void): Promise<Unlisten> {
+  return listen<ScannerStatus>('scanner-status', handler);
 }
 
 /** Binance pushed an order / fill / balance change (the state itself is re-read from the exchange). */
-export function onAccountChanged(handler: () => void): Promise<UnlistenFn> {
+export function onAccountChanged(handler: () => void): Promise<Unlisten> {
   return listen<string>('account-changed', () => handler());
 }
 
-export function onUserStream(handler: (connected: boolean) => void): Promise<UnlistenFn> {
-  return listen<{ connected: boolean }>('userstream', (ev) => handler(ev.payload.connected));
+export function onUserStream(handler: (connected: boolean) => void): Promise<Unlisten> {
+  return listen<{ connected: boolean }>('userstream', (p) => handler(p.connected));
 }
 
-export function onLabProgress(handler: (p: LabProgress) => void): Promise<UnlistenFn> {
-  return listen<LabProgress>('lab-progress', (ev) => handler(ev.payload));
+export function onLabProgress(handler: (p: LabProgress) => void): Promise<Unlisten> {
+  return listen<LabProgress>('lab-progress', handler);
 }
 
 /** A held order was sent to Binance (its price came within range) or refused. */
-export function onHeldChanged(handler: (e: HeldEvent) => void): Promise<UnlistenFn> {
-  return listen<HeldEvent>('held-changed', (ev) => handler(ev.payload));
+export function onHeldChanged(handler: (e: HeldEvent) => void): Promise<Unlisten> {
+  return listen<HeldEvent>('held-changed', handler);
 }

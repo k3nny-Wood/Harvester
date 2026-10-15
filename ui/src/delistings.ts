@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, inTauri } from './api';
+import { api, hasBackend } from './api';
 import { useApp } from './store';
 import type { Delisting } from './types';
 
@@ -83,7 +83,7 @@ export function unseenForHoldings(list: Delisting[], held: Set<string>, seen: Se
 }
 
 async function refresh(force: boolean) {
-  if (!inTauri) return;
+  if (!hasBackend) return;
   try {
     const list = await api.delistings(force);
     useDelistings.getState().set(list);

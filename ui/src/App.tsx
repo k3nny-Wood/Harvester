@@ -3,7 +3,7 @@ import { ChartTab } from './chart/ChartTab';
 import { CollapseAction } from './components/CollapseAction';
 import { DockviewReact, type DockviewApi, type DockviewReadyEvent, type IDockviewPanelProps } from 'dockview-react';
 import { alertForSignal } from './alerts';
-import { api, inTauri, onScannerStatus, onSignalNew, onSignals } from './api';
+import { api, hasBackend, onScannerStatus, onSignalNew, onSignals } from './api';
 import { ConfirmHost, confirmDialog } from './confirm';
 import { activeChartStore, useActiveChart } from './chartStore';
 import { ChartPanel } from './chart/ChartPanel';
@@ -11,6 +11,7 @@ import { dedupeCharts, newChartId, setDock } from './dock';
 import { BAR_TIMEFRAMES } from './intervals';
 import { LabPanel } from './panels/LabPanel';
 import logo from './assets/logo.png';
+import { WebLogin } from './components/WebLogin';
 import { NewsPanel } from './panels/NewsPanel';
 import { AnalystPanel } from './panels/AnalystPanel';
 import { LadderPanel } from './panels/LadderPanel';
@@ -106,7 +107,7 @@ function buildDefaultLayout(dock: DockviewApi) {
 /** Keep the app store in step with what the Rust scanner reports. */
 function useScannerEvents() {
   useEffect(() => {
-    if (!inTauri) return;
+    if (!hasBackend) return;
     const { setSignals, setScanner, setScannerConfig, toast } = useApp.getState();
     void api.scannerSignals().then(setSignals).catch(() => undefined);
     void api.scannerStatus().then(setScanner).catch(() => undefined);
@@ -159,7 +160,7 @@ export function App() {
   useEffect(() => startDelistPoll(), []);
 
   useEffect(() => {
-    if (inTauri) void api.environment().then(setEnv);
+    if (hasBackend) void api.environment().then(setEnv);
   }, [setEnv]);
 
   const syncOpen = (dock: DockviewApi) => setOpen(new Set(dock.panels.map((p) => p.id)));
@@ -286,6 +287,7 @@ export function App() {
         <DockviewReact className="dockview-theme-abyss" components={components} defaultTabComponent={ChartTab} rightHeaderActionsComponent={CollapseAction} onReady={onReady} />
       </main>
       <ConfirmHost />
+      <WebLogin />
       <div className="toasts">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.tone}`} onClick={() => dismiss(t.id)}>
@@ -293,7 +295,7 @@ export function App() {
           </div>
         ))}
       </div>
-      {!inTauri && <div className="browser-warning">Running outside the Harvester window: market data is unavailable. Start it with <code>pnpm dev</code>.</div>}
+      {!hasBackend && <div className="browser-warning">Running without the Harvester engine: market data is unavailable. Open the Harvester window (<code>pnpm dev</code>) or the page served by <code>harvester-server</code>.</div>}
     </div>
   );
 }

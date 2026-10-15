@@ -5,6 +5,7 @@ pub mod ai;
 pub mod brackets;
 pub mod cardimg;
 pub mod chartimg;
+pub mod core;
 pub mod events;
 pub mod health;
 pub mod held;

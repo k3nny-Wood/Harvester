@@ -1,361 +1,33 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use harvester_engine::events::{Events, Sink};
-use harvester_engine::{ai, brackets, held, lab, market, marks, movers, news, scanner, stream, telegram, trading, userstream};
+//! Harvester's desktop window. Everything the window can ask for is answered by the engine (`harvester_engine::core::Core`): the window sends
+//! every command through the single `rpc` command below, and the engine's events are forwarded to it. The web server (`harvester-server`)
+//! offers the very same commands to a browser.
 
-use harvester_core::filters::SymbolFilters;
-use harvester_core::ladder::{build_ladder, LadderPreview, LadderSpec};
-use harvester_core::qfl::{base_zones, BaseZone, QflParams};
-use harvester_core::smc::{smc_zones, SmcParams, SmcZone};
-use harvester_core::signals::Signal;
-use harvester_core::lab::{LabConfig, LabReport};
-use harvester_core::movers::{MoverDetector, MoverParams};
-use brackets::{Bracket, BracketStore};
-use held::{HeldOrder, HeldStore};
-use lab::{Lab, LabRequest};
-use market::{Env, Kline, Market, SymbolQuote};
-use scanner::{Scanner, ScannerConfig, ScannerStatus, Sources};
-use std::sync::{Arc, Mutex};
-use stream::Streams;
-use trading::{Account, LeverageInfo, OpenOrder, OrderAck, OrderRecord, OrderRequest, Trading, TradingStatus, TradeRecord};
+use harvester_engine::core::Core;
+use harvester_engine::events::{Events, Sink};
+use serde_json::Value;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Forwards the engine's events to the window.
 struct TauriSink(AppHandle);
 
 impl Sink for TauriSink {
-    fn emit(&self, event: &str, payload: serde_json::Value) {
+    fn emit(&self, event: &str, payload: Value) {
         let _ = self.0.emit(event, payload);
     }
 }
 
-fn ev(app: &AppHandle) -> Events {
-    Events::new(TauriSink(app.clone()))
-}
-
-struct AppState {
-    lab: Lab,
-    movers: movers::SharedDetector,
-    brackets: Arc<BracketStore>,
-    marks: marks::Marks,
-    news: std::sync::Arc<news::NewsHub>,
-    ai: std::sync::Arc<ai::AiHub>,
-    held: Arc<HeldStore>,
-    market: Arc<Market>,
-    streams: Streams,
-    scanner: Scanner,
-    trading: Arc<Trading>,
-}
-
+/// Run one engine command: `name` and its arguments (a JSON object); the answer is JSON, an error is its message.
 #[tauri::command]
-fn environment(state: State<'_, AppState>) -> Env {
-    state.market.env()
-}
-
-#[tauri::command]
-fn set_environment(state: State<'_, AppState>, env: Env) {
-    state.market.set_env(env);
-}
-
-#[tauri::command]
-async fn list_symbols(state: State<'_, AppState>) -> Result<Vec<SymbolQuote>, String> {
-    state.market.symbols().await
-}
-
-#[tauri::command]
-async fn symbol_filters(state: State<'_, AppState>, symbol: String) -> Result<SymbolFilters, String> {
-    state.market.symbol_filters(&symbol).await
-}
-
-#[tauri::command]
-async fn get_klines(state: State<'_, AppState>, symbol: String, interval: String, limit: Option<u32>, start: Option<u64>, end: Option<u64>) -> Result<Vec<Kline>, String> {
-    state.market.klines(&symbol, &interval, limit.unwrap_or(500), start, end).await
-}
-
-#[tauri::command]
-fn subscribe_klines(app: AppHandle, state: State<'_, AppState>, symbol: String, interval: String) {
-    state.streams.subscribe(ev(&app), state.market.env(), &symbol, &interval);
-}
-
-#[tauri::command]
-fn unsubscribe_klines(state: State<'_, AppState>, symbol: String, interval: String) {
-    state.streams.unsubscribe(&symbol, &interval);
-}
-
-/// Build the ladder preview for a drawn range: rounded rungs validated against the symbol's filters.
-#[tauri::command]
-async fn preview_ladder(state: State<'_, AppState>, spec: LadderSpec, reference_price: f64) -> Result<LadderPreview, String> {
-    let filters = state.market.symbol_filters(&spec.symbol).await?;
-    Ok(build_ladder(&spec, &filters, reference_price))
-}
-
-#[tauri::command]
-fn trading_status(state: State<'_, AppState>) -> TradingStatus {
-    state.trading.status()
-}
-
-#[tauri::command]
-async fn account_overview(state: State<'_, AppState>) -> Result<Account, String> {
-    state.trading.account().await
-}
-
-#[tauri::command]
-async fn open_orders(state: State<'_, AppState>, symbol: Option<String>) -> Result<Vec<OpenOrder>, String> {
-    state.trading.open_orders(symbol.as_deref()).await
-}
-
-#[tauri::command]
-async fn place_order(state: State<'_, AppState>, order: OrderRequest) -> Result<OrderAck, String> {
-    // a limit order beyond Binance's price band is held here until the band reaches it (status "HELD")
-    held::place_or_hold(&state.trading, &state.held, order).await
-}
-
-/// Several orders at once (a ladder); each rung reports its own success or error.
-#[tauri::command]
-async fn place_orders(state: State<'_, AppState>, orders: Vec<OrderRequest>) -> Result<Vec<Result<OrderAck, String>>, String> {
-    held::place_many_or_hold(&state.trading, &state.held, orders).await
-}
-
-/// Orders kept on this computer until Binance will take them (and the recent ones that were sent or refused).
-#[tauri::command]
-fn held_list(state: State<'_, AppState>) -> Vec<HeldOrder> {
-    state.held.list(state.trading.env())
-}
-
-/// Move a limit order that rests on Binance to a price beyond its range: it is held on this computer and cancelled on the exchange.
-#[tauri::command]
-async fn move_to_held(state: State<'_, AppState>, symbol: String, order_id: i64, price: f64) -> Result<OrderAck, String> {
-    held::move_to_held(&state.trading, &state.held, &symbol, order_id, price).await
-}
-
-/// Exits (take-profit / stop-loss) that wait for an entry order to fill, then are placed on Binance.
-#[tauri::command]
-fn bracket_add(state: State<'_, AppState>, symbol: String, long: bool, take_profit: f64, stop_loss: f64, entry_order_id: i64, entry_conditional: bool, quantity: Option<f64>) -> Result<Bracket, String> {
-    state.brackets.add(state.trading.env(), symbol, long, take_profit, stop_loss, entry_order_id, entry_conditional, quantity.unwrap_or(0.0))
-}
-
-#[tauri::command]
-fn bracket_list(state: State<'_, AppState>) -> Vec<Bracket> {
-    state.brackets.list(state.trading.env())
-}
-
-#[tauri::command]
-fn bracket_cancel(state: State<'_, AppState>, id: String) -> bool {
-    state.brackets.cancel(&id)
-}
-
-/// The models the analyst can use.
-#[tauri::command]
-fn ai_models() -> Vec<ai::ModelInfo> {
-    ai::models()
-}
-
-/// Ask Claude to analyse the chart context; the answer is logged.
-#[tauri::command]
-async fn ai_analyze(state: State<'_, AppState>, request: ai::AnalyzeRequest) -> Result<ai::LogEntry, String> {
-    state.ai.analyze(request).await
-}
-
-/// The logged analyses of a symbol (or all), newest first.
-#[tauri::command]
-fn ai_history(state: State<'_, AppState>, symbol: Option<String>) -> Vec<ai::LogEntry> {
-    state.ai.history(symbol.as_deref(), 50)
-}
-
-/// Derivatives and positioning data of a symbol for the analyst.
-#[tauri::command]
-async fn ai_market(state: State<'_, AppState>, symbol: String) -> Result<harvester_core::marketdata::Derivatives, String> {
-    state.ai.market(&symbol).await
-}
-
-/// How the logged analyses did against what price did afterwards.
-#[tauri::command]
-async fn ai_track(state: State<'_, AppState>) -> Result<ai::Track, String> {
-    state.ai.track().await
-}
-
-/// News about the coin of `symbol`: Binance announcements and crypto news sites, filtered to that coin.
-#[tauri::command]
-async fn news_for(state: State<'_, AppState>, symbol: String, force: Option<bool>) -> Result<news::NewsResult, String> {
-    Ok(state.news.news_for(&symbol, force.unwrap_or(false)).await)
-}
-
-/// Futures contracts scheduled to be delisted (or just delisted), from Binance's own data.
-#[tauri::command]
-async fn delistings(state: State<'_, AppState>, force: Option<bool>) -> Result<Vec<harvester_core::delist::Delisting>, String> {
-    Ok(state.news.delistings(force.unwrap_or(false)).await)
-}
-
-/// Open a link in the default browser.
-#[tauri::command]
-fn open_url(url: String) -> Result<(), String> {
-    news::open_in_browser(&url)
-}
-
-/// Live mark prices (from the websocket) of the given symbols; symbols without a price yet are left out.
-#[tauri::command]
-fn mark_prices(state: State<'_, AppState>, symbols: Vec<String>) -> std::collections::HashMap<String, f64> {
-    let m = state.marks.read().unwrap();
-    marks::fresh(&m, &symbols, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0))
-}
-
-/// The pump / dump watcher's settings.
-#[tauri::command]
-fn movers_config(state: State<'_, AppState>) -> MoverParams {
-    state.movers.lock().unwrap().params().clone()
-}
-
-#[tauri::command]
-fn movers_configure(state: State<'_, AppState>, params: MoverParams) {
-    state.movers.lock().unwrap().set_params(params);
-}
-
-#[tauri::command]
-fn held_cancel(state: State<'_, AppState>, id: String) -> bool {
-    state.held.cancel(&id)
-}
-
-#[tauri::command]
-fn held_move(state: State<'_, AppState>, id: String, price: f64) -> Result<(), String> {
-    state.held.set_price(&id, price)
-}
-
-#[tauri::command]
-async fn cancel_order(state: State<'_, AppState>, symbol: String, order_id: i64, conditional: Option<bool>) -> Result<(), String> {
-    state.trading.cancel(&symbol, order_id, conditional.unwrap_or(false)).await
-}
-
-/// Move an open order to a new price (the drag on the chart).
-#[tauri::command]
-async fn modify_order(state: State<'_, AppState>, symbol: String, order_id: i64, conditional: Option<bool>, price: Option<f64>, stop_price: Option<f64>, quantity: Option<f64>) -> Result<OrderAck, String> {
-    state.trading.modify(&symbol, order_id, conditional.unwrap_or(false), price, stop_price, quantity).await
-}
-
-/// Make the stop-loss / take-profit of a position cover its whole size again (after adding to it).
-#[tauri::command]
-async fn resize_exits(state: State<'_, AppState>, symbol: String, expected: Option<f64>) -> Result<usize, String> {
-    state.trading.resize_exits(&symbol, expected).await
-}
-
-#[tauri::command]
-async fn order_history(state: State<'_, AppState>, symbol: String, limit: Option<u32>) -> Result<Vec<OrderRecord>, String> {
-    state.trading.order_history(&symbol, limit.unwrap_or(100)).await
-}
-
-#[tauri::command]
-async fn trade_history(state: State<'_, AppState>, symbol: String, limit: Option<u32>) -> Result<Vec<TradeRecord>, String> {
-    state.trading.trade_history(&symbol, limit.unwrap_or(200)).await
-}
-
-#[tauri::command]
-async fn leverage_brackets(state: State<'_, AppState>, symbol: String) -> Result<Vec<trading::LeverageBracket>, String> {
-    state.trading.leverage_brackets(&symbol).await
-}
-
-#[tauri::command]
-async fn symbol_leverage(state: State<'_, AppState>, symbol: String) -> Result<LeverageInfo, String> {
-    state.trading.leverage(&symbol).await
-}
-
-#[tauri::command]
-async fn cancel_all_orders(state: State<'_, AppState>, symbol: String) -> Result<(), String> {
-    state.trading.cancel_all(&symbol).await
-}
-
-#[tauri::command]
-async fn close_position(state: State<'_, AppState>, symbol: String, fraction: Option<f64>) -> Result<OrderAck, String> {
-    state.trading.close_position(&symbol, fraction.unwrap_or(1.0)).await
-}
-
-/// Switch the per-order safety cap off (true) or back on (false) for this session.
-#[tauri::command]
-fn set_cap_override(state: State<'_, AppState>, off: bool) {
-    state.trading.set_cap_override(off);
-}
-
-#[tauri::command]
-async fn set_margin_type(state: State<'_, AppState>, symbol: String, isolated: bool) -> Result<(), String> {
-    state.trading.set_margin_type(&symbol, isolated).await
-}
-
-#[tauri::command]
-async fn set_leverage(state: State<'_, AppState>, symbol: String, leverage: u32) -> Result<(), String> {
-    state.trading.set_leverage(&symbol, leverage).await
-}
-
-#[tauri::command]
-fn scanner_signals(state: State<'_, AppState>) -> Vec<Signal> {
-    state.scanner.signals()
-}
-
-#[tauri::command]
-fn scanner_status(state: State<'_, AppState>) -> ScannerStatus {
-    state.scanner.status()
-}
-
-#[tauri::command]
-fn scanner_config(state: State<'_, AppState>) -> ScannerConfig {
-    state.scanner.config()
-}
-
-/// Switch the QFL signal source on or off (no restart).
-#[tauri::command]
-fn scanner_sources(app: AppHandle, state: State<'_, AppState>, sources: Sources) {
-    state.scanner.set_sources(&ev(&app), sources);
-}
-
-/// Restart the scanner with a new configuration (timeframe, universe size, thresholds).
-/// New signal rules (drop %, crack depth, ...) for the running scanner.
-#[tauri::command]
-fn scanner_params(app: AppHandle, state: State<'_, AppState>, params: harvester_core::signals::SignalParams) {
-    state.scanner.set_params(&ev(&app), params);
-}
-
-#[tauri::command]
-fn scanner_configure(app: AppHandle, state: State<'_, AppState>, config: ScannerConfig) {
-    state.scanner.start(ev(&app), state.market.clone(), config);
-}
-
-/// The QFL support zones of a symbol / timeframe for the chart to draw: bases at nearly the same price combined (Pine-exact detector
-/// over the latest 1000 candles), each with how many bases and how many retests it has.
-#[tauri::command]
-async fn qfl_zones(state: State<'_, AppState>, symbol: String, interval: String, volatility_factor: Option<f64>, crack_pct: Option<f64>, merge_pct: Option<f64>) -> Result<Vec<BaseZone>, String> {
-    let rows = state.market.klines(&symbol, &interval, 1000, None, None).await?;
-    let candles: Vec<harvester_core::candle::Candle> = rows.iter().map(|k| harvester_core::candle::Candle::new(k.time, k.open, k.high, k.low, k.close, k.volume)).collect();
-    let params = QflParams { volatility_factor: volatility_factor.unwrap_or(1.0).clamp(0.1, 20.0), crack_pct: crack_pct.unwrap_or(0.5).clamp(0.05, 20.0) / 100.0, ..QflParams::default() };
-    Ok(base_zones(&candles, &params, merge_pct.unwrap_or(0.5).clamp(0.0, 5.0), 60))
-}
-
-/// Smart Money zones (fair value gaps, order blocks, breaker blocks) of a symbol / timeframe for the chart to draw.
-#[tauri::command]
-async fn smc_zones_cmd(state: State<'_, AppState>, symbol: String, interval: String, min_fvg_pct: Option<f64>, max_each: Option<usize>) -> Result<Vec<SmcZone>, String> {
-    let rows = state.market.klines(&symbol, &interval, 1000, None, None).await?;
-    let candles: Vec<harvester_core::candle::Candle> = rows.iter().map(|k| harvester_core::candle::Candle::new(k.time, k.open, k.high, k.low, k.close, k.volume)).collect();
-    let params = SmcParams { min_fvg_size_pct: min_fvg_pct.unwrap_or(0.5).clamp(0.05, 10.0), ..SmcParams::default() };
-    Ok(smc_zones(&candles, &params, max_each.unwrap_or(6).clamp(1, 60)))
-}
-
-/// The Lab's starting configuration (the V2 live setting).
-#[tauri::command]
-fn lab_default_config() -> LabConfig {
-    LabConfig::default()
-}
-
-/// Backtest the QFL ladder as one shared account over recent history (public data; downloads and caches candles).
-#[tauri::command]
-async fn lab_run(app: AppHandle, state: State<'_, AppState>, request: LabRequest) -> Result<LabReport, String> {
-    state.lab.run(ev(&app), state.market.clone(), request).await
-}
-
-#[tauri::command]
-fn lab_cancel(state: State<'_, AppState>) {
-    state.lab.cancel();
+async fn rpc(core: State<'_, Arc<Core>>, name: String, args: Option<Value>) -> Result<Value, String> {
+    let core: Arc<Core> = core.inner().clone();
+    core.dispatch(&name, &args.unwrap_or(Value::Null)).await
 }
 
 fn main() {
     let _ = dotenvy::dotenv(); // keys and limits from a .env file (searched upwards from the working directory)
-    let env = Env::from_name(&std::env::var("HARVESTER_ENV").unwrap_or_default());
-    let market = Arc::new(Market::new(env));
     // the engine's background tasks run on Tauri's runtime
     match tauri::async_runtime::handle() {
         tauri::async_runtime::RuntimeHandle::Tokio(h) => harvester_engine::rt::init(h.clone()),
@@ -363,25 +35,13 @@ fn main() {
         _ => {}
     }
     tauri::Builder::default()
-        .manage(AppState { lab: Lab::default(), ai: Arc::new(ai::AiHub::open(ai::default_path())), news: Arc::new(news::NewsHub::new(news::default_names_path())), brackets: Arc::new(BracketStore::open(brackets::default_path())), marks: Default::default(), movers: Arc::new(Mutex::new(MoverDetector::new(MoverParams::default()))), held: Arc::new(HeldStore::open(held::default_path())), market: market.clone(), streams: Streams::default(), scanner: Scanner::default(), trading: Arc::new(Trading::new(market)) })
         .setup(|app| {
-            let state = app.state::<AppState>();
-            let events = ev(app.handle());
-            state.scanner.start(events.clone(), state.market.clone(), ScannerConfig::default());
-            userstream::start(events.clone(), state.trading.clone());
-            brackets::start(events.clone(), state.trading.clone(), state.brackets.clone());
-            marks::start(state.trading.clone(), state.marks.clone());
-            { let hub = state.news.clone(); tauri::async_runtime::spawn(async move { hub.load_names().await; }); }
-            held::start(events.clone(), state.trading.clone(), state.held.clone());
-            movers::start(events.clone(), state.market.clone(), state.scanner.injector(), state.movers.clone());
-            telegram::start(state.trading.clone(), state.market.clone(), state.scanner.reader(), state.news.clone(), "desktop app");
+            let core = Core::new(Events::new(TauriSink(app.handle().clone())), true);
+            core.start_background(Some("desktop app"));
+            app.manage(core);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            environment, set_environment, list_symbols, symbol_filters, get_klines, subscribe_klines, unsubscribe_klines, preview_ladder,
-            qfl_zones, smc_zones_cmd, lab_default_config, lab_run, lab_cancel, scanner_signals, scanner_status, scanner_config, scanner_configure, scanner_params, scanner_sources,
-            trading_status, account_overview, open_orders, place_order, place_orders, held_list, held_cancel, held_move, move_to_held, movers_config, movers_configure, mark_prices, news_for, open_url, delistings, ai_models, ai_analyze, ai_history, ai_track, ai_market, bracket_add, bracket_list, bracket_cancel, cancel_order, modify_order, resize_exits, order_history, trade_history, symbol_leverage, leverage_brackets, cancel_all_orders, close_position, set_leverage, set_margin_type, set_cap_override
-        ])
+        .invoke_handler(tauri::generate_handler![rpc])
         .run(tauri::generate_context!())
         .expect("error while running Harvester");
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, inTauri } from '../api';
+import { api, hasBackend } from '../api';
 import { useActiveChart } from '../chartStore';
 import { costUsd, formatCost } from '../analyst/cost';
 import { useAnalyst } from '../analyst/store';
@@ -182,11 +182,11 @@ export function AnalystPanel() {
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
-    if (!inTauri) return;
+    if (!hasBackend) return;
     api.aiModels().then(setModels).catch(() => undefined);
   }, []);
   useEffect(() => {
-    if (!inTauri || !symbol) return;
+    if (!hasBackend || !symbol) return;
     api.aiHistory(symbol).then(a.setLatest).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);

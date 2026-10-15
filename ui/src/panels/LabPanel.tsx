@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, inTauri, onLabProgress } from '../api';
+import { api, hasBackend, onLabProgress } from '../api';
 import type { LabAccountResult, LabConfig, LabProgress, LabReport } from '../types';
 import { useApp } from '../store';
 
@@ -126,7 +126,7 @@ export function LabPanel() {
   useEffect(() => {
     mounted.current = true;
     let off: (() => void) | undefined;
-    if (inTauri) void onLabProgress((p) => mounted.current && setProgress(p)).then((o) => (off = o));
+    if (hasBackend) void onLabProgress((p) => mounted.current && setProgress(p)).then((o) => (off = o));
     return () => {
       mounted.current = false;
       off?.();
@@ -222,7 +222,7 @@ export function LabPanel() {
               Cancel
             </button>
           ) : (
-            <button className="primary" disabled={!inTauri} onClick={() => void run()}>
+            <button className="primary" disabled={!hasBackend} onClick={() => void run()}>
               Run backtest
             </button>
           )}

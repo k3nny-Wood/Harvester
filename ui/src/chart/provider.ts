@@ -1,5 +1,5 @@
 import type { DataProvider, OHLCV } from '@luxalgo/vela';
-import type { UnlistenFn } from '@tauri-apps/api/event';
+import type { Unlisten as UnlistenFn } from '../transport';
 import { api, onKline } from '../api';
 import { TIMEFRAMES, velaToInterval } from '../intervals';
 import { fetchBars } from './history';

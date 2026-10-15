@@ -1,4 +1,4 @@
-import { api, inTauri, onAccountChanged, onHeldChanged, onUserStream } from './api';
+import { api, hasBackend, onAccountChanged, onHeldChanged, onUserStream } from './api';
 import { activeChartStore } from './chartStore';
 import { confirmDialog } from './confirm';
 import { useApp } from './store';
@@ -8,7 +8,7 @@ import type { OrderRequest, Side } from './types';
 
 /** Refresh the account, positions and open orders from the exchange. */
 export async function refreshTrading(): Promise<void> {
-  if (!inTauri) return;
+  if (!hasBackend) return;
   const app = useApp.getState();
   const status = await api.tradingStatus().catch(() => null);
   if (status) app.setTrading(status);
@@ -36,7 +36,7 @@ let cleaning = false;
  * and again on a fresh read, so the exits of an entry that has just filled are never taken for leftovers.
  */
 async function cleanLeftovers(): Promise<void> {
-  if (cleaning || !inTauri) return;
+  if (cleaning || !hasBackend) return;
   const app = useApp.getState();
   const positions = app.account?.positions ?? [];
   const candidates = leftoverSymbols(positions, app.orders, app.held, []);

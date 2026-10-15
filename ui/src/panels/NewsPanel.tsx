@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, inTauri } from '../api';
+import { api, hasBackend } from '../api';
 import { useActiveChart } from '../chartStore';
 import { DelistNote } from '../components/DelistNote';
 import { useApp } from '../store';
@@ -48,7 +48,7 @@ export function NewsPanel() {
 
   const load = useCallback(
     async (force: boolean) => {
-      if (!inTauri || !symbol) return;
+      if (!hasBackend || !symbol) return;
       setLoading(true);
       setError('');
       try {
