@@ -277,18 +277,17 @@ export function ScannerTab() {
             <div className="m-row">
               <b className="m-coin">{coin(s.symbol)}</b>
               <span className={`m-badge ${s.kind === 'pump' ? 'up' : s.kind === 'dump' || s.kind === 'drop' ? 'down' : 'warn'}`}>{s.kind.toUpperCase()}</span>
-              <span className="m-muted m-sig-meta">{s.timeframe} · {ago(s.timeMs)}</span>
+              <span className="m-muted m-sig-meta">{s.distancePct != null ? `${s.distancePct.toFixed(2)}%` : `drop ${s.dropPct.toFixed(1)}%`} · {s.timeframe} · {ago(s.timeMs)}</span>
               <span className="m-pnl">{s.score}</span>
               <span className="m-chev">{isOpen ? '▴' : '▾'}</span>
-            </div>
-            <div className="m-sig-line">
-              {fmtPrice(s.price)}
-              {s.distancePct != null && <> · vs crack <b>{s.distancePct.toFixed(2)}%</b></>} · drop <b>{s.dropPct.toFixed(1)}%</b>
             </div>
             {isOpen && (
               <div className="m-sig-more" onClick={(e) => e.stopPropagation()}>
                 {s.thumb.length > 0 && <Thumb candles={s.thumb} base={s.base} crackLevel={s.crackLevel} width={thumbW} height={120} />}
                 <div className="m-grid">
+                  <span>Price <b>{fmtPrice(s.price)}</b></span>
+                  <span>Drop <b>{s.dropPct.toFixed(1)}%</b></span>
+                  {s.distancePct != null && <span>vs crack <b>{s.distancePct.toFixed(2)}%</b></span>}
                   <span>Volume <b>{s.volRatio.toFixed(1)}x</b></span>
                   {s.base != null && <span>Base <b>{fmtPrice(s.base)}</b></span>}
                   {s.crackLevel != null && <span>Crack <b>{fmtPrice(s.crackLevel)}</b></span>}

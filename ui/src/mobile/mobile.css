@@ -1931,3 +1931,50 @@
     font-size: 12px;
   }
 }
+
+/* more room: slim notifications (two at most, small, just above the bottom bar), tighter lists, a slimmer scanner filter row */
+@media (orientation: portrait) {
+  .m-toasts {
+    left: 8px;
+    right: 8px;
+    bottom: calc(46px + env(safe-area-inset-bottom) * 0.35);
+    gap: 3px;
+  }
+  .m-toast {
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.25;
+    opacity: 0.94;
+  }
+  .m-list {
+    gap: 5px;
+    padding: 6px 8px;
+  }
+  .m-chips {
+    gap: 5px;
+    padding: 5px 8px 0;
+  }
+  .m-app .m-chip {
+    min-height: 26px;
+    height: 26px;
+    padding: 0 8px;
+    border-radius: 13px;
+    font-size: 11px;
+  }
+  .m-list > .m-pad {
+    padding: 2px 10px;
+    font-size: 11px;
+  }
+  .m-empty {
+    padding: 24px 16px;
+  }
+}
+
+.m-app .m-sig {
+  padding: 4px 10px;
+}
+.m-sig .m-sig-meta {
+  font-size: 11px;
+  text-align: right;
+}

@@ -90,7 +90,7 @@ export function MobileApp() {
         ))}
       </nav>
       <div className="m-toasts">
-        {toasts.map((t) => (
+        {toasts.slice(-2).map((t) => (
           <div key={t.id} className={`m-toast ${t.tone}`} onClick={() => dismiss(t.id)}>
             {t.text}
           </div>
