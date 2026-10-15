@@ -882,3 +882,21 @@
   border: 1px solid var(--line);
   border-radius: 8px;
 }
+
+/* the order box: the background is (almost) see-through; the text gets a shadow so it stays readable over the candles */
+.m-floater {
+  background: rgba(11, 15, 21, 0.1);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-color: rgba(90, 108, 135, 0.7);
+  box-shadow: none;
+}
+.m-floater,
+.m-floater label,
+.m-floater .m-fl-note,
+.m-floater .m-fl-sum {
+  text-shadow: 0 0 3px #000, 0 0 6px #000, 0 1px 2px #000;
+}
+.m-app .m-floater input[type='text'] {
+  background: rgba(8, 12, 18, 0.35);
+}
