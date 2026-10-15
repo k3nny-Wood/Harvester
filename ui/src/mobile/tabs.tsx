@@ -210,22 +210,27 @@ const FLOATER_GAP = 14;
  * it); only when it fits nowhere does it take the side with more room and scroll inside. `h` is the height the box wants.
  */
 function floaterStyle(startY: number, tab: HTMLElement | null, bounds: { top: number; bottom: number; entry: number | null } | null, h: number): React.CSSProperties {
+  // the box stays inside the chart itself: it never reaches the Long / Short buttons below it or the rows above it
+  const tabRect = tab?.getBoundingClientRect();
+  const chartRect = tab?.querySelector('.m-chart')?.getBoundingClientRect();
+  const areaTop = tabRect && chartRect ? chartRect.top - tabRect.top : 0;
+  const areaBottom = tabRect && chartRect ? chartRect.bottom - tabRect.top : tab?.clientHeight ?? 600;
   const w = tab?.clientWidth ?? 360;
   const th = tab?.clientHeight ?? 600;
   const width = Math.min(FLOATER_W, w - 16);
   const left = 8; // against the left edge of the chart
   const top = bounds?.top ?? startY;
   const bottom = bounds?.bottom ?? startY;
-  const above = top - FLOATER_GAP - 4;
-  const below = th - bottom - FLOATER_GAP - 4;
+  const above = top - areaTop - FLOATER_GAP - 4;
+  const below = areaBottom - bottom - FLOATER_GAP - 4;
   if (above >= h) return { left, width, bottom: th - top + FLOATER_GAP };
   if (below >= h) return { left, width, top: bottom + FLOATER_GAP };
   // the lines run (nearly) from the top of the chart to the bottom, so there is no room outside them: the box goes on the entry line instead,
   // above it or below it, wherever it fits (it is see-through, so the lines behind it stay visible)
   if (bounds?.entry != null) {
     const e = bounds.entry;
-    const aboveEntry = e - FLOATER_GAP - 4;
-    const belowEntry = th - e - FLOATER_GAP - 4;
+    const aboveEntry = e - areaTop - FLOATER_GAP - 4;
+    const belowEntry = areaBottom - e - FLOATER_GAP - 4;
     if (aboveEntry >= h) return { left, width, bottom: th - e + FLOATER_GAP };
     if (belowEntry >= h) return { left, width, top: e + FLOATER_GAP };
     return aboveEntry >= belowEntry ? { left, width, bottom: th - e + FLOATER_GAP, maxHeight: Math.max(120, aboveEntry) } : { left, width, top: e + FLOATER_GAP, maxHeight: Math.max(120, belowEntry) };
