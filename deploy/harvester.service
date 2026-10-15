@@ -1,0 +1,23 @@
+[Unit]
+Description=Harvester server (Telegram bot, alerts, scanner and the web page)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=harvester
+Group=harvester
+WorkingDirectory=/opt/harvester
+# the keys and settings (HARVESTER_ENV, BINANCE_*, TELEGRAM_*, HARVESTER_WEB_BIND / HARVESTER_WEB_TOKEN ...) are read from this file
+EnvironmentFile=/opt/harvester/.env
+ExecStart=/opt/harvester/harvester-server
+Restart=always
+RestartSec=5
+# the program keeps its data (held and armed orders, the AI log, harvester.log) in /opt/harvester/Harvester
+ReadWritePaths=/opt/harvester
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
