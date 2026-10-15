@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChartTab } from './chart/ChartTab';
+import { CollapseAction } from './components/CollapseAction';
 import { DockviewReact, type DockviewApi, type DockviewReadyEvent, type IDockviewPanelProps } from 'dockview-react';
 import { alertForSignal } from './alerts';
 import { api, inTauri, onScannerStatus, onSignalNew, onSignals } from './api';
@@ -282,7 +283,7 @@ export function App() {
         </div>
       </header>
       <main className="dock">
-        <DockviewReact className="dockview-theme-abyss" components={components} defaultTabComponent={ChartTab} onReady={onReady} />
+        <DockviewReact className="dockview-theme-abyss" components={components} defaultTabComponent={ChartTab} rightHeaderActionsComponent={CollapseAction} onReady={onReady} />
       </main>
       <ConfirmHost />
       <div className="toasts">
