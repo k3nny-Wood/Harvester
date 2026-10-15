@@ -593,14 +593,24 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
             <input type="range" min={MIN_RUNGS} max={MAX_RUNGS} step={1} value={lad.count} disabled={!lad.on} title="Number of orders in the ladder (same setting as in the panel)" onChange={(e) => setLad((l) => ({ ...l, count: Number(e.target.value) }))} />
             <b>{lad.on ? rungs.length : lad.count}</b>
           </div>
-          <button
-            className={`quick-apply ${long ? 'buy' : 'sell'}`}
-            disabled={busy || !canTrade || problems.length > 0 || rungTooSmall || !(qty > 0)}
-            title="Place the order with its take-profit and stop-loss (same as double-clicking a box, or OK in the panel)"
-            onClick={() => void place()}
-          >
-            {busy ? 'Placing…' : 'Apply'}
-          </button>
+          <div className="quick-apply-row">
+            <button
+              className={`quick-market ${long ? 'buy' : 'sell'}`}
+              disabled={busy || !canTrade}
+              title="Market: enter now at the market price instead of waiting for the entry level, with the take-profit and stop-loss (same as the M button on the entry line)"
+              onClick={() => void place(true)}
+            >
+              M
+            </button>
+            <button
+              className={`quick-apply ${long ? 'buy' : 'sell'}`}
+              disabled={busy || !canTrade || problems.length > 0 || rungTooSmall || !(qty > 0)}
+              title="Place the order with its take-profit and stop-loss (same as double-clicking a box, or OK in the panel)"
+              onClick={() => void place()}
+            >
+              {busy ? 'Placing…' : 'Apply'}
+            </button>
+          </div>
         </div>
       )}
       <div className="quick-panel" onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>

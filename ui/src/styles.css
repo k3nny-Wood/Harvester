@@ -1899,10 +1899,31 @@ button.mini {
   color: #6cc4ff;
 }
 
+.quick-apply-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 3px;
+}
+.quick-amount .quick-market {
+  pointer-events: auto;
+  width: 28px;
+  padding: 3px 0;
+  font-size: 12px;
+  font-weight: 800;
+  border: 0;
+  color: #fff;
+}
+.quick-amount .quick-market.buy {
+  background: #2e9b6f;
+}
+.quick-amount .quick-market.sell {
+  background: #d0454b;
+}
 .quick-amount .quick-apply {
   pointer-events: auto;
-  margin-top: 3px;
-  width: 100%;
+  flex: 1;
+  margin-top: 0;
+  width: auto;
   padding: 3px 0;
   font-size: 12px;
   font-weight: 700;
