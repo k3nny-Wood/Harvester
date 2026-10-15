@@ -310,6 +310,8 @@ export interface Position {
   isolated: boolean;
   /** cash in an isolated position; Binance shows it as the position margin */
   isolatedWallet?: number;
+  /** the margin Binance holds for the position (0 / missing: not reported) */
+  initialMargin?: number;
 }
 
 export interface Account {

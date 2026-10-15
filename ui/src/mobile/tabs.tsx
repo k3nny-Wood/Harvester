@@ -59,7 +59,8 @@ function PositionCard({ p }: { p: Position }) {
   const long = p.amount > 0;
   const ex = exitState(p.symbol, p.amount, orders);
   const level = (o: typeof ex.stop) => (o ? fmtPrice(o.stopPrice || o.price) : 'none');
-  const margin = (Math.abs(p.amount) * p.entryPrice) / Math.max(1, p.leverage);
+  // what Binance holds for the position; the estimate from entry value and leverage only when it did not say
+  const margin = p.initialMargin && p.initialMargin > 0 ? p.initialMargin : (Math.abs(p.amount) * p.entryPrice) / Math.max(1, p.leverage);
   const roe = margin > 0 ? (p.unrealizedPnl / margin) * 100 : 0;
   const close = async (fraction: number) => {
     if (!(await confirmDialog(`Close ${Math.round(fraction * 100)}% of the ${p.symbol} ${long ? 'long' : 'short'} at market?`, { confirmLabel: 'Close', danger: true }))) return;

@@ -197,6 +197,8 @@ pub struct Position {
     pub isolated: bool,
     /// the cash put into an isolated position (Binance's `isolatedWallet`; the margin shown is this plus the unrealised profit)
     pub isolated_wallet: f64,
+    /// the margin Binance holds for this position (`positionInitialMargin` of the account answer); 0 when it did not say
+    pub initial_margin: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -326,6 +328,7 @@ pub fn parse_positions(v: &Value) -> Vec<Position> {
                     leverage: num(&p["leverage"]),
                     isolated: p["marginType"].as_str().map_or(false, |m| m.eq_ignore_ascii_case("isolated")),
                     isolated_wallet: num(&p["isolatedWallet"]),
+                    initial_margin: 0.0,
                 })
                 .collect()
         })
@@ -674,11 +677,15 @@ impl Trading {
     pub async fn account(&self) -> Result<Account, String> {
         let acc = self.signed(reqwest::Method::GET, "/fapi/v2/account", vec![]).await?;
         let risk = self.signed(reqwest::Method::GET, "/fapi/v2/positionRisk", vec![]).await?;
+        let mut positions = parse_positions(&risk);
+        for p in positions.iter_mut() {
+            p.initial_margin = acc["positions"].as_array().and_then(|a| a.iter().find(|x| x["symbol"].as_str() == Some(p.symbol.as_str()))).map(|x| num(&x["positionInitialMargin"])).unwrap_or(0.0);
+        }
         Ok(Account {
             wallet_balance: num(&acc["totalWalletBalance"]),
             available_balance: num(&acc["availableBalance"]),
             unrealized_pnl: num(&acc["totalUnrealizedProfit"]),
-            positions: parse_positions(&risk),
+            positions,
             leverages: parse_leverages(&acc),
             isolated: parse_margin_modes(&acc),
         })
