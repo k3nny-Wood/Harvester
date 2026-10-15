@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Kline } from '../types';
 import { fmtPrice, priceRange, windowOf, zoomed, type ChartLine } from './chartMath';
 
@@ -13,7 +13,7 @@ const DEFAULT_VISIBLE = 70;
  * A small candlestick chart for the phone: drag to pan, pinch to zoom, double-tap to jump back to the newest candle. Horizontal lines mark the
  * position's entry, stop-loss, take-profit and liquidation and the open orders.
  */
-export function MobileChart({ candles, lines, onLongPress, onTap }: { candles: Kline[]; lines: ChartLine[]; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: () => void }) {
+export function MobileChart({ candles, lines, pending, onPendingMove, onPendingY, onLongPress, onTap }: { candles: Kline[]; lines: ChartLine[]; /** the order being set up: a line with a handle to drag it */ pending?: { price: number; label: string; color: string } | null; onPendingMove?: (price: number) => void; /** where the pending line is on the screen (client y), so the order box can stay clear of it */ onPendingY?: (clientY: number) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: () => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 320, h: 300 });
@@ -34,6 +34,8 @@ export function MobileChart({ candles, lines, onLongPress, onTap }: { candles: K
   }, []);
 
   const win = windowOf(candles.length, view.visible, view.offset);
+  // the price range comes from the candles and the position's lines; the pending order is left out so dragging it never moves the range under the finger
+  const range = useMemo(() => priceRange(candles.slice(win.start, win.end), lines), [candles, lines, win.start, win.end]);
 
   useEffect(() => {
     const c = canvas.current;
@@ -47,7 +49,6 @@ export function MobileChart({ candles, lines, onLongPress, onTap }: { candles: K
     g.fillStyle = '#0b0f15';
     g.fillRect(0, 0, size.w, size.h);
     const shown = candles.slice(win.start, win.end);
-    const range = priceRange(shown, lines);
     rangeRef.current = range ? { lo: range.lo, hi: range.hi, h: size.h } : null;
     if (!range || !shown.length) {
       g.fillStyle = '#8b98a5';
@@ -102,6 +103,22 @@ export function MobileChart({ candles, lines, onLongPress, onTap }: { candles: K
       g.fillText(`${l.label} ${fmtPrice(l.price)}`, 6, y(l.price) - 2);
       g.textBaseline = 'middle';
     }
+    // the order being set up
+    if (pending && pending.price >= range.lo && pending.price <= range.hi) {
+      g.strokeStyle = pending.color;
+      g.lineWidth = 2;
+      g.setLineDash([8, 5]);
+      g.beginPath();
+      g.moveTo(0, y(pending.price));
+      g.lineTo(plotW, y(pending.price));
+      g.stroke();
+      g.setLineDash([]);
+      g.lineWidth = 1;
+      g.fillStyle = pending.color;
+      g.textBaseline = 'bottom';
+      g.fillText(`${pending.label} ${fmtPrice(pending.price)}`, 6, y(pending.price) - 3);
+      g.textBaseline = 'middle';
+    }
     // the last price
     const last = candles[candles.length - 1];
     if (last && win.offset === 0) {
@@ -118,7 +135,7 @@ export function MobileChart({ candles, lines, onLongPress, onTap }: { candles: K
       g.fillStyle = '#0b0f15';
       g.fillText(fmtPrice(last.close), plotW + 4, ly);
     }
-  }, [candles, lines, size, win.start, win.end, win.offset]);
+  }, [candles, lines, pending, range, size, win.start, win.end, win.offset]);
 
   const cancelPress = () => {
     if (press.current) window.clearTimeout(press.current.timer);
@@ -189,9 +206,55 @@ export function MobileChart({ candles, lines, onLongPress, onTap }: { candles: K
     gesture.current = pts.length ? { visible: win.visible, offset: win.offset, x: pts[0].x, dist: 0 } : null;
   };
 
+  // the handle on the pending order's line: drag it up or down to change the entry price
+  const handleDrag = useRef(false);
+  const priceAtY = (clientY: number): number | null => {
+    const r = rangeRef.current;
+    const top = box.current?.getBoundingClientRect().top;
+    if (!r || top == null) return null;
+    const price = r.hi - ((clientY - top - 2) / (r.h - 4)) * (r.hi - r.lo);
+    return Math.max(r.lo, Math.min(r.hi, price));
+  };
+  const handleY = pending && range ? Math.max(2, Math.min(size.h - 2, ((range.hi - pending.price) / (range.hi - range.lo)) * (size.h - 4) + 2)) : null;
+
+  useEffect(() => {
+    if (handleY == null) return;
+    onPendingY?.((box.current?.getBoundingClientRect().top ?? 0) + handleY);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handleY, size.h]);
+
   return (
     <div ref={box} className="m-chart" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onContextMenu={(e) => e.preventDefault()} onDoubleClick={() => setView({ visible: DEFAULT_VISIBLE, offset: 0 })}>
       <canvas ref={canvas} style={{ width: size.w, height: size.h }} />
+      {pending && handleY != null && (
+        <div
+          className="m-handle"
+          style={{ top: handleY - 18, right: AXIS_W + 6, color: pending.color, borderColor: pending.color }}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            (e.currentTarget as Element).setPointerCapture(e.pointerId);
+            handleDrag.current = true;
+          }}
+          onPointerMove={(e) => {
+            if (!handleDrag.current) return;
+            const p = priceAtY(e.clientY);
+            if (p != null) onPendingMove?.(p);
+          }}
+          onPointerUp={(e) => {
+            handleDrag.current = false;
+            try {
+              (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+            } catch {
+              /* already released */
+            }
+          }}
+          onPointerCancel={() => (handleDrag.current = false)}
+          title="Drag to move the entry price"
+        >
+          ⇕
+        </div>
+      )}
     </div>
   );
 }

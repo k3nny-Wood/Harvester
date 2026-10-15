@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { floorQty } from '../addSize';
 import { maxPct, sizeFromPct } from '../sizing';
@@ -16,6 +16,8 @@ export function sideFor(price: number, mark: number): Side {
 }
 
 export interface FloaterState {
+  /** a new number for every press: a new press starts the box afresh */
+  id: number;
   price: number;
   /** where the finger was, in the coordinates of the chart tab */
   x: number;
@@ -42,12 +44,14 @@ export function OrderFloater({ symbol, mark, state, onClose, onPrice, onSide, st
   const [text, setText] = useState('');
   const tick = filters?.tickSize;
 
-  // the box opened for a new level: take its price and the side that suits it
+  // the price box follows the level when it is moved by the handle on the chart (not while the price is being typed)
+  const typed = useRef(false);
   useEffect(() => {
-    const snapped = snapToTick(state.price, tick);
-    setText(String(snapped));
-    setSide(sideFor(snapped, mark));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (typed.current) {
+      typed.current = false;
+      return;
+    }
+    setText(String(snapToTick(state.price, tick)));
   }, [state.price, tick]);
 
   useEffect(() => {
@@ -213,7 +217,10 @@ export function OrderFloater({ symbol, mark, state, onClose, onPrice, onSide, st
           onChange={(e) => {
             setText(e.target.value);
             const v = Number(e.target.value.replace(',', '.'));
-            if (Number.isFinite(v) && v > 0) onPrice(v, side);
+            if (Number.isFinite(v) && v > 0) {
+              typed.current = true;
+              onPrice(v, side);
+            }
           }}
         />
         <div className="m-seg">

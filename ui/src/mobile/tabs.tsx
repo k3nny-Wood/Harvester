@@ -166,13 +166,20 @@ export function ScannerTab() {
 
 const FLOATER_W = 330;
 
-/** Where the order box goes: beside the pressed level, on the side of it that has room, inside the tab. */
-function floaterStyle(f: { x: number; y: number }, tab: HTMLElement | null): React.CSSProperties {
+/** The least room above the level for the box to sit there; closer to the top than this it goes below the level instead. */
+const MIN_ROOM_ABOVE = 230;
+
+/**
+ * Where the order box goes: ABOVE the level, so the line stays in view. `levelY` is where the level is in the tab (it follows the handle while
+ * it is dragged); only a level too close to the top puts the box below it.
+ */
+function floaterStyle(f: { y: number }, tab: HTMLElement | null, levelY: number | null): React.CSSProperties {
   const w = tab?.clientWidth ?? 360;
   const h = tab?.clientHeight ?? 600;
   const width = Math.min(FLOATER_W, w - 16);
-  const left = Math.max(8, Math.min(w - width - 8, f.x - width / 2));
-  return f.y > h * 0.5 ? { left, width, bottom: h - f.y + 14 } : { left, width, top: f.y + 14 };
+  const left = Math.max(8, (w - width) / 2);
+  const y = levelY ?? f.y;
+  return y >= MIN_ROOM_ABOVE ? { left, width, bottom: h - y + 16, maxHeight: y - 24 } : { left, width, top: y + 16, maxHeight: h - y - 24 };
 }
 
 export function ChartTab() {
@@ -188,6 +195,8 @@ export function ChartTab() {
   // the order box opened by pressing and holding the chart, and the side it is set to (drawn as a line on the chart)
   const [floater, setFloater] = useState<(FloaterState & { side: Side }) | null>(null);
   const tabRef = useRef<HTMLDivElement>(null);
+  // where the pending order's line is, in the coordinates of the tab
+  const [levelY, setLevelY] = useState<number | null>(null);
   const [error, setError] = useState('');
 
   // history, then live candles
@@ -214,7 +223,10 @@ export function ChartTab() {
     };
   }, [symbol, timeframe]);
 
-  useEffect(() => setFloater(null), [symbol, timeframe]);
+  useEffect(() => {
+    setFloater(null);
+    setLevelY(null);
+  }, [symbol, timeframe]);
 
   const pos = live?.positions.find((p) => p.symbol === symbol && p.amount !== 0);
   const mark = pos?.markPrice || candles[candles.length - 1]?.close || 0;
@@ -231,9 +243,8 @@ export function ChartTab() {
       if (pos && o.reduceOnly) continue;
       out.push({ price: o.stopPrice && !o.price ? o.stopPrice : o.price, label: `${o.side.toLowerCase()} ${o.type.replace(/_/g, ' ').toLowerCase()}`, color: '#5b8def', dashed: true });
     }
-    if (floater) out.push({ price: floater.price, label: `${floater.side === 'BUY' ? 'buy' : 'sell'} here`, color: floater.side === 'BUY' ? '#2e9b6f' : '#d0454b', dashed: true });
     return out;
-  }, [pos, orders, symbol, floater]);
+  }, [pos, orders, symbol]);
 
   const matches = useMemo(() => {
     const q = query.trim().toUpperCase();
@@ -273,12 +284,15 @@ export function ChartTab() {
       {error ? <div className="m-warn">{error}</div> : <MobileChart
           candles={candles}
           lines={lines}
+          pending={floater ? { price: floater.price, label: `${floater.side === 'BUY' ? 'buy' : 'sell'} here`, color: floater.side === 'BUY' ? '#2e9b6f' : '#d0454b' } : null}
+          onPendingMove={(price) => setFloater((f) => (f ? { ...f, price } : f))}
+          onPendingY={(cy) => setLevelY(cy - (tabRef.current?.getBoundingClientRect().top ?? 0))}
           onTap={() => setFloater(null)}
           onLongPress={(p) => {
             const rect = tabRef.current?.getBoundingClientRect();
             if (!rect || !trading?.hasCredentials || !(mark > 0)) return;
             setPicking(false);
-            setFloater({ price: p.price, x: p.x - rect.left, y: p.y - rect.top, side: sideFor(p.price, mark) });
+            setFloater({ id: Date.now(), price: p.price, x: p.x - rect.left, y: p.y - rect.top, side: sideFor(p.price, mark) });
           }}
         />}
       <div className="m-trade-bar">
@@ -287,13 +301,14 @@ export function ChartTab() {
       </div>
       {floater && (
         <OrderFloater
+          key={floater.id}
           symbol={symbol}
           mark={mark}
           state={floater}
           onClose={() => setFloater(null)}
           onPrice={(price, side) => setFloater((f) => (f ? { ...f, price, side } : f))}
           onSide={(side) => setFloater((f) => (f ? { ...f, side } : f))}
-          style={floaterStyle(floater, tabRef.current)}
+          style={floaterStyle(floater, tabRef.current, levelY)}
         />
       )}
       {trade && <TradeSheet side={trade} symbol={symbol} mark={mark} onClose={() => setTrade(null)} />}
