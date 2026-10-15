@@ -66,3 +66,34 @@ export function fmtPrice(p: number): string {
   if (a >= 0.01) return p.toFixed(5);
   return p.toFixed(7);
 }
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Timeframes whose labels are dates rather than times of day. */
+function isDaily(timeframe: string): boolean {
+  return timeframe === '1d' || timeframe === '3d' || timeframe === '1w' || timeframe === '1M';
+}
+
+/**
+ * The labels of the time axis: about one for every `minGap` pixels, on candles whose position in the whole series is a multiple of the spacing,
+ * so the labels stay on the same candles while the chart is panned or a new candle arrives. A label shows the time of day, or the date for the
+ * first one, at a change of day and on daily charts. `startIndex` is the position of the first shown candle in the whole series.
+ */
+export function timeLabels(shown: Kline[], startIndex: number, plotW: number, timeframe: string, minGap = 78): Array<{ x: number; text: string }> {
+  if (!shown.length || !(plotW > 0)) return [];
+  const step = plotW / shown.length;
+  const wanted = Math.max(1, Math.floor(plotW / minGap));
+  const every = Math.max(1, Math.round(shown.length / wanted));
+  const out: Array<{ x: number; text: string }> = [];
+  let lastDay = '';
+  shown.forEach((k, i) => {
+    if ((startIndex + i) % every !== 0) return;
+    const d = new Date(k.time);
+    const day = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const date = `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+    const clock = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    out.push({ x: (i + 0.5) * step, text: isDaily(timeframe) || day !== lastDay ? date : clock });
+    lastDay = day;
+  });
+  return out;
+}

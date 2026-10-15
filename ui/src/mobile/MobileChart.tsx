@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Kline } from '../types';
-import { fmtPrice, priceRange, windowOf, zoomed, type ChartLine } from './chartMath';
+import { fmtPrice, MAX_VISIBLE, MIN_VISIBLE, priceRange, timeLabels, windowOf, zoomed, type ChartLine } from './chartMath';
 
 const UP = '#2e9b6f';
 const DOWN = '#d0454b';
 const AXIS_W = 62;
+/** The height of the time axis along the bottom of the chart. */
+const TIME_H = 22;
 const LONG_PRESS_MS = 450;
 const MOVE_SLOP = 8;
 const DEFAULT_VISIBLE = 70;
@@ -35,6 +37,9 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
   const [manual, setManual] = useState<{ lo: number; hi: number } | null>(null);
   const axis = useRef<{ startY: number; lo: number; hi: number; moved: boolean } | null>(null);
   const lastAxisTap = useRef(0);
+  // dragging on the time axis (along the bottom) stretches or squashes the chart horizontally
+  const taxis = useRef<{ startX: number; visible: number; moved: boolean } | null>(null);
+  const lastTimeTap = useRef(0);
   // press and hold: where the finger went down, the timer that fires after LONG_PRESS_MS, and whether it already fired (then the rest of the touch does nothing)
   const press = useRef<{ x: number; y: number; timer: number; fired: boolean; moved: boolean } | null>(null);
   const rangeRef = useRef<{ lo: number; hi: number; h: number } | null>(null);
@@ -50,6 +55,7 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
     return () => ro.disconnect();
   }, []);
 
+  const plotH = size.h - TIME_H; // the candles and lines use the part above the time axis
   const win = windowOf(candles.length, view.visible, view.offset);
   // the price range holds the candles, the position's lines and the order being set up; while a handle is being dragged the range is held still,
   // so the chart does not rescale under the finger
@@ -73,7 +79,7 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
     g.fillStyle = '#0b0f15';
     g.fillRect(0, 0, size.w, size.h);
     const shown = candles.slice(win.start, win.end);
-    rangeRef.current = range ? { lo: range.lo, hi: range.hi, h: size.h } : null;
+    rangeRef.current = range ? { lo: range.lo, hi: range.hi, h: plotH } : null;
     if (!range || !shown.length) {
       g.fillStyle = '#8b98a5';
       g.font = '13px system-ui, sans-serif';
@@ -81,7 +87,7 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
       return;
     }
     const plotW = size.w - AXIS_W;
-    const y = (p: number) => ((range.hi - p) / (range.hi - range.lo)) * (size.h - 4) + 2;
+    const y = (p: number) => ((range.hi - p) / (range.hi - range.lo)) * (plotH - 4) + 2;
     // grid and the price axis
     g.font = '11px system-ui, sans-serif';
     g.textBaseline = 'middle';
@@ -108,9 +114,9 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
         g.font = `800 ${px}px system-ui, sans-serif`;
       }
       g.fillStyle = 'rgba(190, 205, 225, 0.09)';
-      g.fillText(watermark.symbol, plotW / 2, size.h * 0.4);
+      g.fillText(watermark.symbol, plotW / 2, plotH * 0.4);
       g.font = `700 ${Math.max(14, Math.round(px * 0.4))}px system-ui, sans-serif`;
-      g.fillText(watermark.timeframe, plotW / 2, size.h * 0.4 + px * 0.75);
+      g.fillText(watermark.timeframe, plotW / 2, plotH * 0.4 + px * 0.75);
       g.restore();
       g.textBaseline = 'middle';
     }
@@ -199,6 +205,27 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
       g.fillStyle = '#0b0f15';
       g.fillText(fmtPrice(last.close), plotW + 4, ly);
     }
+    // the time axis along the bottom
+    g.fillStyle = '#0b0f15';
+    g.fillRect(0, plotH, size.w, TIME_H);
+    g.strokeStyle = '#243043';
+    g.beginPath();
+    g.moveTo(0, plotH + 0.5);
+    g.lineTo(size.w, plotH + 0.5);
+    g.stroke();
+    g.font = '11px system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#8b98a5';
+    for (const l of timeLabels(shown, win.start, plotW, watermark?.timeframe ?? '15m')) {
+      g.fillText(l.text, l.x, plotH + TIME_H / 2 + 1);
+      g.strokeStyle = '#243043';
+      g.beginPath();
+      g.moveTo(l.x, plotH);
+      g.lineTo(l.x, plotH + 3);
+      g.stroke();
+    }
+    g.textAlign = 'left';
   }, [candles, lines, pendingKey, watermark?.symbol, watermark?.timeframe, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doubleTap = (clientY: number) => {
@@ -226,6 +253,11 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
     gesture.current = { visible: win.visible, offset: win.offset, x: pts[0].x, y: pts[0].y, dist: pts.length >= 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0, rlo: range?.lo ?? 0, rhi: range?.hi ?? 0 };
     cancelPress();
     const bx = box.current?.getBoundingClientRect();
+    if (bx && pts.length === 1 && e.clientY > bx.bottom - TIME_H) {
+      taxis.current = { startX: e.clientX, visible: win.visible, moved: false };
+      press.current = null;
+      return;
+    }
     if (bx && pts.length === 1 && range && e.clientX > bx.right - AXIS_W) {
       axis.current = { startY: e.clientY, lo: range.lo, hi: range.hi, moved: false };
       press.current = null;
@@ -252,6 +284,14 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
   const move = (e: React.PointerEvent) => {
     if (!pointers.current.has(e.pointerId) || !gesture.current) return;
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const ta = taxis.current;
+    if (ta) {
+      // dragging right squashes the chart (more candles), dragging left stretches it (fewer, wider candles)
+      const dx = e.clientX - ta.startX;
+      if (Math.abs(dx) > 4) ta.moved = true;
+      setView((v) => ({ ...v, visible: Math.max(MIN_VISIBLE, Math.min(MAX_VISIBLE, ta.visible * Math.exp(dx / 200))) }));
+      return;
+    }
     const a = axis.current;
     if (a) {
       // dragging down squashes the chart (a larger price range), dragging up stretches it
@@ -287,12 +327,29 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
       setView((v) => ({ ...v, offset: g.offset + (e.clientX - g.x) / perCandle }));
       // with a manual price range the chart also moves up and down with the finger
       if (manual && g.rhi > g.rlo) {
-        const shift = ((e.clientY - g.y) * (g.rhi - g.rlo)) / (size.h - 4);
+        const shift = ((e.clientY - g.y) * (g.rhi - g.rlo)) / (plotH - 4);
         setManual({ lo: g.rlo + shift, hi: g.rhi + shift });
       }
     }
   };
   const up = (e: React.PointerEvent) => {
+    const ta = taxis.current;
+    if (ta) {
+      taxis.current = null;
+      // two quick taps on the time axis go back to the default zoom
+      if (!ta.moved && e.type === 'pointerup') {
+        const now = Date.now();
+        if (now - lastTimeTap.current < 320) {
+          lastTimeTap.current = 0;
+          setView({ visible: DEFAULT_VISIBLE, offset: 0 });
+        } else {
+          lastTimeTap.current = now;
+        }
+      }
+      pointers.current.delete(e.pointerId);
+      gesture.current = null;
+      return;
+    }
     const a = axis.current;
     if (a) {
       axis.current = null;
@@ -350,7 +407,7 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
     const price = r.hi - ((clientY - top - 2) / (r.h - 4)) * (r.hi - r.lo);
     return Math.max(r.lo, Math.min(r.hi, price));
   };
-  const yOfPrice = (price: number): number | null => (range ? Math.max(2, Math.min(size.h - 2, ((range.hi - price) / (range.hi - range.lo)) * (size.h - 4) + 2)) : null);
+  const yOfPrice = (price: number): number | null => (range ? Math.max(2, Math.min(plotH - 2, ((range.hi - price) / (range.hi - range.lo)) * (plotH - 4) + 2)) : null);
   const handleYs = pending.map((p) => yOfPrice(p.price));
   const boundsKey = handleYs.join(',');
 

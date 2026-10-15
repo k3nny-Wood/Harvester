@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fmtPrice, priceRange, windowOf, zoomed } from '../src/mobile/chartMath';
+import { fmtPrice, priceRange, timeLabels, windowOf, zoomed } from '../src/mobile/chartMath';
 import { exitsWait, parseLevel, pctText, resolveBoth, resolveExit } from '../src/mobile/exits';
 import type { Kline } from '../src/types';
 
@@ -105,5 +105,36 @@ describe('optional stop-loss and take-profit', () => {
     const r = priceRange(candles, [], [150, 60]);
     expect(r!.hi).toBeGreaterThan(150);
     expect(r!.lo).toBeLessThan(60);
+  });
+});
+
+describe('the time axis', () => {
+  const at = (h: number, m: number, d = 15): Kline => ({ time: new Date(2026, 9, d, h, m).getTime(), open: 1, high: 1, low: 1, close: 1, volume: 1 });
+  const series = (n: number, startMinute = 0): Kline[] => Array.from({ length: n }, (_, i) => at(0, 0).time + (startMinute + i) * 15 * 60_000).map((time) => ({ time, open: 1, high: 1, low: 1, close: 1, volume: 1 }));
+
+  it('puts about one label per 78 px, the first with its date and the rest with the time of day', () => {
+    const labels = timeLabels(series(60), 0, 312, '15m');
+    expect(labels.length).toBe(4);
+    expect(labels[0].text).toBe('15 Oct');
+    expect(labels.slice(1).every((l) => /^\d\d:\d\d$/.test(l.text))).toBe(true);
+    // evenly spread inside the plot
+    expect(labels.every((l) => l.x > 0 && l.x < 312)).toBe(true);
+  });
+
+  it('shows the date again when the day changes, and always on daily charts', () => {
+    const across = timeLabels(series(80, 56), 0, 320, '15m'); // from 14:00 for 20 hours: crosses midnight
+    expect(across.some((l, i) => i > 0 && /Oct/.test(l.text))).toBe(true);
+    const daily = timeLabels(series(40), 0, 320, '1d');
+    expect(daily.every((l) => /^\d+ [A-Z][a-z]{2}$/.test(l.text))).toBe(true);
+  });
+
+  it('keeps each label on the same candle while the chart is panned', () => {
+    const all = series(120);
+    const a = timeLabels(all.slice(20, 80), 20, 312, '15m');
+    const b = timeLabels(all.slice(24, 84), 24, 312, '15m');
+    const times = (labels: ReturnType<typeof timeLabels>, from: number) => labels.map((l) => from + Math.round(l.x / (312 / 60) - 0.5));
+    const shared = times(a, 20).filter((i) => times(b, 24).includes(i));
+    expect(shared.length).toBeGreaterThanOrEqual(2);
+    expect(timeLabels([], 0, 300, '15m')).toEqual([]);
   });
 });
