@@ -49,7 +49,19 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setSize({ w: Math.max(100, el.clientWidth), h: Math.max(100, el.clientHeight) }));
+    // a rotation can swallow the pointerup of a finger that was down: forget every gesture so the next press starts clean
+    const resetGestures = () => {
+      if (press.current) window.clearTimeout(press.current.timer);
+      press.current = null;
+      pointers.current.clear();
+      gesture.current = null;
+      taxis.current = null;
+      axis.current = null;
+    };
+    const ro = new ResizeObserver(() => {
+      resetGestures();
+      setSize({ w: Math.max(100, el.clientWidth), h: Math.max(100, el.clientHeight) });
+    });
     ro.observe(el);
     setSize({ w: Math.max(100, el.clientWidth), h: Math.max(100, el.clientHeight) });
     return () => ro.disconnect();
@@ -247,6 +259,8 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
     if (press.current) window.clearTimeout(press.current.timer);
   };
   const down = (e: React.PointerEvent) => {
+    // the first finger of a touch cannot have company: anything left over from a lost pointerup is stale
+    if (e.isPrimary) pointers.current.clear();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const pts = [...pointers.current.values()];
