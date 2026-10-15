@@ -17,7 +17,6 @@ import { snapToTick } from '../ladderMath';
 import { useDragScroll } from './dragScroll';
 import { nextSort, sortSymbols, type SortDir, type SortKey } from '../symbolSort';
 import type { OpenOrder } from '../types';
-import { TradeSheet } from './TradeSheet';
 
 const coin = (s: string) => s.replace('USDT', '');
 
@@ -230,7 +229,6 @@ export function ChartTab() {
   const [candles, setCandles] = useState<Kline[]>([]);
   const [query, setQuery] = useState('');
   const [picking, setPicking] = useState(false);
-  const [trade, setTrade] = useState<'BUY' | 'SELL' | null>(null);
   // the order box opened by pressing and holding the chart, and the side it is set to (drawn as a line on the chart)
   const floater = useFloater((s) => s.f);
   const tabRef = useRef<HTMLDivElement>(null);
@@ -503,15 +501,8 @@ export function ChartTab() {
             useFloater.getState().open(p.price, sideFor(p.price, mark), p.y - rect.top);
           }}
         />}
-      {!floater && (
-        <div className="m-trade-bar">
-          <button className="m-buy" disabled={!trading?.hasCredentials || !(mark > 0)} onClick={() => setTrade('BUY')}>Long</button>
-          <button className="m-sell" disabled={!trading?.hasCredentials || !(mark > 0)} onClick={() => setTrade('SELL')}>Short</button>
-        </div>
-      )}
       {floater && <OrderFloater key={floater.id} symbol={symbol} mark={mark} onClose={() => useFloater.getState().close()} />}
       {adjust && <AdjustReadout adjust={adjust} style={adjustStyle(tabRef.current, bounds)} />}
-      {trade && <TradeSheet side={trade} symbol={symbol} mark={mark} onClose={() => setTrade(null)} />}
     </div>
   );
 }
