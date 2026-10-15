@@ -1384,3 +1384,167 @@
     margin: 0 auto;
   }
 }
+
+/* landscape, revised: the dock goes back to the bottom of the chart and uses the width for every control in two compact rows */
+@media (orientation: landscape) and (max-height: 520px) {
+  .m-chart-tab,
+  .m-chart-tab:has(.m-dock) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
+  .m-dock {
+    grid-row: 4;
+    grid-column: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 4px 14px;
+    padding: 5px 10px calc(5px + env(safe-area-inset-bottom));
+    overflow: visible;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .m-dock-row {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .m-dock-settings {
+    grid-column: 2;
+    grid-row: 1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+  }
+  .m-dock-settings .m-fl-pair {
+    flex: 1 1 auto;
+    gap: 12px;
+  }
+  .m-dock-info {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .m-app .m-dock .m-apply-row {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  /* every control is visible: no ⋯ button and no hint */
+  .m-app .m-dock-more,
+  .m-dock-hint {
+    display: none;
+  }
+  .m-app .m-dock-row input[type='text'] {
+    height: 34px;
+    min-height: 34px;
+  }
+  .m-app .m-dock .m-toggle,
+  .m-app .m-dock .m-seg button,
+  .m-app .m-dock-x {
+    height: 34px;
+    min-height: 34px;
+  }
+  .m-app .m-dock .m-primary,
+  .m-app .m-dock .m-market {
+    height: 36px;
+    min-height: 36px;
+  }
+  .m-app .m-dock .m-fl-pair input[type='range'] {
+    height: 20px;
+  }
+  .m-app .m-dock .m-fl-pair label > span {
+    font-size: 11px;
+    line-height: 13px;
+  }
+  .m-app .m-dock .m-fl-box input[type='text'] {
+    height: 30px;
+    min-height: 30px;
+  }
+}
+
+/* landscape dock, tightened: the amount and leverage sliders top right, the SL / TP boxes under the price row, the summary under them */
+@media (orientation: landscape) and (max-height: 520px) {
+  .m-dock-settings {
+    display: contents;
+  }
+  .m-dock-settings .m-fl-pair:first-child {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .m-dock-settings .m-fl-pair:nth-child(2) {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .m-dock-info {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .m-app .m-dock .m-apply-row {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .m-dock.has-exits .m-dock-info {
+    grid-row: 3;
+  }
+  .m-app .m-dock.has-exits .m-apply-row {
+    grid-row: 2 / span 2;
+    align-self: stretch;
+  }
+  .m-app .m-dock.has-exits .m-apply-row .m-primary,
+  .m-app .m-dock.has-exits .m-apply-row .m-market {
+    height: 100%;
+    min-height: 36px;
+  }
+}
+
+/* landscape dock, smaller: shorter controls and tighter spacing so the chart keeps more height */
+@media (orientation: landscape) and (max-height: 520px) {
+  .m-dock {
+    gap: 2px 12px;
+    padding: 3px 10px calc(3px + env(safe-area-inset-bottom));
+  }
+  .m-app .m-dock-row input[type='text'],
+  .m-app .m-dock .m-toggle,
+  .m-app .m-dock .m-seg button,
+  .m-app .m-dock-x {
+    height: 28px;
+    min-height: 28px;
+    font-size: 13px;
+  }
+  .m-app .m-dock .m-toggle {
+    min-width: 32px;
+  }
+  .m-app .m-dock-x {
+    min-width: 30px;
+    width: 30px;
+  }
+  .m-app .m-dock .m-primary,
+  .m-app .m-dock .m-market {
+    height: 30px;
+    min-height: 30px;
+    font-size: 13px;
+  }
+  .m-app .m-dock .m-market {
+    width: 44px;
+    font-size: 15px;
+  }
+  .m-app .m-dock .m-fl-pair input[type='range'] {
+    height: 16px;
+  }
+  .m-app .m-dock .m-fl-pair label > span {
+    font-size: 10px;
+    line-height: 11px;
+  }
+  .m-app .m-dock .m-fl-box input[type='text'] {
+    height: 26px;
+    min-height: 26px;
+    font-size: 12px;
+  }
+  .m-dock-info {
+    font-size: 10px;
+    line-height: 12px;
+  }
+  .m-app .m-dock.has-exits .m-apply-row .m-primary,
+  .m-app .m-dock.has-exits .m-apply-row .m-market {
+    min-height: 28px;
+  }
+}

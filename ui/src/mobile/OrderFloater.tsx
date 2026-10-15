@@ -206,7 +206,7 @@ export function OrderFloater({ symbol, mark, onClose }: { symbol: string; mark: 
 
   const coinName = symbol.replace('USDT', '');
   return (
-    <div className="m-dock" onPointerDown={(e) => e.stopPropagation()}>
+    <div className={`m-dock${f.useSl || f.useTp ? ' has-exits' : ''}`} onPointerDown={(e) => e.stopPropagation()}>
       <div className="m-dock-row">
         <input
           type="text"
