@@ -717,7 +717,6 @@
   position: absolute;
   left: 8px;
   right: 8px;
-  bottom: 74px;
   z-index: 56;
   display: flex;
   align-items: center;
@@ -727,10 +726,6 @@
   border: 1px solid var(--line);
   border-radius: 12px;
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
-}
-.m-adjust.top {
-  bottom: auto;
-  top: 96px;
 }
 .m-adjust-name {
   display: flex;
@@ -759,4 +754,23 @@
 }
 .m-app .m-apply:disabled {
   opacity: 0.4;
+}
+
+/* the order box and the adjust bar are see-through, so the candles and lines behind them stay visible */
+.m-floater,
+.m-adjust {
+  background: rgba(17, 23, 34, 0.62);
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  border-color: rgba(60, 76, 100, 0.8);
+}
+.m-app .m-floater input[type='text'],
+.m-app .m-adjust input[type='text'] {
+  background: rgba(8, 12, 18, 0.45);
+}
+.m-app .m-floater .m-seg button:not(.on),
+.m-app .m-floater .m-toggle:not(.on),
+.m-app .m-floater .m-x,
+.m-app .m-adjust .m-x {
+  background: rgba(22, 30, 44, 0.5);
 }

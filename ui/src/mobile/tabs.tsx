@@ -170,7 +170,7 @@ export function ScannerTab() {
 const FLOATER_W = 330;
 
 /** The bar for moving an order that is on the exchange: what it is, the new price (typed or from the handle) and Apply / Cancel. */
-function AdjustBar({ adjust, busy, atTop, onPrice, onApply, onCancel }: { adjust: { kind: 'sl' | 'tp' | 'order'; order: OpenOrder; price: number; original: number }; busy: boolean; atTop: boolean; onPrice: (p: number) => void; onApply: () => void; onCancel: () => void }) {
+function AdjustBar({ adjust, busy, style, onPrice, onApply, onCancel }: { adjust: { kind: 'sl' | 'tp' | 'order'; order: OpenOrder; price: number; original: number }; busy: boolean; style: React.CSSProperties; onPrice: (p: number) => void; onApply: () => void; onCancel: () => void }) {
   const [text, setText] = useState(String(adjust.price));
   const typed = useRef(false);
   useEffect(() => {
@@ -183,7 +183,7 @@ function AdjustBar({ adjust, busy, atTop, onPrice, onApply, onCancel }: { adjust
   const change = adjust.original > 0 ? (adjust.price / adjust.original - 1) * 100 : 0;
   const name = adjust.kind === 'sl' ? 'Stop-loss' : adjust.kind === 'tp' ? 'Take-profit' : `${adjust.order.side.toLowerCase()} ${adjust.order.type.replace(/_/g, ' ').toLowerCase()}`;
   return (
-    <div className={`m-adjust${atTop ? ' top' : ''}`} onPointerDown={(e) => e.stopPropagation()}>
+    <div className="m-adjust" style={style} onPointerDown={(e) => e.stopPropagation()}>
       <div className="m-adjust-name">
         <b>{name}</b>
         <small>{fmtPrice(adjust.original)} → {change >= 0 ? '+' : ''}{change.toFixed(2)}%</small>
@@ -208,6 +208,15 @@ function AdjustBar({ adjust, busy, atTop, onPrice, onApply, onCancel }: { adjust
       <button className="m-x" onClick={onCancel} aria-label="Cancel">×</button>
     </div>
   );
+}
+
+/** The adjust bar sits just above the line being moved (below it when there is no room above) and follows it while the handle is dragged. */
+const ADJUST_H = 66;
+const ADJUST_GAP = 26;
+function adjustStyle(tab: HTMLElement | null, bounds: { top: number; bottom: number } | null): React.CSSProperties {
+  const th = tab?.clientHeight ?? 600;
+  const y = bounds?.top ?? th / 2;
+  return y - ADJUST_GAP - 4 >= ADJUST_H ? { bottom: th - y + ADJUST_GAP } : { top: y + ADJUST_GAP };
 }
 
 const FLOATER_GAP = 14;
@@ -456,7 +465,7 @@ export function ChartTab() {
         <AdjustBar
           adjust={adjust}
           busy={adjusting}
-          atTop={bounds != null && bounds.top > (tabRef.current?.clientHeight ?? 600) * 0.5}
+          style={adjustStyle(tabRef.current, bounds)}
           onPrice={(price) => setAdjust((a) => (a ? { ...a, price } : a))}
           onApply={() => void applyAdjust()}
           onCancel={() => setAdjust(null)}
