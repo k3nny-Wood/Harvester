@@ -182,36 +182,48 @@ function AdjustBar({ adjust, busy, style, onPrice, onApply, onCancel }: { adjust
   }, [adjust.price]);
   const change = adjust.original > 0 ? (adjust.price / adjust.original - 1) * 100 : 0;
   const name = adjust.kind === 'sl' ? 'Stop-loss' : adjust.kind === 'tp' ? 'Take-profit' : `${adjust.order.side.toLowerCase()} ${adjust.order.type.replace(/_/g, ' ').toLowerCase()}`;
+  const moved = adjust.price !== adjust.original;
   return (
-    <div className="m-adjust" style={style} onPointerDown={(e) => e.stopPropagation()}>
-      <div className="m-adjust-name">
-        <b>{name}</b>
-        <small>{adjust.price === adjust.original ? 'drag, then double-tap' : `${fmtPrice(adjust.original)} → ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`}</small>
+    <div className={`m-adjust-wrap${style.top != null ? ' below' : ''}`} style={style} onPointerDown={(e) => e.stopPropagation()}>
+      <div className="m-adjust-read">
+        {moved ? (
+          <>
+            <span>{fmtPrice(adjust.original)}</span> → <b>{fmtPrice(adjust.price)}</b>
+            <i className={change >= 0 ? 'up' : 'down'}>{change >= 0 ? '+' : ''}{change.toFixed(2)}%</i>
+          </>
+        ) : (
+          <span className="m-adjust-hint">drag the handle, then double-tap to set</span>
+        )}
       </div>
-      <input
-        type="text"
-        inputMode="decimal"
-        aria-label="New price"
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          const v = Number(e.target.value.replace(',', '.'));
-          if (Number.isFinite(v) && v > 0) {
-            typed.current = true;
-            onPrice(v);
-          }
-        }}
-      />
-      <button className="m-apply" disabled={busy || adjust.price === adjust.original} onClick={onApply}>
-        {busy ? '…' : 'Apply'}
-      </button>
-      <button className="m-x" onClick={onCancel} aria-label="Cancel">×</button>
+      <div className="m-adjust">
+        <div className="m-adjust-name">
+          <b>{name}</b>
+        </div>
+        <input
+          type="text"
+          inputMode="decimal"
+          aria-label="New price"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            const v = Number(e.target.value.replace(',', '.'));
+            if (Number.isFinite(v) && v > 0) {
+              typed.current = true;
+              onPrice(v);
+            }
+          }}
+        />
+        <button className="m-apply" disabled={busy || !moved} onClick={onApply}>
+          {busy ? '…' : 'Apply'}
+        </button>
+        <button className="m-x" onClick={onCancel} aria-label="Cancel">×</button>
+      </div>
     </div>
   );
 }
 
 /** The adjust bar sits just above the line being moved (below it when there is no room above) and follows it while the handle is dragged. */
-const ADJUST_H = 36;
+const ADJUST_H = 74; // the bar and the large readout above it
 const ADJUST_GAP = 20;
 function adjustStyle(tab: HTMLElement | null, bounds: { top: number; bottom: number } | null): React.CSSProperties {
   const th = tab?.clientHeight ?? 600;
