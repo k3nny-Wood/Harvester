@@ -9,3 +9,6 @@ ui/dist/
 src-tauri/gen/
 
 src-tauri/resources/
+
+# build output of deploy/update.sh
+deploy/out/
