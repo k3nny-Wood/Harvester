@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Kline } from '../types';
 import { confirmDialog } from '../confirm';
-import { fibPrices, indexOfTime, loadDrawings, measureText, rayY, saveDrawings, spanOf, timeOfIndex, type Drawing, type DrawKind, type DrawPoint, type Tool } from './drawings';
+import { fibPrices, indexOfTime, hitDistance, loadDrawings, measureText, rayY, saveDrawings, spanOf, timeOfIndex, type Drawing, type DrawKind, type DrawPoint, type Px, type Tool } from './drawings';
 import { fmtPrice, MAX_VISIBLE, MIN_VISIBLE, priceRange, timeLabels, windowOf, zoomed, type ChartLine } from './chartMath';
 
 /** An executed order: when and at what average price. */
@@ -69,11 +69,15 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
   const [drawings, setDrawings] = useState<Drawing[]>(() => loadDrawings(drawSymbol));
   const [draft, setDraft] = useState<{ kind: Tool; a: DrawPoint; b: DrawPoint } | null>(null);
   const draw = useRef<{ kind: Tool; a: DrawPoint } | null>(null);
+  // a drawing touched with the move tool is selected: its end points can be dragged, or the whole drawing
+  const [selected, setSelected] = useState<number | null>(null);
+  const edit = useRef<{ mode: 'a' | 'b' | 'move'; start: DrawPoint; orig: Drawing; latest: Drawing } | null>(null);
   const toolRef = useRef<Tool>('cursor');
   toolRef.current = tool;
   useEffect(() => {
     setDrawings(loadDrawings(drawSymbol));
     setDraft(null);
+    setSelected(null);
     setTool('cursor');
   }, [drawSymbol]);
   const times = useMemo(() => candles.map((k) => k.time), [candles]);
@@ -222,7 +226,8 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
         const y0 = y(d.a.p);
         const x1 = xAt(d.b.t);
         const y1 = y(d.b.p);
-        g.lineWidth = d.temp ? 1 : 1.5;
+        const sel = !d.temp && 'id' in d && (d as Drawing).id === selected;
+        g.lineWidth = d.temp ? 1 : sel ? 2.5 : 1.5;
         g.setLineDash(d.temp ? [4, 3] : []);
         g.strokeStyle = '#f0b90b';
         g.fillStyle = '#f0b90b';
@@ -283,6 +288,19 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
         }
         g.setLineDash([]);
         g.textAlign = 'left';
+        if (sel) {
+          // round handles on the end points (a horizontal line has one)
+          const ends: Array<[number, number]> = d.kind === 'hline' ? [[Math.min(40, plotW / 2), y0]] : [[x0, y0], [x1, y1]];
+          for (const [hx, hy] of ends) {
+            g.fillStyle = '#ffffff';
+            g.strokeStyle = '#f0b90b';
+            g.lineWidth = 2;
+            g.beginPath();
+            g.arc(hx, hy, 7, 0, Math.PI * 2);
+            g.fill();
+            g.stroke();
+          }
+        }
       }
       g.restore();
       g.lineWidth = 1;
@@ -379,7 +397,7 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
       g.stroke();
     }
     g.textAlign = 'left';
-  }, [candles, lines, marks, drawings, draft, pendingKey, watermark?.symbol, watermark?.timeframe, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, lines, marks, drawings, draft, selected, pendingKey, watermark?.symbol, watermark?.timeframe, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doubleTap = (clientY: number) => {
     lastDouble.current = Date.now();
@@ -409,6 +427,39 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
     const idx = (clientX - bx.left - st / 2) / st + win.start;
     return { t: timeOfIndex(times, idx, span), p: r.hi - ((clientY - bx.top - 2) / (r.h - 4)) * (r.hi - r.lo) };
   };
+  /** A drawing's points on the screen (relative to the chart box). */
+  const toPx = (pt: DrawPoint): Px | null => {
+    const r = rangeRef.current;
+    if (!r) return null;
+    const plotW = size.w - AXIS_W;
+    const st = plotW / Math.max(1, win.end - win.start);
+    return { x: (indexOfTime(times, pt.t, span) - win.start) * st + st / 2, y: ((r.hi - pt.p) / (r.hi - r.lo)) * (r.h - 4) + 2 };
+  };
+  /** The drawing (and which part of it) a finger at this chart position is on: the end points of the selected one first, then any line. */
+  const drawingAt = (x: number, y: number): { d: Drawing; mode: 'a' | 'b' | 'move' } | null => {
+    const plotW = size.w - AXIS_W;
+    const sel = drawings.find((d) => d.id === selected);
+    if (sel) {
+      const pa = toPx(sel.a);
+      const pb = toPx(sel.b);
+      if (sel.kind === 'hline') {
+        if (pa && Math.hypot(x - Math.min(40, plotW / 2), y - pa.y) < 26) return { d: sel, mode: 'a' };
+      } else {
+        if (pa && Math.hypot(x - pa.x, y - pa.y) < 26) return { d: sel, mode: 'a' };
+        if (pb && Math.hypot(x - pb.x, y - pb.y) < 26) return { d: sel, mode: 'b' };
+      }
+    }
+    let best: { d: Drawing; dist: number } | null = null;
+    for (const d of drawings) {
+      const pa = toPx(d.a);
+      const pb = toPx(d.b);
+      if (!pa || !pb) continue;
+      const fibYs = d.kind === 'fib' ? fibPrices(d.a.p, d.b.p).map((f) => toPx({ t: d.a.t, p: f.price })?.y ?? -1e9) : [];
+      const dist = hitDistance(d.kind, pa, pb, x, y, plotW, fibYs);
+      if (dist <= 18 && (!best || dist < best.dist)) best = { d, dist };
+    }
+    return best ? { d: best.d, mode: 'move' } : null;
+  };
   const down = (e: React.PointerEvent) => {
     // the first finger of a touch cannot have company: anything left over from a lost pointerup is stale
     if (e.isPrimary) pointers.current.clear();
@@ -427,6 +478,18 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
       axis.current = { startY: e.clientY, lo: range.lo, hi: range.hi, moved: false };
       press.current = null;
       return;
+    }
+    // the move tool: a touch on a drawing selects it and drags it (an end point, or the whole drawing); a touch elsewhere deselects and pans as usual
+    if (toolRef.current === 'cursor' && pts.length === 1 && bx && e.clientX < bx.right - AXIS_W && e.clientY < bx.bottom - TIME_H) {
+      const hit = drawingAt(e.clientX - bx.left, e.clientY - bx.top);
+      const pt = hit ? pointAt(e.clientX, e.clientY) : null;
+      if (hit && pt) {
+        setSelected(hit.d.id);
+        edit.current = { mode: hit.mode, start: pt, orig: hit.d, latest: hit.d };
+        press.current = null;
+        return;
+      }
+      if (selected != null) setSelected(null);
     }
     // a drawing tool is chosen: this touch draws instead of panning
     if (toolRef.current !== 'cursor' && pts.length === 1 && bx && e.clientX < bx.right - AXIS_W && e.clientY < bx.bottom - TIME_H) {
@@ -459,6 +522,27 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
   const move = (e: React.PointerEvent) => {
     if (!pointers.current.has(e.pointerId) || !gesture.current) return;
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (edit.current) {
+      const pt = pointAt(e.clientX, e.clientY);
+      if (pt) {
+        const ed = edit.current;
+        const o = ed.orig;
+        let nd: Drawing;
+        if (o.kind === 'hline') {
+          const dp = ed.mode === 'move' ? pt.p - ed.start.p : pt.p - o.a.p;
+          nd = { ...o, a: { t: o.a.t, p: o.a.p + dp }, b: { t: o.b.t, p: o.a.p + dp } };
+        } else if (ed.mode === 'a') nd = { ...o, a: pt };
+        else if (ed.mode === 'b') nd = { ...o, b: pt };
+        else {
+          const dt = pt.t - ed.start.t;
+          const dp = pt.p - ed.start.p;
+          nd = { ...o, a: { t: o.a.t + dt, p: o.a.p + dp }, b: { t: o.b.t + dt, p: o.b.p + dp } };
+        }
+        ed.latest = nd;
+        setDrawings((list) => list.map((x) => (x.id === nd.id ? nd : x)));
+      }
+      return;
+    }
     if (draw.current) {
       const pt = pointAt(e.clientX, e.clientY);
       const a = draw.current.a;
@@ -514,6 +598,16 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
     }
   };
   const up = (e: React.PointerEvent) => {
+    if (edit.current) {
+      const nd = edit.current.latest;
+      edit.current = null;
+      pointers.current.delete(e.pointerId);
+      gesture.current = null;
+      const list = drawings.map((x) => (x.id === nd.id ? nd : x));
+      setDrawings(list);
+      saveDrawings(drawSymbol, list);
+      return;
+    }
     if (draw.current) {
       const cur = draw.current;
       draw.current = null;
@@ -673,6 +767,7 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
               className={`m-draw-btn${tool === t ? ' on' : ''}`}
               onClick={() => {
                 setDraft(null);
+                setSelected(null);
                 setTool(t);
               }}
               aria-label={hint}
@@ -683,6 +778,21 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
           ))}
         {barOpen && (
           <>
+            {selected != null && (
+              <button
+                className="m-draw-btn"
+                onClick={() => {
+                  const list = drawings.filter((d) => d.id !== selected);
+                  setDrawings(list);
+                  saveDrawings(drawSymbol, list);
+                  setSelected(null);
+                }}
+                aria-label="Delete the selected drawing"
+                title="Delete the selected drawing"
+              >
+                🗑
+              </button>
+            )}
             <button
               className="m-draw-btn"
               disabled={!drawings.length}

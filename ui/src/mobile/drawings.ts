@@ -94,3 +94,44 @@ export function saveDrawings(symbol: string, list: Drawing[]): void {
     /* not remembered */
   }
 }
+
+export interface Px {
+  x: number;
+  y: number;
+}
+
+/** The distance from (x, y) to the segment a-b, in pixels. */
+export function segmentDistance(a: Px, b: Px, x: number, y: number): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / len2));
+  return Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy));
+}
+
+/** The distance from (x, y) to the ray that starts at a and goes through b (forever on that side). */
+export function rayDistance(a: Px, b: Px, x: number, y: number): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, ((x - a.x) * dx + (y - a.y) * dy) / len2);
+  return Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy));
+}
+
+/**
+ * How far a finger at (x, y) is from a drawing, in pixels (Infinity when it is nowhere near). `a` and `b` are the drawing's points on screen,
+ * `fibYs` the screen heights of a Fibonacci drawing's levels. Rectangles count only near their edges, so a rectangle never blocks panning inside it.
+ */
+export function hitDistance(kind: DrawKind, a: Px, b: Px, x: number, y: number, plotW: number, fibYs: number[] = []): number {
+  if (kind === 'trend') return segmentDistance(a, b, x, y);
+  if (kind === 'ray') return rayDistance(a, b, x, y);
+  if (kind === 'hline') return x >= 0 && x <= plotW ? Math.abs(y - a.y) : Infinity;
+  if (kind === 'rect') {
+    const [l, r, t, bt] = [Math.min(a.x, b.x), Math.max(a.x, b.x), Math.min(a.y, b.y), Math.max(a.y, b.y)];
+    return Math.min(segmentDistance({ x: l, y: t }, { x: r, y: t }, x, y), segmentDistance({ x: r, y: t }, { x: r, y: bt }, x, y), segmentDistance({ x: r, y: bt }, { x: l, y: bt }, x, y), segmentDistance({ x: l, y: bt }, { x: l, y: t }, x, y));
+  }
+  const left = Math.min(a.x, b.x);
+  let best = segmentDistance(a, b, x, y);
+  if (x >= left - 8 && x <= plotW) for (const fy of fibYs) best = Math.min(best, Math.abs(y - fy));
+  return best;
+}
