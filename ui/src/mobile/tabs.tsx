@@ -385,6 +385,22 @@ export function ChartTab() {
     if (adjust && !orders.some((o) => o.orderId === adjust.order.orderId && o.conditional === adjust.order.conditional)) setAdjust(null);
   }, [orders, adjust]);
 
+  // while a stop-loss or take-profit is being moved: what it would make or lose, shown at the entry line (on the side of it where the new level is)
+  const entryNote = useMemo(() => {
+    if (!adjust || !pos || adjust.kind === 'order') return null;
+    const pnl = pos.amount * (adjust.price - pos.entryPrice);
+    const margin = (Math.abs(pos.amount) * pos.entryPrice) / Math.max(1, pos.leverage);
+    const roe = margin > 0 ? (pnl / margin) * 100 : 0;
+    const move = pos.entryPrice > 0 ? (adjust.price / pos.entryPrice - 1) * 100 : 0;
+    const sign = (n: number) => (n >= 0 ? '+' : '-');
+    return {
+      price: pos.entryPrice,
+      lines: [`${sign(pnl)}$${Math.abs(pnl).toFixed(2)}  (${sign(roe)}${Math.abs(roe).toFixed(1)}% on margin)`, `${sign(move)}${Math.abs(move).toFixed(2)}% price move from the entry`],
+      color: pnl >= 0 ? '#3ecf8e' : '#ff6b6b',
+      above: adjust.price > pos.entryPrice,
+    };
+  }, [adjust, pos]);
+
   const matches = useMemo(() => {
     const q = query.trim().toUpperCase();
     return [...symbols].filter((s) => !q || s.symbol.includes(q)).sort((a, b) => b.volume24hQuote - a.volume24hQuote).slice(0, 40);
@@ -424,6 +440,7 @@ export function ChartTab() {
           candles={candles}
           lines={lines}
           pending={pendingLines}
+          entryNote={entryNote}
           onPendingMove={moveLine}
           onPendingBounds={(top, bottom) => {
             const t = tabRef.current?.getBoundingClientRect().top ?? 0;

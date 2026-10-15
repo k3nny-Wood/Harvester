@@ -24,7 +24,7 @@ export interface PendingLine {
   edit?: boolean;
 }
 
-export function MobileChart({ candles, lines, pending = [], onPendingMove, onPendingBounds, onPendingDoubleTap, onLongPress, onTap, onDoubleTap }: { candles: Kline[]; lines: ChartLine[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number) => void; /** a double tap on a handle (without dragging it) */ onPendingDoubleTap?: (id: string) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: (p: { price: number; tol: number }) => void; /** a double tap at this price (`tol` = how far a line may be from it to count as hit); return true when it was used, else the chart jumps to the newest candle */ onDoubleTap?: (p: { price: number; tol: number }) => boolean }) {
+export function MobileChart({ candles, lines, pending = [], entryNote, onPendingMove, onPendingBounds, onPendingDoubleTap, onLongPress, onTap, onDoubleTap }: { candles: Kline[]; lines: ChartLine[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; /** text drawn at the position's entry line (above it or below it): what the order being moved would make or lose */ entryNote?: { price: number; lines: string[]; color: string; above: boolean } | null; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number) => void; /** a double tap on a handle (without dragging it) */ onPendingDoubleTap?: (id: string) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: (p: { price: number; tol: number }) => void; /** a double tap at this price (`tol` = how far a line may be from it to count as hit); return true when it was used, else the chart jumps to the newest candle */ onDoubleTap?: (p: { price: number; tol: number }) => boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 320, h: 300 });
@@ -138,6 +138,26 @@ export function MobileChart({ candles, lines, pending = [], onPendingMove, onPen
       g.fillText(`${pl.label} ${fmtPrice(pl.price)}`, 6, y(pl.price) - 3);
       g.textBaseline = 'middle';
     }
+    // what the order being moved would make or lose, at the entry line
+    if (entryNote && entryNote.price >= range.lo && entryNote.price <= range.hi) {
+      const ey = y(entryNote.price);
+      g.textAlign = 'right'; // against the right side, clear of the "entry" label at the left
+      g.lineJoin = 'round';
+      entryNote.lines.forEach((line, k) => {
+        const big = k === 0;
+        g.font = `${big ? 800 : 600} ${big ? 18 : 12}px system-ui, sans-serif`;
+        // above the line: the first line is the one nearest to it
+        const dy = entryNote.above ? -(big ? 17 : 38) : big ? 19 : 40;
+        g.lineWidth = 4;
+        g.strokeStyle = '#05080c';
+        g.strokeText(line, plotW - 8, ey + dy);
+        g.fillStyle = big ? entryNote.color : '#cfd6df';
+        g.fillText(line, plotW - 8, ey + dy);
+      });
+      g.textAlign = 'left';
+      g.lineWidth = 1;
+      g.font = '11px system-ui, sans-serif';
+    }
     // the last price
     const last = candles[candles.length - 1];
     if (last && win.offset === 0) {
@@ -154,7 +174,7 @@ export function MobileChart({ candles, lines, pending = [], onPendingMove, onPen
       g.fillStyle = '#0b0f15';
       g.fillText(fmtPrice(last.close), plotW + 4, ly);
     }
-  }, [candles, lines, pendingKey, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, lines, pendingKey, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doubleTap = (clientY: number) => {
     lastDouble.current = Date.now();
