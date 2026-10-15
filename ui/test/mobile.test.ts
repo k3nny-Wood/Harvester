@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fmtPrice, priceRange, windowOf, zoomed } from '../src/mobile/chartMath';
-import { parseLevel, resolveExit } from '../src/mobile/exits';
+import { exitsWait, parseLevel, pctText, resolveBoth, resolveExit } from '../src/mobile/exits';
 import type { Kline } from '../src/types';
 
 const k = (low: number, high: number): Kline => ({ time: 0, open: low, high, low, close: high, volume: 1 });
@@ -67,5 +67,43 @@ describe('the mobile chart maths', () => {
     expect(fmtPrice(81570.04)).toBe('81570.0');
     expect(fmtPrice(2.5)).toBe('2.5000');
     expect(fmtPrice(0.0123456)).toBe('0.01235');
+  });
+});
+
+describe('optional stop-loss and take-profit', () => {
+  it('only the exits that are switched on are worked out', () => {
+    const r = resolveBoth(true, 100, { on: true, text: '2%' }, { on: false, text: '5%' });
+    expect(r.sl).toMatchObject({ ok: true });
+    expect(r.tp).toBeNull();
+    const bad = resolveBoth(true, 100, { on: true, text: 'abc' }, { on: true, text: '99' });
+    expect(bad.sl).toMatchObject({ ok: false });
+    expect(bad.tp).toMatchObject({ ok: false }); // a take-profit below a long's entry
+    const both = resolveBoth(false, 100, { on: true, text: '1%' }, { on: true, text: '2%' });
+    expect(both.sl).toMatchObject({ ok: true, price: expect.closeTo(101) });
+    expect(both.tp).toMatchObject({ ok: true, price: expect.closeTo(98) });
+  });
+
+  it('an exit waits when it is on the wrong side of the current price', () => {
+    // a long limit entry below the market: its take-profit is still below the market
+    expect(exitsWait(true, 100, 95, 98)).toBe(true);
+    expect(exitsWait(true, 100, 95, 105)).toBe(false);
+    expect(exitsWait(true, 100, 105, null)).toBe(true); // a stop above the price
+    expect(exitsWait(true, 100, null, null)).toBe(false);
+    expect(exitsWait(false, 100, 105, 95)).toBe(false);
+    expect(exitsWait(false, 100, 95, 98)).toBe(true);
+  });
+
+  it('a dragged line becomes a percentage, never smaller than the least step', () => {
+    expect(pctText(100, 102.5)).toBe('2.5%');
+    expect(pctText(100, 98.123)).toBe('1.88%');
+    expect(pctText(100, 100)).toBe('0.05%');
+    expect(pctText(0, 5)).toBe('1%');
+  });
+
+  it('the price range always holds the order being set up', () => {
+    const candles = [k(100, 110), k(104, 120)];
+    const r = priceRange(candles, [], [150, 60]);
+    expect(r!.hi).toBeGreaterThan(150);
+    expect(r!.lo).toBeLessThan(60);
   });
 });

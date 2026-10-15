@@ -28,3 +28,35 @@ export function resolveExit(kind: 'stop' | 'take', long: boolean, mark: number, 
   }
   return { ok: true, price };
 }
+
+export interface ExitSetting {
+  /** the button is pressed: this exit is part of the order */
+  on: boolean;
+  /** a price or a percentage */
+  text: string;
+}
+
+/** The stop-loss and take-profit prices of an order, measured from `entry`. `null` for an exit that is off or whose text is not a level; the result says why when it is refused. */
+export function resolveBoth(long: boolean, entry: number, sl: ExitSetting, tp: ExitSetting): { sl: ExitResult | null; tp: ExitResult | null } {
+  const one = (kind: 'stop' | 'take', e: ExitSetting): ExitResult | null => {
+    if (!e.on) return null;
+    const level = parseLevel(e.text);
+    return level ? resolveExit(kind, long, entry, level) : { ok: false, error: 'Enter a price or a percentage.' };
+  };
+  return { sl: one('stop', sl), tp: one('take', tp) };
+}
+
+/** True when an exit sits on the wrong side of the CURRENT price (Binance would refuse it or fire it at once): it has to wait for the entry to fill. */
+export function exitsWait(long: boolean, mark: number, slPrice: number | null, tpPrice: number | null): boolean {
+  if (!(mark > 0)) return false;
+  const tpBad = tpPrice != null && (long ? tpPrice <= mark : tpPrice >= mark);
+  const slBad = slPrice != null && (long ? slPrice >= mark : slPrice <= mark);
+  return tpBad || slBad;
+}
+
+/** The distance of `price` from `entry` as the text of a percentage box ("1.37%"); never below 0.05%, so a line dragged to the wrong side stops at the entry. */
+export function pctText(entry: number, price: number): string {
+  if (!(entry > 0)) return '1%';
+  const pct = Math.max(0.05, Math.abs(price / entry - 1) * 100);
+  return `${Number(pct.toFixed(2))}%`;
+}

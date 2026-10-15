@@ -8,11 +8,12 @@ import { refreshTrading } from '../trade';
 import type { Kline, Position } from '../types';
 import { fmtPrice, type ChartLine } from './chartMath';
 import { ExitSheet } from './ExitSheet';
-import { MobileChart } from './MobileChart';
+import { MobileChart, type PendingLine } from './MobileChart';
 import { TIMEFRAMES, useMobile } from './store';
-import { OrderFloater, sideFor, type FloaterState } from './OrderFloater';
+import { useFloater } from './floaterStore';
+import { OrderFloater, sideFor } from './OrderFloater';
+import { pctText, resolveBoth } from './exits';
 import { TradeSheet } from './TradeSheet';
-import type { Side } from '../types';
 
 const coin = (s: string) => s.replace('USDT', '');
 const signed = (n: number, d = 2) => `${n >= 0 ? '+' : '-'}$${Math.abs(n).toFixed(d)}`;
@@ -169,20 +170,21 @@ const FLOATER_W = 330;
 const FLOATER_GAP = 14;
 
 /**
- * Where the order box goes: above the level so the line stays in view; when the level is too high for the box to fit above it, the box flicks
- * to below the level; when it fits neither way it takes the side with more room and scrolls inside. `h` is the height the box wants.
+ * Where the order box goes: above the highest line of the order so every line stays in view; when that does not leave room for the box it
+ * flicks to below the lowest line; when it fits neither way it takes the side with more room and scrolls inside. `h` is the height the box wants.
  */
-function floaterStyle(f: { y: number }, tab: HTMLElement | null, levelY: number | null, h: number): React.CSSProperties {
+function floaterStyle(startY: number, tab: HTMLElement | null, bounds: { top: number; bottom: number } | null, h: number): React.CSSProperties {
   const w = tab?.clientWidth ?? 360;
   const th = tab?.clientHeight ?? 600;
   const width = Math.min(FLOATER_W, w - 16);
   const left = Math.max(8, (w - width) / 2);
-  const y = levelY ?? f.y;
-  const above = y - FLOATER_GAP - 4;
-  const below = th - y - FLOATER_GAP - 4;
-  if (above >= h) return { left, width, bottom: th - y + FLOATER_GAP };
-  if (below >= h) return { left, width, top: y + FLOATER_GAP };
-  return above >= below ? { left, width, bottom: th - y + FLOATER_GAP, maxHeight: Math.max(120, above) } : { left, width, top: y + FLOATER_GAP, maxHeight: Math.max(120, below) };
+  const top = bounds?.top ?? startY;
+  const bottom = bounds?.bottom ?? startY;
+  const above = top - FLOATER_GAP - 4;
+  const below = th - bottom - FLOATER_GAP - 4;
+  if (above >= h) return { left, width, bottom: th - top + FLOATER_GAP };
+  if (below >= h) return { left, width, top: bottom + FLOATER_GAP };
+  return above >= below ? { left, width, bottom: th - top + FLOATER_GAP, maxHeight: Math.max(120, above) } : { left, width, top: bottom + FLOATER_GAP, maxHeight: Math.max(120, below) };
 }
 
 export function ChartTab() {
@@ -196,10 +198,10 @@ export function ChartTab() {
   const [picking, setPicking] = useState(false);
   const [trade, setTrade] = useState<'BUY' | 'SELL' | null>(null);
   // the order box opened by pressing and holding the chart, and the side it is set to (drawn as a line on the chart)
-  const [floater, setFloater] = useState<(FloaterState & { side: Side }) | null>(null);
+  const floater = useFloater((s) => s.f);
   const tabRef = useRef<HTMLDivElement>(null);
   // where the pending order's line is, in the coordinates of the tab
-  const [levelY, setLevelY] = useState<number | null>(null);
+  const [bounds, setBounds] = useState<{ top: number; bottom: number } | null>(null);
   const [floaterH, setFloaterH] = useState(250);
   const [error, setError] = useState('');
 
@@ -228,8 +230,8 @@ export function ChartTab() {
   }, [symbol, timeframe]);
 
   useEffect(() => {
-    setFloater(null);
-    setLevelY(null);
+    useFloater.getState().close();
+    setBounds(null);
   }, [symbol, timeframe]);
 
   const pos = live?.positions.find((p) => p.symbol === symbol && p.amount !== 0);
@@ -249,6 +251,27 @@ export function ChartTab() {
     }
     return out;
   }, [pos, orders, symbol]);
+
+  // the order being set up: the entry line, and the stop-loss and take-profit lines when their buttons are pressed
+  const pendingLines = useMemo<PendingLine[]>(() => {
+    if (!floater) return [];
+    const long = floater.side === 'BUY';
+    const out: PendingLine[] = [{ id: 'entry', price: floater.price, label: `${long ? 'buy' : 'sell'} here`, color: long ? '#2e9b6f' : '#d0454b', handle: '⇕' }];
+    const ex = resolveBoth(long, floater.price, { on: floater.useSl, text: floater.sl }, { on: floater.useTp, text: floater.tp });
+    if (ex.sl?.ok) out.push({ id: 'sl', price: ex.sl.price, label: 'SL', color: '#d0454b', handle: 'SL' });
+    if (ex.tp?.ok) out.push({ id: 'tp', price: ex.tp.price, label: 'TP', color: '#2e9b6f', handle: 'TP' });
+    return out;
+  }, [floater]);
+  const moveLine = (id: string, price: number) => {
+    const f = useFloater.getState().f;
+    if (!f) return;
+    if (id === 'entry') return useFloater.getState().patch({ price });
+    // an exit line becomes a percentage of the entry; dragged to the wrong side of the entry it stops at the entry
+    const long = f.side === 'BUY';
+    const valid = id === 'sl' ? (long ? price < f.price : price > f.price) : long ? price > f.price : price < f.price;
+    const text = valid ? pctText(f.price, price) : '0.05%';
+    useFloater.getState().patch(id === 'sl' ? { sl: text } : { tp: text });
+  };
 
   const matches = useMemo(() => {
     const q = query.trim().toUpperCase();
@@ -288,15 +311,18 @@ export function ChartTab() {
       {error ? <div className="m-warn">{error}</div> : <MobileChart
           candles={candles}
           lines={lines}
-          pending={floater ? { price: floater.price, label: `${floater.side === 'BUY' ? 'buy' : 'sell'} here`, color: floater.side === 'BUY' ? '#2e9b6f' : '#d0454b' } : null}
-          onPendingMove={(price) => setFloater((f) => (f ? { ...f, price } : f))}
-          onPendingY={(cy) => setLevelY(cy - (tabRef.current?.getBoundingClientRect().top ?? 0))}
-          onTap={() => setFloater(null)}
+          pending={pendingLines}
+          onPendingMove={moveLine}
+          onPendingBounds={(top, bottom) => {
+            const t = tabRef.current?.getBoundingClientRect().top ?? 0;
+            setBounds({ top: top - t, bottom: bottom - t });
+          }}
+          onTap={() => useFloater.getState().close()}
           onLongPress={(p) => {
             const rect = tabRef.current?.getBoundingClientRect();
             if (!rect || !trading?.hasCredentials || !(mark > 0)) return;
             setPicking(false);
-            setFloater({ id: Date.now(), price: p.price, x: p.x - rect.left, y: p.y - rect.top, side: sideFor(p.price, mark) });
+            useFloater.getState().open(p.price, sideFor(p.price, mark), p.y - rect.top);
           }}
         />}
       <div className="m-trade-bar">
@@ -308,12 +334,9 @@ export function ChartTab() {
           key={floater.id}
           symbol={symbol}
           mark={mark}
-          state={floater}
-          onClose={() => setFloater(null)}
-          onPrice={(price, side) => setFloater((f) => (f ? { ...f, price, side } : f))}
-          onSide={(side) => setFloater((f) => (f ? { ...f, side } : f))}
+          onClose={() => useFloater.getState().close()}
           onHeight={(h) => setFloaterH((cur) => (Math.abs(cur - h) > 1 ? h : cur))}
-          style={floaterStyle(floater, tabRef.current, levelY, floaterH)}
+          style={floaterStyle(floater.y, tabRef.current, bounds, floaterH)}
         />
       )}
       {trade && <TradeSheet side={trade} symbol={symbol} mark={mark} onClose={() => setTrade(null)} />}

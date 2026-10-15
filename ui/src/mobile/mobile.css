@@ -681,3 +681,33 @@
   padding: 0 58px 0 34px;
   min-height: 38px;
 }
+
+/* the SL / TP buttons in the order box's header, and a single exit box */
+.m-app .m-toggle {
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 9px;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-app .m-toggle.sl.on {
+  background: var(--down);
+  border-color: var(--down);
+  color: #fff;
+}
+.m-app .m-toggle.tp.on {
+  background: var(--up);
+  border-color: var(--up);
+  color: #fff;
+}
+.m-fl-pair.one {
+  grid-template-columns: 1fr;
+}
+.m-fl-head {
+  gap: 6px;
+}
+.m-handle {
+  font-size: 14px;
+  font-weight: 700;
+}

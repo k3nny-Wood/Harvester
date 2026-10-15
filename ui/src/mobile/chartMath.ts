@@ -25,9 +25,9 @@ export interface ChartLine {
 
 /**
  * The price range to draw: the candles in the window, widened by the horizontal lines that are close to them (a liquidation price far below
- * must not squash the candles into a strip), with a little room above and below.
+ * must not squash the candles into a strip), and by the prices in `always`, with a little room above and below.
  */
-export function priceRange(candles: Kline[], lines: ChartLine[]): { lo: number; hi: number } | null {
+export function priceRange(candles: Kline[], lines: ChartLine[], always: number[] = []): { lo: number; hi: number } | null {
   if (!candles.length) return null;
   let lo = Math.min(...candles.map((c) => c.low));
   let hi = Math.max(...candles.map((c) => c.high));
@@ -36,6 +36,13 @@ export function priceRange(candles: Kline[], lines: ChartLine[]): { lo: number; 
     if (l.price >= lo - span * 0.8 && l.price <= hi + span * 0.8) {
       lo = Math.min(lo, l.price);
       hi = Math.max(hi, l.price);
+    }
+  }
+  // the order being set up is always in view, wherever it is
+  for (const p of always) {
+    if (Number.isFinite(p) && p > 0) {
+      lo = Math.min(lo, p);
+      hi = Math.max(hi, p);
     }
   }
   const pad = Math.max(hi - lo, hi * 1e-4) * 0.06;

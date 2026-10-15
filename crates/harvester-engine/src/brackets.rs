@@ -74,8 +74,9 @@ impl BracketStore {
     }
 
     pub fn add(&self, env: Env, symbol: String, long: bool, take_profit: f64, stop_loss: f64, entry_order_id: i64, entry_conditional: bool, quantity: f64) -> Result<Bracket, String> {
-        if !(take_profit > 0.0 && stop_loss > 0.0) {
-            return Err("The take-profit and stop-loss must be greater than zero.".into());
+        // 0 means "none": a take-profit or a stop-loss alone is allowed, both missing is not
+        if !(take_profit >= 0.0 && stop_loss >= 0.0 && (take_profit > 0.0 || stop_loss > 0.0)) {
+            return Err("At least one of the take-profit and the stop-loss is needed, and neither may be negative.".into());
         }
         let mut g = self.items.lock().unwrap();
         let b = Bracket { id: format!("brk-{}-{}", now_ms(), g.len()), env, symbol, long, take_profit, stop_loss, entry_order_id, entry_conditional, quantity: quantity.max(0.0), created_ms: now_ms() };
@@ -161,13 +162,21 @@ pub fn start(app: Events, trading: Arc<Trading>, store: Arc<BracketStore>) {
                         store.cancel(&b.id);
                         missing.remove(&b.id);
                         let mut failed = Vec::new();
-                        for (label, req) in [("take-profit", exit_request(&b, qty, OrderType::TakeProfitMarket, b.take_profit)), ("stop-loss", exit_request(&b, qty, OrderType::StopMarket, b.stop_loss))] {
+                        let mut wanted = Vec::new();
+                        if b.take_profit > 0.0 {
+                            wanted.push(("take-profit", exit_request(&b, qty, OrderType::TakeProfitMarket, b.take_profit)));
+                        }
+                        if b.stop_loss > 0.0 {
+                            wanted.push(("stop-loss", exit_request(&b, qty, OrderType::StopMarket, b.stop_loss)));
+                        }
+                        for (label, req) in wanted {
                             if let Err(e) = trading.place(req).await {
                                 failed.push(format!("{label}: {e}"));
                             }
                         }
                         if failed.is_empty() {
-                            say(HeldStatus::Placed, format!("{} entry filled: take-profit {} and stop-loss {} are now on Binance", b.symbol, b.take_profit, b.stop_loss));
+                            let placed: Vec<String> = [("take-profit", b.take_profit), ("stop-loss", b.stop_loss)].iter().filter(|(_, v)| *v > 0.0).map(|(l, v)| format!("{l} {v}")).collect();
+                            say(HeldStatus::Placed, format!("{} entry filled: {} now on Binance", b.symbol, placed.join(" and ")));
                         } else {
                             say(HeldStatus::Failed, format!("{} entry filled but NOT fully protected - {}. Check the position now.", b.symbol, failed.join("; ")));
                         }
@@ -226,7 +235,11 @@ mod tests {
         let s = BracketStore::open(path.clone());
         let b = s.add(Env::Testnet, "ETHUSDT".into(), true, 110.0, 95.0, 7, true, 2.5).unwrap();
         assert_eq!(b.quantity, 2.5);
-        assert!(s.add(Env::Testnet, "ETHUSDT".into(), true, 0.0, 95.0, 7, true, 0.0).is_err());
+        // one exit alone is fine, none (or a negative one) is not
+        assert!(s.add(Env::Testnet, "ETHUSDT".into(), true, 0.0, 95.0, 8, true, 0.0).is_ok());
+        assert!(s.add(Env::Testnet, "ETHUSDT".into(), true, 0.0, 0.0, 9, true, 0.0).is_err());
+        assert!(s.add(Env::Testnet, "ETHUSDT".into(), true, -1.0, 95.0, 9, true, 0.0).is_err());
+        s.cancel(&s.list(Env::Testnet)[1].id);
         assert_eq!(BracketStore::open(path.clone()).list(Env::Testnet).len(), 1);
         assert!(s.list(Env::Live).is_empty());
         assert!(s.cancel(&b.id) && !s.cancel(&b.id));
