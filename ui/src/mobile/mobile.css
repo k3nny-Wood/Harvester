@@ -1871,3 +1871,63 @@
     line-height: 1;
   }
 }
+
+/* portrait: the order dock as slim as possible (the controls are only as tall as a line of text) */
+@media (orientation: portrait) {
+  .m-dock {
+    gap: 3px;
+    padding: 4px 8px 4px;
+  }
+  .m-dock-row {
+    gap: 4px;
+  }
+  .m-app .m-dock-row input[type='text'],
+  .m-app .m-dock .m-toggle,
+  .m-app .m-dock .m-seg button,
+  .m-app .m-dock-more,
+  .m-app .m-dock-x {
+    min-height: 0;
+    height: 28px;
+    font-size: 13px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .m-app .m-dock .m-toggle {
+    min-width: 32px;
+  }
+  .m-app .m-dock-more,
+  .m-app .m-dock-x {
+    min-width: 28px;
+    width: 28px;
+    font-size: 16px;
+  }
+  .m-dock-info {
+    font-size: 10px;
+    line-height: 12px;
+    gap: 0 8px;
+  }
+  .m-app .m-dock .m-apply-row {
+    gap: 6px;
+  }
+  .m-app .m-dock .m-primary,
+  .m-app .m-dock .m-market {
+    min-height: 0;
+    height: 30px;
+    font-size: 13px;
+  }
+  .m-app .m-dock .m-market {
+    width: 44px;
+    font-size: 15px;
+  }
+  .m-app .m-dock .m-fl-pair input[type='range'] {
+    height: 18px;
+  }
+  .m-app .m-dock .m-fl-pair label > span {
+    font-size: 10px;
+  }
+  .m-app .m-dock .m-fl-box input[type='text'] {
+    height: 26px;
+    min-height: 26px;
+    font-size: 12px;
+  }
+}
