@@ -1672,3 +1672,14 @@
   color: var(--accent);
   border-radius: 6px;
 }
+
+/* the chart button is at the far left, the expand arrow at the far right: far apart so one is not hit for the other */
+.m-app .m-pos-chart {
+  margin-right: 4px;
+  min-width: 36px;
+  width: 36px;
+  border: 1px solid var(--line);
+}
+.m-chev {
+  margin-left: 6px;
+}

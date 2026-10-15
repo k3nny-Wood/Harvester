@@ -73,12 +73,6 @@ function PositionCard({ p }: { p: Position }) {
   return (
     <div className={`m-card m-pos ${p.unrealizedPnl > 0 ? 'win' : p.unrealizedPnl < 0 ? 'loss' : 'flat'}`}>
       <div className="m-row m-pos-head" onClick={() => setOpen((v) => !v)} role="button" aria-expanded={open}>
-        <b className="m-coin">{coin(p.symbol)}</b>
-        <span className={`m-badge ${long ? 'up' : 'down'}`}>{long ? 'LONG' : 'SHORT'}</span>
-        <span className="m-muted">{p.leverage}x {p.isolated ? 'iso' : 'cross'}</span>
-        <span className={`m-pnl ${tone(p.unrealizedPnl)}`}>
-          {signed(p.unrealizedPnl)} <small>({roe >= 0 ? '+' : ''}{roe.toFixed(1)}%)</small>
-        </span>
         <button
           className="m-pos-chart"
           aria-label={`Open the ${p.symbol} chart`}
@@ -90,6 +84,12 @@ function PositionCard({ p }: { p: Position }) {
         >
           ▥
         </button>
+        <b className="m-coin">{coin(p.symbol)}</b>
+        <span className={`m-badge ${long ? 'up' : 'down'}`}>{long ? 'LONG' : 'SHORT'}</span>
+        <span className="m-muted">{p.leverage}x {p.isolated ? 'iso' : 'cross'}</span>
+        <span className={`m-pnl ${tone(p.unrealizedPnl)}`}>
+          {signed(p.unrealizedPnl)} <small>({roe >= 0 ? '+' : ''}{roe.toFixed(1)}%)</small>
+        </span>
         <span className="m-chev">{open ? '▴' : '▾'}</span>
       </div>
       {open && <div className="m-grid">
