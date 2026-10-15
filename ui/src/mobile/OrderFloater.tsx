@@ -97,8 +97,57 @@ export function OrderFloater({ symbol, mark, state, onClose, onPrice, onSide, st
     }
   };
 
-  const place = async () => {
-    if (busy || problem || !slRes?.ok || !tpRes?.ok) return;
+  /** `asMarket`: enter now at the market price with the same amount, leverage and exits (percentages are measured from the price, not from the level). */
+  const place = async (asMarket = false) => {
+    if (busy) return;
+    if (!asMarket && (problem || !slRes?.ok || !tpRes?.ok)) return;
+    if (asMarket) {
+      if (!(mark > 0)) return;
+      const mSl = slL ? resolveExit('stop', long, mark, slL) : null;
+      const mTp = tpL ? resolveExit('take', long, mark, tpL) : null;
+      const mQty = floorQty(notional / mark, step);
+      const why = !(mQty > 0) ? 'the amount is too small for this symbol' : mQty * mark < minNotional ? `below the exchange's minimum order (${minNotional} USDT)` : !mSl ? 'enter a stop-loss' : !mSl.ok ? mSl.error : !mTp ? 'enter a take-profit' : !mTp.ok ? mTp.error : '';
+      if (why || !mSl?.ok || !mTp?.ok) {
+        toast(`Market entry: ${why}`, 'warn');
+        return;
+      }
+      return placeNow(mQty, mSl.price, mTp.price);
+    }
+    return placeResting();
+  };
+
+  /** Enter at once at the market price, then protect the position. */
+  const placeNow = async (marketQty: number, slPrice: number, tpPrice: number) => {
+    setBusy(true);
+    try {
+      if (lev !== startLev) {
+        await api.setLeverage(symbol, lev);
+        setStartLev(lev);
+      }
+      const entryAck = await api.placeOrder({ symbol, side, type: 'MARKET', quantity: marketQty });
+      const filled = entryAck.quantity || marketQty;
+      const exit = long ? 'SELL' : 'BUY';
+      const failed: string[] = [];
+      for (const [label, type, price] of [['take-profit', 'TAKE_PROFIT_MARKET', tpPrice], ['stop-loss', 'STOP_MARKET', slPrice]] as const) {
+        try {
+          await api.placeOrder({ symbol, side: exit, type, quantity: filled, stopPrice: price, reduceOnly: true });
+        } catch (e) {
+          failed.push(`${label}: ${e}`);
+        }
+      }
+      if (failed.length) toast(`${symbol} is open but NOT fully protected (${failed.join('; ')}). Set the missing exit now.`, 'warn');
+      else toast(`${symbol} ${long ? 'long' : 'short'} opened at market with TP ${fmtPrice(tpPrice)} and SL ${fmtPrice(slPrice)}`, 'info');
+      void refreshTrading();
+      onClose();
+    } catch (e) {
+      toast(`Order rejected: ${e}`, 'warn');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const placeResting = async () => {
+    if (!slRes?.ok || !tpRes?.ok) return;
     setBusy(true);
     const placed: OrderAck[] = [];
     try {
@@ -204,9 +253,19 @@ export function OrderFloater({ symbol, mark, state, onClose, onPrice, onSide, st
       </div>
       {problem && <div className="m-warn">{problem}</div>}
       {waits && !problem && <div className="m-muted m-fl-note">SL / TP are armed and sent when the entry fills (the server must stay running).</div>}
-      <button className={`m-primary ${long ? 'buy' : 'sell'}`} disabled={busy || !!problem || !trading?.hasCredentials} onClick={() => void place()}>
-        {busy ? 'Placing…' : `Place ${kind === 'STOP' ? 'stop-limit' : 'limit'} ${long ? 'buy' : 'sell'}`}
-      </button>
+      <div className="m-apply-row">
+        <button
+          className={`m-market ${long ? 'buy' : 'sell'}`}
+          disabled={busy || !trading?.hasCredentials || !(mark > 0)}
+          title="Market: enter now at the market price instead of waiting for this level, with the same amount, leverage, stop-loss and take-profit"
+          onClick={() => void place(true)}
+        >
+          M
+        </button>
+        <button className={`m-primary ${long ? 'buy' : 'sell'}`} disabled={busy || !!problem || !trading?.hasCredentials} onClick={() => void place()}>
+          {busy ? 'Placing…' : `Place ${kind === 'STOP' ? 'stop-limit' : 'limit'} ${long ? 'buy' : 'sell'}`}
+        </button>
+      </div>
     </div>
   );
 }

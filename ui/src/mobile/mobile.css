@@ -516,3 +516,31 @@
   margin: 4px 0;
   font-size: 12px;
 }
+
+.m-apply-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.m-app .m-apply-row .m-primary {
+  flex: 1;
+  width: auto;
+}
+.m-app .m-market {
+  flex: none;
+  width: 60px;
+  min-height: 46px;
+  font-size: 20px;
+  font-weight: 800;
+  color: #fff;
+  border: 0;
+}
+.m-app .m-market.buy {
+  background: var(--up);
+}
+.m-app .m-market.sell {
+  background: var(--down);
+}
+.m-app .m-market:disabled {
+  opacity: 0.45;
+}
