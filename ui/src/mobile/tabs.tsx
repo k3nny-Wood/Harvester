@@ -206,9 +206,10 @@ const FLOATER_GAP = 14;
 
 /**
  * Where the order box goes: above the highest line of the order so every line stays in view; when that does not leave room for the box it
- * flicks to below the lowest line; when it fits neither way it takes the side with more room and scrolls inside. `h` is the height the box wants.
+ * flicks to below the lowest line; when the lines span the chart and there is no room outside them it goes on the entry line (above or below
+ * it); only when it fits nowhere does it take the side with more room and scroll inside. `h` is the height the box wants.
  */
-function floaterStyle(startY: number, tab: HTMLElement | null, bounds: { top: number; bottom: number } | null, h: number): React.CSSProperties {
+function floaterStyle(startY: number, tab: HTMLElement | null, bounds: { top: number; bottom: number; entry: number | null } | null, h: number): React.CSSProperties {
   const w = tab?.clientWidth ?? 360;
   const th = tab?.clientHeight ?? 600;
   const width = Math.min(FLOATER_W, w - 16);
@@ -219,6 +220,16 @@ function floaterStyle(startY: number, tab: HTMLElement | null, bounds: { top: nu
   const below = th - bottom - FLOATER_GAP - 4;
   if (above >= h) return { left, width, bottom: th - top + FLOATER_GAP };
   if (below >= h) return { left, width, top: bottom + FLOATER_GAP };
+  // the lines run (nearly) from the top of the chart to the bottom, so there is no room outside them: the box goes on the entry line instead,
+  // above it or below it, wherever it fits (it is see-through, so the lines behind it stay visible)
+  if (bounds?.entry != null) {
+    const e = bounds.entry;
+    const aboveEntry = e - FLOATER_GAP - 4;
+    const belowEntry = th - e - FLOATER_GAP - 4;
+    if (aboveEntry >= h) return { left, width, bottom: th - e + FLOATER_GAP };
+    if (belowEntry >= h) return { left, width, top: e + FLOATER_GAP };
+    return aboveEntry >= belowEntry ? { left, width, bottom: th - e + FLOATER_GAP, maxHeight: Math.max(120, aboveEntry) } : { left, width, top: e + FLOATER_GAP, maxHeight: Math.max(120, belowEntry) };
+  }
   return above >= below ? { left, width, bottom: th - top + FLOATER_GAP, maxHeight: Math.max(120, above) } : { left, width, top: bottom + FLOATER_GAP, maxHeight: Math.max(120, below) };
 }
 
@@ -236,7 +247,7 @@ export function ChartTab() {
   const floater = useFloater((s) => s.f);
   const tabRef = useRef<HTMLDivElement>(null);
   // where the pending order's line is, in the coordinates of the tab
-  const [bounds, setBounds] = useState<{ top: number; bottom: number } | null>(null);
+  const [bounds, setBounds] = useState<{ top: number; bottom: number; entry: number | null } | null>(null);
   const [floaterH, setFloaterH] = useState(250);
   const [error, setError] = useState('');
   const toast = useApp((s) => s.toast);
@@ -442,9 +453,9 @@ export function ChartTab() {
           pending={pendingLines}
           entryNote={entryNote}
           onPendingMove={moveLine}
-          onPendingBounds={(top, bottom) => {
+          onPendingBounds={(top, bottom, entry) => {
             const t = tabRef.current?.getBoundingClientRect().top ?? 0;
-            setBounds({ top: top - t, bottom: bottom - t });
+            setBounds({ top: top - t, bottom: bottom - t, entry: entry != null ? entry - t : null });
           }}
           onTap={({ price, tol }) => {
             // while an order is being moved a tap away from its line cancels the move; a tap on the line may be the first half of the double tap that sets it
