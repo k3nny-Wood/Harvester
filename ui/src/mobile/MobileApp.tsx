@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { api, hasBackend } from '../api';
 import logo from '../assets/logo.png';
 import { ConfirmHost } from '../confirm';
@@ -10,7 +10,7 @@ import { startTradingPoll } from '../trade';
 import './mobile.css';
 import { useDragScroll } from './dragScroll';
 import { useFloater } from './floaterStore';
-import { switchView, useMobile, type Tab } from './store';
+import { useMobile, type Tab } from './store';
 import { ChartTab, OrdersTab, PositionsTab, ScannerTab } from './tabs';
 
 const TABS: Array<{ id: Tab; label: string; icon: string }> = [
@@ -32,7 +32,6 @@ export function MobileApp() {
   const toasts = useApp((s) => s.toasts);
   const dismiss = useApp((s) => s.dismissToast);
   const live = useLivePositions();
-  const [menu, setMenu] = useState(false);
   // while the order dock is open it takes the place of the bottom navigation (in portrait)
   const docked = useFloater((s) => !!s.f);
   const dragScroll = useDragScroll();
@@ -64,9 +63,8 @@ export function MobileApp() {
         <img className="m-logo" src={logo} alt="" />
         <div className="m-equity">
           <b>{equity == null ? '…' : `$${equity.toFixed(2)}`}</b>
-          {account && tab !== 'chart' && <small className={(live?.unrealizedPnl ?? 0) >= 0 ? 'up' : 'down'}>{(live?.unrealizedPnl ?? 0) >= 0 ? '+' : '-'}${Math.abs(live?.unrealizedPnl ?? 0).toFixed(2)} open · ${account.availableBalance.toFixed(0)} free</small>}
         </div>
-        {tab === 'chart' && account && (
+        {account && (
           <div className="m-stats">
             <span>uPnL <b className={upnl > 0 ? 'up' : upnl < 0 ? 'down' : ''}>{upnl >= 0 ? '+' : ''}{money(upnl)}</b></span>
             <span>Free <b>{money(account.availableBalance)}</b></span>
@@ -74,15 +72,8 @@ export function MobileApp() {
             <span>Open <b>{open}</b></span>
           </div>
         )}
-        {/* on the chart tab there is no room for them; a LIVE badge stays everywhere */}
-        {(tab !== 'chart' || env === 'live') && <span className={`m-env ${env === 'live' ? 'live' : ''}`}>{env === 'live' ? 'LIVE' : 'TESTNET'}</span>}
-        {tab !== 'chart' && <button className="m-menu" onClick={() => setMenu((v) => !v)} aria-label="Menu">⋯</button>}
-        {menu && tab !== 'chart' && (
-          <div className="m-menu-pop" onClick={() => setMenu(false)}>
-            <button onClick={() => switchView('desktop')}>Desktop view</button>
-            <button onClick={() => window.location.reload()}>Reload</button>
-          </div>
-        )}
+        {/* the TESTNET badge and the menu are gone; a LIVE badge stays */}
+        {env === 'live' && <span className={`m-env ${env === 'live' ? 'live' : ''}`}>{env === 'live' ? 'LIVE' : 'TESTNET'}</span>}
       </header>
       <main className="m-main" ref={dragScroll}>
         {tab === 'positions' && <PositionsTab />}
