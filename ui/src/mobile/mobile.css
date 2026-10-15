@@ -647,3 +647,37 @@
   width: 52px;
   font-size: 18px;
 }
+
+/* stop-loss / take-profit: the label and the resulting price sit inside the box as faint background text */
+.m-fl-box {
+  position: relative;
+  display: block;
+  min-width: 0;
+  margin-top: 2px;
+}
+.m-fl-tag,
+.m-fl-px {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--muted);
+  opacity: 0.7;
+}
+.m-fl-tag {
+  left: 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.m-fl-px {
+  right: 9px;
+  font-size: 11px;
+}
+.m-fl-px.down {
+  color: var(--down);
+  opacity: 1;
+}
+.m-app .m-floater .m-fl-box input[type='text'] {
+  padding: 0 58px 0 34px;
+  min-height: 38px;
+}

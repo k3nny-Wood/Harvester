@@ -249,13 +249,15 @@ export function OrderFloater({ symbol, mark, state, onClose, onPrice, onSide, on
         </label>
       </div>
       <div className="m-fl-pair">
-        <label className="m-fl-in">
-          <span>Stop-loss <small className={slRes?.ok ? '' : 'down'}>{slRes?.ok ? fmtPrice(slRes.price) : ''}</small></span>
-          <input type="text" inputMode="decimal" value={sl} onChange={(e) => setSl(e.target.value)} />
+        <label className="m-fl-box">
+          <span className="m-fl-tag">SL</span>
+          <input type="text" inputMode="decimal" aria-label="Stop-loss: a price or a percentage" value={sl} onChange={(e) => setSl(e.target.value)} />
+          <small className={`m-fl-px${slRes?.ok ? '' : ' down'}`}>{slRes?.ok ? fmtPrice(slRes.price) : '!'}</small>
         </label>
-        <label className="m-fl-in">
-          <span>Take-profit <small className={tpRes?.ok ? '' : 'down'}>{tpRes?.ok ? fmtPrice(tpRes.price) : ''}</small></span>
-          <input type="text" inputMode="decimal" value={tp} onChange={(e) => setTp(e.target.value)} />
+        <label className="m-fl-box">
+          <span className="m-fl-tag">TP</span>
+          <input type="text" inputMode="decimal" aria-label="Take-profit: a price or a percentage" value={tp} onChange={(e) => setTp(e.target.value)} />
+          <small className={`m-fl-px${tpRes?.ok ? '' : ' down'}`}>{tpRes?.ok ? fmtPrice(tpRes.price) : '!'}</small>
         </label>
       </div>
       <div className="m-fl-sum">
