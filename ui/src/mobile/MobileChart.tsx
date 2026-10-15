@@ -24,7 +24,7 @@ export interface PendingLine {
   edit?: boolean;
 }
 
-export function MobileChart({ candles, lines, pending = [], entryNote, onPendingMove, onPendingBounds, onPendingDoubleTap, onLongPress, onTap, onDoubleTap }: { candles: Kline[]; lines: ChartLine[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; /** text drawn at the position's entry line (above it or below it): what the order being moved would make or lose */ entryNote?: { price: number; lines: string[]; color: string; above: boolean } | null; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number, entry: number | null) => void; /** a double tap on a handle (without dragging it) */ onPendingDoubleTap?: (id: string) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: (p: { price: number; tol: number }) => void; /** a double tap at this price (`tol` = how far a line may be from it to count as hit); return true when it was used, else the chart jumps to the newest candle */ onDoubleTap?: (p: { price: number; tol: number }) => boolean }) {
+export function MobileChart({ candles, lines, pending = [], entryNote, watermark, onPendingMove, onPendingBounds, onPendingDoubleTap, onLongPress, onTap, onDoubleTap }: { candles: Kline[]; lines: ChartLine[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; /** text drawn at the position's entry line (above it or below it): what the order being moved would make or lose */ entryNote?: { price: number; lines: string[]; color: string; above: boolean } | null; /** the symbol and timeframe, drawn large and faint behind the candles */ watermark?: { symbol: string; timeframe: string } | null; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number, entry: number | null) => void; /** a double tap on a handle (without dragging it) */ onPendingDoubleTap?: (id: string) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: (p: { price: number; tol: number }) => void; /** a double tap at this price (`tol` = how far a line may be from it to count as hit); return true when it was used, else the chart jumps to the newest candle */ onDoubleTap?: (p: { price: number; tol: number }) => boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 320, h: 300 });
@@ -88,6 +88,25 @@ export function MobileChart({ candles, lines, pending = [], entryNote, onPending
       g.stroke();
       g.fillStyle = '#8b98a5';
       g.fillText(fmtPrice(p), plotW + 4, y(p));
+    }
+    // the symbol and timeframe as a faint watermark behind the candles
+    if (watermark) {
+      g.save();
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      let px = 64;
+      g.font = `800 ${px}px system-ui, sans-serif`;
+      const wide = g.measureText(watermark.symbol).width;
+      if (wide > plotW * 0.86) {
+        px = Math.floor((px * plotW * 0.86) / wide);
+        g.font = `800 ${px}px system-ui, sans-serif`;
+      }
+      g.fillStyle = 'rgba(190, 205, 225, 0.09)';
+      g.fillText(watermark.symbol, plotW / 2, size.h * 0.4);
+      g.font = `700 ${Math.max(14, Math.round(px * 0.4))}px system-ui, sans-serif`;
+      g.fillText(watermark.timeframe, plotW / 2, size.h * 0.4 + px * 0.75);
+      g.restore();
+      g.textBaseline = 'middle';
     }
     // candles
     const step = plotW / shown.length;
@@ -174,7 +193,7 @@ export function MobileChart({ candles, lines, pending = [], entryNote, onPending
       g.fillStyle = '#0b0f15';
       g.fillText(fmtPrice(last.close), plotW + 4, ly);
     }
-  }, [candles, lines, pendingKey, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, lines, pendingKey, watermark?.symbol, watermark?.timeframe, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doubleTap = (clientY: number) => {
     lastDouble.current = Date.now();

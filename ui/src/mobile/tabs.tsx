@@ -457,6 +457,7 @@ export function ChartTab() {
           lines={lines}
           pending={pendingLines}
           entryNote={entryNote}
+          watermark={{ symbol, timeframe }}
           onPendingMove={moveLine}
           onPendingBounds={(top, bottom, entry) => {
             const t = tabRef.current?.getBoundingClientRect().top ?? 0;
