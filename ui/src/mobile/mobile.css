@@ -1742,3 +1742,51 @@
     font-size: 12px;
   }
 }
+
+/* scanner cards: two compact lines, a chart thumbnail when opened */
+.m-app .m-sig {
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.m-sig .m-coin {
+  font-size: 14px;
+}
+.m-sig .m-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+}
+.m-sig-meta {
+  font-size: 11px;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+.m-sig .m-pnl {
+  margin-left: 0;
+  font-size: 13px;
+}
+.m-sig-line {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.m-sig-line b {
+  color: var(--text);
+  font-weight: 600;
+}
+.m-sig-more {
+  margin-top: 6px;
+  cursor: default;
+}
+.m-sig-more .thumb {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+.m-sig-more .m-grid {
+  margin-top: 6px;
+}
+.m-sig-more .m-actions {
+  margin-top: 8px;
+}

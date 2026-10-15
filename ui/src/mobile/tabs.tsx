@@ -16,6 +16,7 @@ import { OrderFloater, sideFor } from './OrderFloater';
 import { pctText, resolveBoth, resolveExit } from './exits';
 import { snapToTick } from '../ladderMath';
 import { useDragScroll } from './dragScroll';
+import { Thumb } from '../components/Thumb';
 import { nextSort, sortSymbols, type SortDir, type SortKey } from '../symbolSort';
 import type { OpenOrder } from '../types';
 
@@ -239,6 +240,9 @@ export function ScannerTab() {
   const scanner = useApp((s) => s.scanner);
   const openChart = useMobile((s) => s.openChart);
   const [kinds, setKinds] = useState(loadScanKinds);
+  const [openId, setOpenId] = useState<string | null>(null);
+  // the thumbnail fills the card (the screen less the list's and the card's padding)
+  const thumbW = Math.max(200, Math.min(window.innerWidth, 560) - 60);
   const toggle = (k: string) =>
     setKinds((v) => {
       const next = { ...v, [k]: !v[k] };
@@ -266,21 +270,37 @@ export function ScannerTab() {
       </div>
       <div className="m-muted m-pad">{scanner ? `${scanner.phase} · ${scanner.seeded}/${scanner.symbols} symbols · ${rows.length} of ${signals.length} signals` : 'Scanner starting…'}</div>
       {!rows.length && <div className="m-empty">No signals right now.</div>}
-      {rows.map((s) => (
-        <div key={s.id} className="m-card" onClick={() => openChart(s.symbol)}>
-          <div className="m-row">
-            <b className="m-coin">{coin(s.symbol)}</b>
-            <span className={`m-badge ${s.kind === 'pump' ? 'up' : s.kind === 'dump' || s.kind === 'drop' ? 'down' : 'warn'}`}>{s.kind.toUpperCase()}</span>
-            <span className="m-muted">{s.timeframe} · {ago(s.timeMs)} ago</span>
-            <span className="m-pnl">score {s.score}</span>
+      {rows.map((s) => {
+        const isOpen = openId === s.id;
+        return (
+          <div key={s.id} className="m-card m-sig" onClick={() => setOpenId(isOpen ? null : s.id)}>
+            <div className="m-row">
+              <b className="m-coin">{coin(s.symbol)}</b>
+              <span className={`m-badge ${s.kind === 'pump' ? 'up' : s.kind === 'dump' || s.kind === 'drop' ? 'down' : 'warn'}`}>{s.kind.toUpperCase()}</span>
+              <span className="m-muted m-sig-meta">{s.timeframe} · {ago(s.timeMs)}</span>
+              <span className="m-pnl">{s.score}</span>
+              <span className="m-chev">{isOpen ? '▴' : '▾'}</span>
+            </div>
+            <div className="m-sig-line">
+              {fmtPrice(s.price)}
+              {s.distancePct != null && <> · vs crack <b>{s.distancePct.toFixed(2)}%</b></>} · drop <b>{s.dropPct.toFixed(1)}%</b>
+            </div>
+            {isOpen && (
+              <div className="m-sig-more" onClick={(e) => e.stopPropagation()}>
+                {s.thumb.length > 0 && <Thumb candles={s.thumb} base={s.base} crackLevel={s.crackLevel} width={thumbW} height={120} />}
+                <div className="m-grid">
+                  <span>Volume <b>{s.volRatio.toFixed(1)}x</b></span>
+                  {s.base != null && <span>Base <b>{fmtPrice(s.base)}</b></span>}
+                  {s.crackLevel != null && <span>Crack <b>{fmtPrice(s.crackLevel)}</b></span>}
+                </div>
+                <div className="m-actions">
+                  <button onClick={() => openChart(s.symbol)}>Open {coin(s.symbol)} chart</button>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="m-grid">
-            <span>Price <b>{fmtPrice(s.price)}</b></span>
-            {s.distancePct != null && <span>vs crack <b>{s.distancePct.toFixed(2)}%</b></span>}
-            <span>Drop <b>{s.dropPct.toFixed(1)}%</b></span>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
