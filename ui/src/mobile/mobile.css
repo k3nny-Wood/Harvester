@@ -1810,3 +1810,37 @@
     top: 1px;
   }
 }
+
+/* portrait: a slimmer header and symbol bar above the chart */
+@media (orientation: portrait) {
+  .m-top {
+    padding: 4px 10px;
+    gap: 8px;
+  }
+  .m-logo {
+    width: 24px;
+    height: 24px;
+  }
+  .m-equity b {
+    font-size: 17px;
+  }
+  .m-stats {
+    font-size: 10.5px;
+    line-height: 1.2;
+  }
+  .m-chart-head {
+    gap: 8px;
+    padding: 4px 10px 2px;
+  }
+  .m-app .m-symbol,
+  .m-app .m-tf {
+    min-height: 30px;
+    height: 30px;
+    padding: 0 10px;
+    font-size: 14px;
+    border-radius: 7px;
+  }
+  .m-last {
+    font-size: 15px;
+  }
+}
