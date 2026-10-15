@@ -297,7 +297,7 @@ export function MobileChart({ candles, lines, pending = [], entryNote, onPending
   }, [boundsKey, size.h]);
 
   return (
-    <div ref={box} className="m-chart" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onContextMenu={(e) => e.preventDefault()} onDoubleClick={(e) => Date.now() - lastDouble.current > 600 && doubleTap(e.clientY)}>
+    <div ref={box} className="m-chart" data-visible={win.visible} data-offset={win.offset} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onContextMenu={(e) => e.preventDefault()} onDoubleClick={(e) => Date.now() - lastDouble.current > 600 && doubleTap(e.clientY)}>
       <canvas ref={canvas} style={{ width: size.w, height: size.h }} />
       {pending.map((pl, i) => {
         const hy = handleYs[i];
