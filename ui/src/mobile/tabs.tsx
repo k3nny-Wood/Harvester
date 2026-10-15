@@ -404,6 +404,13 @@ export function ChartTab() {
         <button className="m-symbol" onClick={() => setPicking((v) => !v)}>
           {coin(symbol)} <small>▾</small>
         </button>
+        <select className="m-tf" value={timeframe} onChange={(e) => setTimeframe(e.target.value)} aria-label="Timeframe">
+          {TIMEFRAMES.map((tf) => (
+            <option key={tf} value={tf}>
+              {tf}
+            </option>
+          ))}
+        </select>
         <b className="m-last">{mark ? fmtPrice(mark) : ''}</b>
         {pos && <span className={`m-pnl ${tone(pos.unrealizedPnl)}`}>{signed(pos.unrealizedPnl)}</span>}
       </div>
@@ -421,13 +428,6 @@ export function ChartTab() {
           </div>
         </div>
       )}
-      <div className="m-tfs">
-        {TIMEFRAMES.map((tf) => (
-          <button key={tf} className={tf === timeframe ? 'on' : ''} onClick={() => setTimeframe(tf)}>
-            {tf}
-          </button>
-        ))}
-      </div>
       {error ? <div className="m-warn">{error}</div> : <MobileChart
           candles={candles}
           lines={lines}

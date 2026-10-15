@@ -870,3 +870,15 @@
   left: 8px;
   transform: none;
 }
+
+/* the timeframe is a drop-down beside the ticker */
+.m-app .m-tf {
+  min-height: 40px;
+  padding: 0 10px;
+  font: inherit;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
