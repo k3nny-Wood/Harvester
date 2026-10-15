@@ -1683,3 +1683,27 @@
 .m-chev {
   margin-left: 6px;
 }
+
+/* orders grouped by token */
+.m-ogroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.m-ogroup-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 0;
+  cursor: pointer;
+}
+.m-ogroup-head .m-coin {
+  font-size: 15px;
+}
+.m-ogroup-head .m-chev {
+  margin-left: auto;
+  font-size: 16px;
+}
+.m-app .m-order-in {
+  margin-left: 8px;
+}

@@ -147,34 +147,47 @@ export function OrdersTab() {
       toast(`Cancel: ${e}`, 'warn');
     }
   };
+  const groups = useMemo(() => {
+    const by = new Map<string, typeof orders>();
+    for (const o of [...orders].sort((a, b) => a.symbol.localeCompare(b.symbol) || a.price - b.price)) by.set(o.symbol, [...(by.get(o.symbol) ?? []), o]);
+    return [...by.entries()];
+  }, [orders]);
   if (!orders.length) return <div className="m-empty">No open orders.</div>;
   return (
     <div className="m-list">
-      {[...orders].sort((a, b) => a.symbol.localeCompare(b.symbol)).map((o) => (
-        <div key={`${o.conditional}-${o.orderId}`} className="m-card m-order">
-          <div className="m-row" onClick={() => openChart(o.symbol)}>
-            <b className="m-coin">{coin(o.symbol)}</b>
-            <span className={`m-badge ${o.side === 'BUY' ? 'up' : 'down'}`}>{o.side}</span>
-            <span className="m-muted m-order-type">{o.type.replace(/_/g, ' ').toLowerCase()}{o.reduceOnly ? ' · reduce' : ''}</span>
-            <button
-              className="m-danger m-order-x"
-              onClick={(e) => {
-                e.stopPropagation();
-                void cancel(o);
-              }}
-            >
-              Cancel
-            </button>
+      {groups.map(([sym, list]) => (
+        <div key={sym} className="m-ogroup">
+          <div className="m-ogroup-head" onClick={() => openChart(sym)}>
+            <b className="m-coin">{coin(sym)}</b>
+            <span className="m-muted">{list.length} order{list.length === 1 ? '' : 's'}</span>
+            <span className="m-chev">›</span>
           </div>
-          <div className="m-order-info">
-            Price <b>{fmtPrice(o.stopPrice && !o.price ? o.stopPrice : o.price)}</b> · Qty <b>{o.origQty}</b>
-            {o.executedQty > 0 && (
-              <>
-                {' '}
-                · Filled <b>{o.executedQty}</b>
-              </>
-            )}
+          {list.map((o) => (
+          <div key={`${o.conditional}-${o.orderId}`} className="m-card m-order m-order-in">
+            <div className="m-row">
+              <span className={`m-badge ${o.side === 'BUY' ? 'up' : 'down'}`}>{o.side}</span>
+              <span className="m-muted m-order-type">{o.type.replace(/_/g, ' ').toLowerCase()}{o.reduceOnly ? ' · reduce' : ''}</span>
+              <button
+                className="m-danger m-order-x"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void cancel(o);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+            <div className="m-order-info">
+              Price <b>{fmtPrice(o.stopPrice && !o.price ? o.stopPrice : o.price)}</b> · Qty <b>{o.origQty}</b>
+              {o.executedQty > 0 && (
+                <>
+                  {' '}
+                  · Filled <b>{o.executedQty}</b>
+                </>
+              )}
+            </div>
           </div>
+          ))}
         </div>
       ))}
     </div>
