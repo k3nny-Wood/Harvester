@@ -156,14 +156,52 @@ export function OrdersTab() {
 
 // ---------------------------------------------------------------- scanner
 
+const SCAN_KINDS = ['crack', 'near', 'drop', 'pump', 'dump'] as const;
+const SCAN_LABEL: Record<(typeof SCAN_KINDS)[number], string> = { crack: 'CRACK', near: 'WATCH', drop: 'DROP', pump: 'PUMP', dump: 'DUMP' };
+const SCAN_KEY = 'harvester.mobile.scanKinds.v1';
+
+function loadScanKinds(): Record<string, boolean> {
+  const all = { crack: true, near: true, drop: true, pump: true, dump: true };
+  try {
+    const v = JSON.parse(window.localStorage.getItem(SCAN_KEY) ?? 'null') as Record<string, boolean> | null;
+    if (v) for (const k of SCAN_KINDS) if (typeof v[k] === 'boolean') all[k] = v[k];
+  } catch {
+    /* all shown */
+  }
+  return all;
+}
+
 export function ScannerTab() {
   const signals = useApp((s) => s.signals);
   const scanner = useApp((s) => s.scanner);
   const openChart = useMobile((s) => s.openChart);
-  const rows = useMemo(() => signals.slice(0, 60), [signals]);
+  const [kinds, setKinds] = useState(loadScanKinds);
+  const toggle = (k: string) =>
+    setKinds((v) => {
+      const next = { ...v, [k]: !v[k] };
+      try {
+        window.localStorage.setItem(SCAN_KEY, JSON.stringify(next));
+      } catch {
+        /* not remembered */
+      }
+      return next;
+    });
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const s of signals) c[s.kind] = (c[s.kind] ?? 0) + 1;
+    return c;
+  }, [signals]);
+  const rows = useMemo(() => signals.filter((s) => kinds[s.kind]).slice(0, 60), [signals, kinds]);
   return (
     <div className="m-list">
-      <div className="m-muted m-pad">{scanner ? `${scanner.phase} · ${scanner.seeded}/${scanner.symbols} symbols · ${signals.length} signals` : 'Scanner starting…'}</div>
+      <div className="m-chips">
+        {SCAN_KINDS.map((k) => (
+          <button key={k} className={`m-chip ${k}${kinds[k] ? ' on' : ''}`} onClick={() => toggle(k)}>
+            {SCAN_LABEL[k]} {counts[k] ?? 0}
+          </button>
+        ))}
+      </div>
+      <div className="m-muted m-pad">{scanner ? `${scanner.phase} · ${scanner.seeded}/${scanner.symbols} symbols · ${rows.length} of ${signals.length} signals` : 'Scanner starting…'}</div>
       {!rows.length && <div className="m-empty">No signals right now.</div>}
       {rows.map((s) => (
         <div key={s.id} className="m-card" onClick={() => openChart(s.symbol)}>

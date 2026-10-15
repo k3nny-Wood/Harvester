@@ -1548,3 +1548,36 @@
     min-height: 28px;
   }
 }
+
+/* scanner filter chips */
+.m-chips {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px 0;
+  overflow-x: auto;
+  flex: none;
+}
+.m-app .m-chip {
+  flex: none;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 17px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+}
+.m-app .m-chip.on {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+.m-app .m-chip.on.pump {
+  color: var(--up);
+  border-color: var(--up);
+}
+.m-app .m-chip.on.dump,
+.m-app .m-chip.on.drop {
+  color: var(--down);
+  border-color: var(--down);
+}
