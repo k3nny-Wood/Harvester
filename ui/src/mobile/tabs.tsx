@@ -14,10 +14,29 @@ import { useFloater } from './floaterStore';
 import { OrderFloater, sideFor } from './OrderFloater';
 import { pctText, resolveBoth, resolveExit } from './exits';
 import { snapToTick } from '../ladderMath';
+import { nextSort, sortSymbols, type SortDir, type SortKey } from '../symbolSort';
 import type { OpenOrder } from '../types';
 import { TradeSheet } from './TradeSheet';
 
 const coin = (s: string) => s.replace('USDT', '');
+
+function compactVol(n: number): string {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
+  return n.toFixed(0);
+}
+
+const SYM_SORT_KEY = 'harvester.mobile.symsort.v1';
+function loadSymSort(): { key: SortKey; dir: SortDir } {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(SYM_SORT_KEY) ?? 'null');
+    if (v && ['name', 'change', 'volume'].includes(v.key) && ['asc', 'desc'].includes(v.dir)) return v;
+  } catch {
+    /* default */
+  }
+  return { key: 'volume', dir: 'desc' };
+}
 const signed = (n: number, d = 2) => `${n >= 0 ? '+' : '-'}$${Math.abs(n).toFixed(d)}`;
 const tone = (n: number) => (n > 0 ? 'up' : n < 0 ? 'down' : '');
 
@@ -417,10 +436,28 @@ export function ChartTab() {
     };
   }, [adjust, pos]);
 
+  // every symbol, searchable and sortable by name, 24h change or volume (the choice is remembered)
+  const [symSort, setSymSort] = useState<{ key: SortKey; dir: SortDir }>(loadSymSort);
+  const clickSort = (key: SortKey) =>
+    setSymSort((cur) => {
+      const next = nextSort(cur, key);
+      try {
+        window.localStorage.setItem(SYM_SORT_KEY, JSON.stringify(next));
+      } catch {
+        /* not remembered */
+      }
+      return next;
+    });
   const matches = useMemo(() => {
     const q = query.trim().toUpperCase();
-    return [...symbols].filter((s) => !q || s.symbol.includes(q)).sort((a, b) => b.volume24hQuote - a.volume24hQuote).slice(0, 40);
-  }, [symbols, query]);
+    return sortSymbols(symbols.filter((s) => !q || s.symbol.includes(q)), symSort);
+  }, [symbols, query, symSort]);
+  const head = (key: SortKey, label: string) => (
+    <button className={`m-sort${symSort.key === key ? ' on' : ''}`} onClick={() => clickSort(key)}>
+      {label}
+      {symSort.key === key ? (symSort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+    </button>
+  );
 
   return (
     <div className="m-chart-tab" ref={tabRef}>
@@ -440,15 +477,23 @@ export function ChartTab() {
       </div>
       {picking && (
         <div className="m-picker">
-          <input autoFocus placeholder="Search a symbol" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input autoFocus placeholder={`Search ${symbols.length || ''} symbols`} value={query} onChange={(e) => setQuery(e.target.value)} />
           <div className="m-picker-list">
+            <div className="m-picker-head">
+              {head('name', 'Name')}
+              <span>Price</span>
+              {head('change', '24h %')}
+              {head('volume', 'Volume')}
+            </div>
             {matches.map((s) => (
-              <button key={s.symbol} onClick={() => { openChart(s.symbol); setPicking(false); setQuery(''); }}>
+              <button key={s.symbol} className={s.symbol === symbol ? 'cur' : ''} onClick={() => { openChart(s.symbol); setPicking(false); setQuery(''); }}>
                 <b>{coin(s.symbol)}</b>
                 <span>{fmtPrice(s.lastPrice)}</span>
                 <span className={s.changePercent24h >= 0 ? 'up' : 'down'}>{s.changePercent24h.toFixed(1)}%</span>
+                <span className="m-muted">{compactVol(s.volume24hQuote)}</span>
               </button>
             ))}
+            {!matches.length && <div className="m-empty">No symbol matches.</div>}
           </div>
         </div>
       )}

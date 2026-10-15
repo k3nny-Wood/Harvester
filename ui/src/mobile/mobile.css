@@ -1052,3 +1052,66 @@
 .m-adjust-wrap > * {
   pointer-events: none;
 }
+
+/* the symbol picker: every symbol, sortable */
+.m-picker-list {
+  max-height: 62dvh;
+  margin-top: 6px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.m-picker-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1.1fr 1.2fr 0.9fr 0.9fr;
+  gap: 8px;
+  padding: 6px 4px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.m-picker-head > span {
+  text-align: right;
+}
+.m-app .m-picker-head .m-sort {
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+.m-app .m-picker-head .m-sort:first-child {
+  text-align: left;
+}
+.m-app .m-picker-head .m-sort.on {
+  color: var(--accent);
+}
+.m-app .m-picker-list > button {
+  grid-template-columns: 1.1fr 1.2fr 0.9fr 0.9fr;
+  min-height: 42px;
+  padding: 0 4px;
+  font-size: 14px;
+}
+.m-app .m-picker-list > button.cur {
+  background: rgba(240, 185, 11, 0.12);
+}
+
+.m-picker-head,
+.m-app .m-picker-list > button {
+  grid-template-columns: 1fr 1.1fr 1.15fr 0.95fr;
+}
+.m-app .m-picker-head .m-sort {
+  white-space: nowrap;
+}
+
+.m-app .m-picker-list .m-picker-head .m-sort {
+  display: block;
+  grid-template-columns: none;
+  width: 100%;
+  border-bottom: 0;
+}
