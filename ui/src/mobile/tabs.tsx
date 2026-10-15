@@ -381,7 +381,22 @@ export function ChartTab() {
       if (o.type === 'LIMIT') await api.modifyOrder(symbol, o.orderId, false, price);
       else if (o.type === 'STOP') await api.modifyOrder(symbol, o.orderId, o.conditional, o.price + (price - o.stopPrice), price);
       else await api.modifyOrder(symbol, o.orderId, o.conditional, undefined, price);
-      toast(`${symbol}: ${kind === 'order' ? 'order' : kind === 'sl' ? 'stop-loss' : 'take-profit'} moved to ${fmtPrice(price)}`, 'info');
+      // an entry that has its own stop-loss / take-profit on the exchange (same size, opposite side, nothing open yet): they move with it,
+      // keeping their distance, so the old levels are not left behind
+      let moved = 0;
+      if (kind === 'order' && !pos && !o.reduceOnly) {
+        const delta = price - adjust.original;
+        const linked = orders.filter((x) => x.symbol === symbol && x.conditional && x.reduceOnly && x.side !== o.side && Math.abs(x.origQty - o.origQty) <= o.origQty * 1e-6);
+        for (const x of linked) {
+          try {
+            await api.modifyOrder(symbol, x.orderId, true, undefined, snapToTick(x.stopPrice + delta, tick));
+            moved++;
+          } catch (e) {
+            toast(`The order moved, but its ${x.type.includes('TAKE') ? 'take-profit' : 'stop-loss'} could not: ${e}`, 'warn');
+          }
+        }
+      }
+      toast(`${symbol}: ${kind === 'order' ? 'order' : kind === 'sl' ? 'stop-loss' : 'take-profit'} moved to ${fmtPrice(price)}${moved ? ` (with its ${moved === 2 ? 'SL and TP' : 'exit'})` : ''}`, 'info');
       void refreshTrading();
       setAdjust(null);
     } catch (e) {
