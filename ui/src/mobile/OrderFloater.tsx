@@ -228,10 +228,12 @@ export function OrderFloater({ symbol, mark, onClose, onHeight, style }: { symbo
           <button className={long ? 'on buy' : ''} onClick={() => patch({ side: 'BUY' })}>Buy</button>
           <button className={!long ? 'on sell' : ''} onClick={() => patch({ side: 'SELL' })}>Sell</button>
         </div>
-        <button className="m-x" onClick={onClose} aria-label="Close">×</button>
       </div>
-      <div className="m-fl-note">
-        {entryOk ? `${kind === 'STOP' ? 'Stop-limit: triggers at the level' : 'Limit: waits at the level'} · ${(entry / mark - 1) * 100 >= 0 ? '+' : ''}${((entry / mark - 1) * 100).toFixed(2)}% vs price` : ' '}
+      <div className="m-fl-noterow">
+        <div className="m-fl-note">
+          {entryOk ? `${kind === 'STOP' ? 'Stop-limit' : 'Limit'} · ${(entry / mark - 1) * 100 >= 0 ? '+' : ''}${((entry / mark - 1) * 100).toFixed(2)}% vs price` : ' '}
+        </div>
+        <button className="m-x" onClick={onClose} aria-label="Close">×</button>
       </div>
       <div className="m-fl-pair">
         <label>

@@ -167,7 +167,7 @@ export function ScannerTab() {
 
 // ---------------------------------------------------------------- chart
 
-const FLOATER_W = 330;
+const FLOATER_W = 300;
 
 /** The bar for moving an order that is on the exchange: what it is, the new price (typed or from the handle) and Apply / Cancel. */
 function AdjustBar({ adjust, busy, style, onPrice, onApply, onCancel }: { adjust: { kind: 'sl' | 'tp' | 'order'; order: OpenOrder; price: number; original: number }; busy: boolean; style: React.CSSProperties; onPrice: (p: number) => void; onApply: () => void; onCancel: () => void }) {
@@ -229,7 +229,7 @@ function floaterStyle(startY: number, tab: HTMLElement | null, bounds: { top: nu
   const w = tab?.clientWidth ?? 360;
   const th = tab?.clientHeight ?? 600;
   const width = Math.min(FLOATER_W, w - 16);
-  const left = Math.max(8, (w - width) / 2);
+  const left = 8; // against the left edge of the chart
   const top = bounds?.top ?? startY;
   const bottom = bounds?.bottom ?? startY;
   const above = top - FLOATER_GAP - 4;
