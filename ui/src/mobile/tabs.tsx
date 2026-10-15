@@ -8,7 +8,8 @@ import { refreshTrading } from '../trade';
 import type { Kline, Position } from '../types';
 import { fmtPrice, type ChartLine } from './chartMath';
 import { ExitSheet } from './ExitSheet';
-import { MobileChart, type PendingLine } from './MobileChart';
+import { MobileChart, type FillMark, type PendingLine } from './MobileChart';
+import { fillMarkers } from '../chart/ChartFills';
 import { TIMEFRAMES, useMobile } from './store';
 import { useFloater } from './floaterStore';
 import { OrderFloater, sideFor } from './OrderFloater';
@@ -378,6 +379,27 @@ export function ChartTab() {
     setAdjust(null);
   }, [symbol, timeframe]);
 
+  // executed trades of this symbol, drawn as arrows (reloaded every few seconds and when the number of orders / positions changes)
+  const hasKeys = useApp((s) => !!s.trading?.hasCredentials);
+  const activity = useApp((s) => `${s.orders.length}:${s.account?.positions.length ?? 0}`);
+  const [fills, setFills] = useState<FillMark[]>([]);
+  useEffect(() => setFills([]), [symbol, hasKeys]);
+  useEffect(() => {
+    if (!hasKeys) return;
+    let alive = true;
+    const load = () =>
+      api
+        .tradeHistory(symbol, 500)
+        .then((f) => alive && setFills(fillMarkers(symbol, f)))
+        .catch(() => undefined);
+    void load();
+    const t = window.setInterval(load, 8000);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+    };
+  }, [symbol, hasKeys, activity]);
+
   const pos = live?.positions.find((p) => p.symbol === symbol && p.amount !== 0);
   const mark = pos?.markPrice || candles[candles.length - 1]?.close || 0;
   const lines = useMemo<ChartLine[]>(() => {
@@ -592,6 +614,7 @@ export function ChartTab() {
       {error ? <div className="m-warn">{error}</div> : <MobileChart
           candles={candles}
           lines={lines}
+          marks={fills}
           pending={pendingLines}
           onRemoveLine={(l) => void removeLine(l)}
           onRemovePending={(id) => useFloater.getState().patch(id === 'sl' ? { useSl: false } : { useTp: false })}

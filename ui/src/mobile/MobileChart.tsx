@@ -2,6 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Kline } from '../types';
 import { fmtPrice, MAX_VISIBLE, MIN_VISIBLE, priceRange, timeLabels, windowOf, zoomed, type ChartLine } from './chartMath';
 
+/** An executed order: when and at what average price. */
+export interface FillMark {
+  key: string;
+  time: number;
+  price: number;
+  side: 'BUY' | 'SELL';
+}
+
 const UP = '#2e9b6f';
 const DOWN = '#d0454b';
 const AXIS_W = 62;
@@ -26,7 +34,7 @@ export interface PendingLine {
   edit?: boolean;
 }
 
-export function MobileChart({ candles, lines, pending = [], entryNote, watermark, onRemoveLine, onRemovePending, onPendingMove, onPendingBounds, onPendingDoubleTap, onLongPress, onTap, onDoubleTap }: { candles: Kline[]; lines: ChartLine[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; /** text drawn at the position's entry line (above it or below it): what the order being moved would make or lose */ entryNote?: { price: number; lines: string[]; color: string; above: boolean } | null; /** the symbol and timeframe, drawn large and faint behind the candles */ watermark?: { symbol: string; timeframe: string } | null; /** an X at the left of a stop-loss / take-profit line that is on the exchange: asks to remove it */ onRemoveLine?: (line: ChartLine) => void; /** the same for the stop-loss / take-profit line of an order not sent yet: switches it off */ onRemovePending?: (id: string) => void; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number, entry: number | null) => void; /** a double tap on a handle (without dragging it) */ onPendingDoubleTap?: (id: string) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: (p: { price: number; tol: number }) => void; /** a double tap at this price (`tol` = how far a line may be from it to count as hit); return true when it was used, else the chart jumps to the newest candle */ onDoubleTap?: (p: { price: number; tol: number }) => boolean }) {
+export function MobileChart({ candles, lines, marks = [], pending = [], entryNote, watermark, onRemoveLine, onRemovePending, onPendingMove, onPendingBounds, onPendingDoubleTap, onLongPress, onTap, onDoubleTap }: { candles: Kline[]; lines: ChartLine[]; /** executed trades: an arrow per order (up = buy, down = sell) with its tip on the price */ marks?: FillMark[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; /** text drawn at the position's entry line (above it or below it): what the order being moved would make or lose */ entryNote?: { price: number; lines: string[]; color: string; above: boolean } | null; /** the symbol and timeframe, drawn large and faint behind the candles */ watermark?: { symbol: string; timeframe: string } | null; /** an X at the left of a stop-loss / take-profit line that is on the exchange: asks to remove it */ onRemoveLine?: (line: ChartLine) => void; /** the same for the stop-loss / take-profit line of an order not sent yet: switches it off */ onRemovePending?: (id: string) => void; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number, entry: number | null) => void; /** a double tap on a handle (without dragging it) */ onPendingDoubleTap?: (id: string) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: (p: { price: number; tol: number }) => void; /** a double tap at this price (`tol` = how far a line may be from it to count as hit); return true when it was used, else the chart jumps to the newest candle */ onDoubleTap?: (p: { price: number; tol: number }) => boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 320, h: 300 });
@@ -147,6 +155,33 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
       const top = y(Math.max(k.open, k.close));
       g.fillRect(x - bodyW / 2, top, bodyW, Math.max(1, y(Math.min(k.open, k.close)) - top));
     });
+    // executed trades: an up arrow under the price for a buy, a down arrow over it for a sell
+    if (marks.length && shown.length) {
+      const span = shown.length > 1 ? shown[1].time - shown[0].time : 60_000;
+      for (const m of marks) {
+        if (m.time < shown[0].time || m.time >= shown[shown.length - 1].time + span || m.price < range.lo || m.price > range.hi) continue;
+        let idx = 0;
+        while (idx + 1 < shown.length && shown[idx + 1].time <= m.time) idx++;
+        const mx = idx * step + step / 2;
+        const my = y(m.price);
+        const dir = m.side === 'BUY' ? 1 : -1; // the body is below the tip for a buy, above for a sell
+        const col = m.side === 'BUY' ? '#2ee59d' : '#ff5c63';
+        g.fillStyle = col;
+        g.strokeStyle = '#05080c';
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(mx, my);
+        g.lineTo(mx - 6, my + dir * 11);
+        g.lineTo(mx - 2.5, my + dir * 11);
+        g.lineTo(mx - 2.5, my + dir * 19);
+        g.lineTo(mx + 2.5, my + dir * 19);
+        g.lineTo(mx + 2.5, my + dir * 11);
+        g.lineTo(mx + 6, my + dir * 11);
+        g.closePath();
+        g.fill();
+        g.stroke();
+      }
+    }
     // the position and the orders
     for (const l of lines) {
       if (l.price < range.lo || l.price > range.hi) continue;
@@ -238,7 +273,7 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
       g.stroke();
     }
     g.textAlign = 'left';
-  }, [candles, lines, pendingKey, watermark?.symbol, watermark?.timeframe, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, lines, marks, pendingKey, watermark?.symbol, watermark?.timeframe, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doubleTap = (clientY: number) => {
     lastDouble.current = Date.now();
