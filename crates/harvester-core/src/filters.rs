@@ -14,6 +14,9 @@ pub struct SymbolFilters {
     pub step_size: Decimal,
     pub min_qty: Decimal,
     pub max_qty: Decimal,
+    /// the largest quantity of ONE market order (MARKET_LOT_SIZE); a bigger position has to be closed in pieces. 0 = unknown
+    #[serde(default)]
+    pub market_max_qty: Decimal,
     pub min_notional: Decimal,
     pub min_price: Decimal,
     pub max_price: Decimal,
@@ -73,6 +76,7 @@ pub fn extract_filters(symbol: &Value) -> SymbolFilters {
         step_size: step,
         min_qty: if lot.and_then(|l| l.get("minQty")).is_some() { dec_of(lot, "minQty", "0") } else { dec_of(market_lot, "minQty", "0") },
         max_qty: if lot.and_then(|l| l.get("maxQty")).is_some() { dec_of(lot, "maxQty", "1000000") } else { dec_of(market_lot, "maxQty", "1000000") },
+        market_max_qty: if market_lot.and_then(|l| l.get("maxQty")).is_some() { dec_of(market_lot, "maxQty", "0") } else { Decimal::ZERO },
         min_notional: dec_of(notional, "notional", "5"),
         min_price: dec_of(price, "minPrice", "0"),
         max_price: dec_of(price, "maxPrice", "1000000000"),

@@ -892,18 +892,34 @@ impl Trading {
         if qty <= 0.0 {
             return Err("the size to close rounds to zero".into());
         }
-        let req = OrderRequest {
-            symbol: symbol.to_string(),
-            side: if pos.amount > 0.0 { Side::Sell } else { Side::Buy },
-            order_type: OrderType::Market,
-            quantity: qty,
-            price: None,
-            stop_price: None,
-            post_only: false,
-            reduce_only: true,
-            client_id: None,
-        };
-        let v = self.signed(reqwest::Method::POST, "/fapi/v1/order", order_params(&req, from_f64(qty), None)).await?;
+        // one market order can only be so large (MARKET_LOT_SIZE): a bigger position is closed in pieces of at most that size
+        let piece = if filters.market_max_qty > Decimal::ZERO { to_f64(filters.market_max_qty) } else { f64::MAX };
+        let mut left = qty;
+        let mut last: Option<serde_json::Value> = None;
+        while left > 0.0 {
+            let now = if left > piece { piece } else { left };
+            let now = to_f64(filters.round_quantity(now));
+            if now <= 0.0 {
+                break;
+            }
+            let req = OrderRequest {
+                symbol: symbol.to_string(),
+                side: if pos.amount > 0.0 { Side::Sell } else { Side::Buy },
+                order_type: OrderType::Market,
+                quantity: now,
+                price: None,
+                stop_price: None,
+                post_only: false,
+                reduce_only: true,
+                client_id: None,
+            };
+            last = Some(self.signed(reqwest::Method::POST, "/fapi/v1/order", order_params(&req, from_f64(now), None)).await?);
+            left -= now;
+            if left < to_f64(filters.step_size) / 2.0 {
+                break;
+            }
+        }
+        let v = last.ok_or("the size to close rounds to zero")?;
         Ok(OrderAck { order_id: v["orderId"].as_i64().unwrap_or(0), symbol: symbol.to_string(), status: text(&v["status"]), client_id: text(&v["clientOrderId"]), quantity: qty, price: None, conditional: false })
     }
 
