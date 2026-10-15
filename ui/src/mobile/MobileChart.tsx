@@ -30,7 +30,11 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
   const [size, setSize] = useState({ w: 320, h: 300 });
   const [view, setView] = useState({ visible: DEFAULT_VISIBLE, offset: 0 });
   const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const gesture = useRef<{ visible: number; offset: number; x: number; dist: number } | null>(null);
+  const gesture = useRef<{ visible: number; offset: number; x: number; y: number; dist: number; rlo: number; rhi: number } | null>(null);
+  // dragging on the price axis (the right edge) stretches or squashes the chart vertically; from then on the price range is manual and one finger moves the chart up and down as well
+  const [manual, setManual] = useState<{ lo: number; hi: number } | null>(null);
+  const axis = useRef<{ startY: number; lo: number; hi: number; moved: boolean } | null>(null);
+  const lastAxisTap = useRef(0);
   // press and hold: where the finger went down, the timer that fires after LONG_PRESS_MS, and whether it already fired (then the rest of the touch does nothing)
   const press = useRef<{ x: number; y: number; timer: number; fired: boolean; moved: boolean } | null>(null);
   const rangeRef = useRef<{ lo: number; hi: number; h: number } | null>(null);
@@ -53,7 +57,9 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
   const liveRange = useMemo(() => priceRange(candles.slice(win.start, win.end), lines, pending.map((p) => p.price)), [candles, lines, pendingKey, win.start, win.end]); // eslint-disable-line react-hooks/exhaustive-deps
   const frozen = useRef<{ lo: number; hi: number } | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
-  const range = dragging && frozen.current ? frozen.current : liveRange;
+  const range = manual ?? (dragging && frozen.current ? frozen.current : liveRange);
+  // a different chart starts with the automatic range again
+  useEffect(() => setManual(null), [watermark?.symbol, watermark?.timeframe]);
 
   useEffect(() => {
     const c = canvas.current;
@@ -205,7 +211,10 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
       const price = r.hi - (clientY - top - 2) * per;
       handled = onDoubleTap?.({ price, tol: 28 * per }) ?? false;
     }
-    if (!handled) setView({ visible: DEFAULT_VISIBLE, offset: 0 });
+    if (!handled) {
+      setView({ visible: DEFAULT_VISIBLE, offset: 0 });
+      setManual(null);
+    }
   };
   const cancelPress = () => {
     if (press.current) window.clearTimeout(press.current.timer);
@@ -214,8 +223,14 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const pts = [...pointers.current.values()];
-    gesture.current = { visible: win.visible, offset: win.offset, x: pts[0].x, dist: pts.length >= 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0 };
+    gesture.current = { visible: win.visible, offset: win.offset, x: pts[0].x, y: pts[0].y, dist: pts.length >= 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0, rlo: range?.lo ?? 0, rhi: range?.hi ?? 0 };
     cancelPress();
+    const bx = box.current?.getBoundingClientRect();
+    if (bx && pts.length === 1 && range && e.clientX > bx.right - AXIS_W) {
+      axis.current = { startY: e.clientY, lo: range.lo, hi: range.hi, moved: false };
+      press.current = null;
+      return;
+    }
     if (pts.length === 1 && onLongPress) {
       const top = box.current?.getBoundingClientRect().top ?? 0;
       const [cx, cy] = [e.clientX, e.clientY];
@@ -237,6 +252,16 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
   const move = (e: React.PointerEvent) => {
     if (!pointers.current.has(e.pointerId) || !gesture.current) return;
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const a = axis.current;
+    if (a) {
+      // dragging down stretches the chart (a smaller price range), dragging up squashes it
+      const dy = e.clientY - a.startY;
+      if (Math.abs(dy) > 4) a.moved = true;
+      const mid = (a.lo + a.hi) / 2;
+      const span = Math.max(mid * 1e-4, (a.hi - a.lo) / Math.exp(dy / 200));
+      setManual({ lo: mid - span / 2, hi: mid + span / 2 });
+      return;
+    }
     const pr = press.current;
     if (pr) {
       if (pr.fired) return; // the press opened the order box: the finger that is still down does not pan the chart
@@ -260,9 +285,31 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
       // dragging right shows older candles
       const perCandle = (size.w - AXIS_W) / win.visible;
       setView((v) => ({ ...v, offset: g.offset + (e.clientX - g.x) / perCandle }));
+      // with a manual price range the chart also moves up and down with the finger
+      if (manual && g.rhi > g.rlo) {
+        const shift = ((e.clientY - g.y) * (g.rhi - g.rlo)) / (size.h - 4);
+        setManual({ lo: g.rlo + shift, hi: g.rhi + shift });
+      }
     }
   };
   const up = (e: React.PointerEvent) => {
+    const a = axis.current;
+    if (a) {
+      axis.current = null;
+      // two quick taps on the axis go back to the automatic price range
+      if (!a.moved && e.type === 'pointerup') {
+        const now = Date.now();
+        if (now - lastAxisTap.current < 320) {
+          lastAxisTap.current = 0;
+          setManual(null);
+        } else {
+          lastAxisTap.current = now;
+        }
+      }
+      pointers.current.delete(e.pointerId);
+      gesture.current = null;
+      return;
+    }
     const pr = press.current;
     if (pr) {
       window.clearTimeout(pr.timer);
@@ -290,7 +337,7 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
     pointers.current.delete(e.pointerId);
     const pts = [...pointers.current.values()];
     // a finger lifted from a pinch: carry on dragging with the other one from where the view is now
-    gesture.current = pts.length ? { visible: win.visible, offset: win.offset, x: pts[0].x, dist: 0 } : null;
+    gesture.current = pts.length ? { visible: win.visible, offset: win.offset, x: pts[0].x, y: pts[0].y, dist: 0, rlo: range?.lo ?? 0, rhi: range?.hi ?? 0 } : null;
   };
 
   // the handles on the order's lines: drag one up or down to move its line
@@ -318,7 +365,7 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
   }, [boundsKey, size.h]);
 
   return (
-    <div ref={box} className="m-chart" data-visible={win.visible} data-offset={win.offset} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onContextMenu={(e) => e.preventDefault()} onDoubleClick={(e) => Date.now() - lastDouble.current > 600 && doubleTap(e.clientY)}>
+    <div ref={box} className="m-chart" data-visible={win.visible} data-offset={win.offset} data-manual={manual ? 1 : 0} data-lo={range ? range.lo.toFixed(2) : ""} data-hi={range ? range.hi.toFixed(2) : ""} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onContextMenu={(e) => e.preventDefault()} onDoubleClick={(e) => Date.now() - lastDouble.current > 600 && doubleTap(e.clientY)}>
       <canvas ref={canvas} style={{ width: size.w, height: size.h }} />
       {pending.map((pl, i) => {
         const hy = handleYs[i];
