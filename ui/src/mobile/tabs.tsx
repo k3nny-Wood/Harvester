@@ -37,6 +37,7 @@ function loadSymSort(): { key: SortKey; dir: SortDir } {
   }
   return { key: 'volume', dir: 'desc' };
 }
+const usd = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: n < 100 ? 2 : 0 });
 const signed = (n: number, d = 2) => `${n >= 0 ? '+' : '-'}$${Math.abs(n).toFixed(d)}`;
 const tone = (n: number) => (n > 0 ? 'up' : n < 0 ? 'down' : '');
 
@@ -95,8 +96,9 @@ function PositionCard({ p }: { p: Position }) {
       {open && <div className="m-grid">
         <span>Entry <b>{fmtPrice(p.entryPrice)}</b></span>
         <span>Now <b>{fmtPrice(p.markPrice)}</b></span>
-        <span>Size <b>{Math.abs(p.amount)}</b></span>
-        <span>Value <b>${(Math.abs(p.amount) * (p.markPrice || p.entryPrice)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</b></span>
+        <span>Size <b>${usd(Math.abs(p.amount) * (p.markPrice || p.entryPrice))}</b></span>
+        <span>Margin <b>${usd(margin)}</b></span>
+        <span>Tokens <b>{Math.abs(p.amount)}</b></span>
         <span>Stop <b className={ex.stop ? '' : 'm-warn-text'}>{level(ex.stop)}</b></span>
         <span>Target <b>{level(ex.take)}</b></span>
         <span>Liq <b>{p.liquidationPrice > 0 ? fmtPrice(p.liquidationPrice) : '-'}</b></span>
