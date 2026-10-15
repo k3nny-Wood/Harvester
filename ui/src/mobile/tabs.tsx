@@ -96,6 +96,7 @@ function PositionCard({ p }: { p: Position }) {
         <span>Entry <b>{fmtPrice(p.entryPrice)}</b></span>
         <span>Now <b>{fmtPrice(p.markPrice)}</b></span>
         <span>Size <b>{Math.abs(p.amount)}</b></span>
+        <span>Value <b>${(Math.abs(p.amount) * (p.markPrice || p.entryPrice)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</b></span>
         <span>Stop <b className={ex.stop ? '' : 'm-warn-text'}>{level(ex.stop)}</b></span>
         <span>Target <b>{level(ex.take)}</b></span>
         <span>Liq <b>{p.liquidationPrice > 0 ? fmtPrice(p.liquidationPrice) : '-'}</b></span>
