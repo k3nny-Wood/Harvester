@@ -1707,3 +1707,10 @@
 .m-app .m-order-in {
   margin-left: 8px;
 }
+
+.m-ogroup-head .m-cancel-all {
+  margin-left: auto;
+}
+.m-ogroup-head .m-chev {
+  margin-left: 0;
+}

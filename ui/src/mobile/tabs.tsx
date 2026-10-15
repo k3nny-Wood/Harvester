@@ -147,6 +147,19 @@ export function OrdersTab() {
       toast(`Cancel: ${e}`, 'warn');
     }
   };
+  const cancelAll = async (sym: string, list: typeof orders) => {
+    if (!(await confirmDialog(`Cancel all ${list.length} order${list.length === 1 ? '' : 's'} on ${sym}?`, { confirmLabel: 'Cancel all', danger: true }))) return;
+    let failed = 0;
+    for (const o of list) {
+      try {
+        await api.cancelOrder(o.symbol, o.orderId, o.conditional);
+      } catch {
+        failed++;
+      }
+    }
+    if (failed) toast(`${sym}: ${failed} of ${list.length} orders could not be cancelled`, 'warn');
+    void refreshTrading();
+  };
   const groups = useMemo(() => {
     const by = new Map<string, typeof orders>();
     for (const o of [...orders].sort((a, b) => a.symbol.localeCompare(b.symbol) || a.price - b.price)) by.set(o.symbol, [...(by.get(o.symbol) ?? []), o]);
@@ -160,6 +173,15 @@ export function OrdersTab() {
           <div className="m-ogroup-head" onClick={() => openChart(sym)}>
             <b className="m-coin">{coin(sym)}</b>
             <span className="m-muted">{list.length} order{list.length === 1 ? '' : 's'}</span>
+            <button
+              className="m-danger m-order-x m-cancel-all"
+              onClick={(e) => {
+                e.stopPropagation();
+                void cancelAll(sym, list);
+              }}
+            >
+              Cancel all
+            </button>
             <span className="m-chev">›</span>
           </div>
           {list.map((o) => (
