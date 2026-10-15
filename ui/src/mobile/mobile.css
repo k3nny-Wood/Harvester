@@ -1581,3 +1581,41 @@
   color: var(--down);
   border-color: var(--down);
 }
+
+/* compact order cards in the Orders tab */
+.m-app .m-order {
+  padding: 6px 10px;
+}
+.m-order .m-coin {
+  font-size: 14px;
+}
+.m-order .m-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+}
+.m-order-type {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.m-app .m-order-x {
+  flex: none;
+  min-height: 26px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+.m-order-info {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.m-order-info b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
