@@ -2249,3 +2249,19 @@ button.mini {
 .sort-head.on {
   color: var(--accent);
 }
+
+.quick-grip {
+  height: 12px;
+  margin: -4px 0 2px;
+  line-height: 12px;
+  text-align: center;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.quick-grip:active {
+  cursor: grabbing;
+}

@@ -17,6 +17,34 @@ import { averagePrice, ladderRungs, MAX_RUNGS, MIN_RUNGS, type RungWeights } fro
 const TAG_W = 156;
 /** The amount box under the entry: 50% wider than a line box, its right edge still just left of the boxes. */
 const AMOUNT_W = Math.round(TAG_W * 1.5);
+/** The height of the amount box with its grip, for keeping it inside the chart. */
+const BOX_H = 122;
+const BOX_KEY = 'harvester.quickbox.v1';
+
+/** Where the amount box was left, as fractions of the free room in the chart (so it lands in the same place on a chart of any size). */
+interface BoxPos {
+  fx: number;
+  fy: number;
+}
+
+function loadBoxPos(): BoxPos | null {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(BOX_KEY) ?? 'null');
+    if (v && Number.isFinite(v.fx) && Number.isFinite(v.fy)) return { fx: Math.max(0, Math.min(1, v.fx)), fy: Math.max(0, Math.min(1, v.fy)) };
+  } catch {
+    /* nothing remembered */
+  }
+  return null;
+}
+
+function saveBoxPos(p: BoxPos | null) {
+  try {
+    if (p) window.localStorage.setItem(BOX_KEY, JSON.stringify(p));
+    else window.localStorage.removeItem(BOX_KEY);
+  } catch {
+    /* not remembered */
+  }
+}
 
 type Which = 'entry' | 'tp' | 'sl' | 'end';
 
@@ -124,6 +152,10 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
   const [q, setQ] = useState<Quick | null>(null);
   const [drag, setDrag] = useState<Which | null>(null);
   const [pct, setPct] = useState(10);
+  // the amount box can be moved; where it was left is remembered for every chart
+  const [boxPos, setBoxPos] = useState<BoxPos | null>(loadBoxPos);
+  const boxGrab = useRef<{ dx: number; dy: number } | null>(null);
+  const boxLatest = useRef<BoxPos | null>(null);
   const [lev, setLev] = useState(1);
   const [maxLev, setMaxLev] = useState(20);
   const [busy, setBusy] = useState(false);
@@ -249,8 +281,10 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
   const problems = bracketProblems(q, lad.on ? lad.end : undefined);
   const waits = exitsMustWait(q, mark);
   const size = sizeFromPct(pct, wallet, lev);
-  const sliderMax = maxPct(wallet, lev, cap);
-  const usedPct = Math.min(pct, sliderMax);
+  // the slider is always 0-100% of the account, so changing the leverage never moves it; the safety cap only limits what is actually ordered
+  const capPct = maxPct(wallet, lev, cap);
+  const usedPct = Math.min(pct, capPct);
+  const capped = usedPct < pct - 0.05;
   const notional = sizeFromPct(usedPct, wallet, lev).notional;
   const stepSize = Number(filters?.stepSize) || 0;
   // the orders: one entry, or the rungs of the ladder. The total is sized at the (unrounded) average price, then split and rounded per rung
@@ -285,6 +319,18 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
   const yS = yOf(q.sl);
   const yEnd = ladOn ? yOf(lad.end) : null;
   const yL = liq != null ? yOf(liq) : null;
+  const boxLeft = boxPos ? offX + boxPos.fx * Math.max(0, plotW - AMOUNT_W) : offX + plotW - TAG_W - 8 - AMOUNT_W;
+  const boxTop = boxPos ? offY + boxPos.fy * Math.max(0, plotH - BOX_H) : yE != null ? (yE + 12 + BOX_H - 16 > offY + plotH ? yE - BOX_H + 4 : yE + 12) : offY;
+  const moveBox = (e: React.PointerEvent) => {
+    if (!boxGrab.current || !rect) return;
+    const left = e.clientX - rect.left - boxGrab.current.dx;
+    const top = e.clientY - rect.top - boxGrab.current.dy;
+    const fx = plotW > AMOUNT_W ? (left - offX) / (plotW - AMOUNT_W) : 0;
+    const fy = plotH > BOX_H ? (top - offY) / (plotH - BOX_H) : 0;
+    const next = { fx: Math.max(0, Math.min(1, fx)), fy: Math.max(0, Math.min(1, fy)) };
+    boxLatest.current = next;
+    setBoxPos(next);
+  };
   const clampY = (y: number | null) => (y == null ? null : Math.max(offY, Math.min(offY + plotH, y)));
 
   const set = (which: Which, p: number) => {
@@ -496,16 +542,43 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
       {yE != null && (
         <div
           className="quick-amount"
-          style={{ left: offX + plotW - TAG_W - 8 - AMOUNT_W, top: yE + 12 + 106 > offY + plotH ? yE - 118 : yE + 12, width: AMOUNT_W }}
+          style={{ left: boxLeft, top: boxTop, width: AMOUNT_W }}
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <input type="range" min={0} max={Math.max(1, sliderMax)} step={0.5} value={usedPct} disabled={!(wallet > 0)} title="Drag to change the amount (% of the account used as margin)" onChange={(e) => setPct(Number(e.target.value))} />
+          <div
+            className="quick-grip"
+            title="Drag to move this box: it opens in the same place on every chart. Double-click to put it back beside the entry line."
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              (e.currentTarget as Element).setPointerCapture(e.pointerId);
+              const b = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
+              boxGrab.current = { dx: e.clientX - b.left, dy: e.clientY - b.top };
+            }}
+            onPointerMove={moveBox}
+            onPointerUp={(e) => {
+              try {
+                (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+              } catch {
+                /* already released */
+              }
+              if (boxGrab.current && boxLatest.current) saveBoxPos(boxLatest.current);
+              boxGrab.current = null;
+            }}
+            onDoubleClick={() => {
+              setBoxPos(null);
+              saveBoxPos(null);
+            }}
+          >
+            ⋯
+          </div>
+          <input type="range" min={0} max={100} step={0.5} value={pct} disabled={!(wallet > 0)} title="Drag to change the amount (% of the account used as margin). The leverage does not move it." onChange={(e) => setPct(Number(e.target.value))} />
           <div>
             {qty > 0 ? qty.toFixed(filters?.quantityPrecision ?? 3) : '0'} {symbol.replace('USDT', '')}{ladOn ? ' (all rungs)' : ''}
           </div>
           <div className="muted">
-            ≈ {notional.toFixed(2)} USDT · {usedPct.toFixed(1)}%
+            ≈ {notional.toFixed(2)} USDT · {usedPct.toFixed(1)}%{capped ? ' (capped)' : ''}
           </div>
           <div className="quick-ladder-row">
             <span>Lev</span>
@@ -581,8 +654,9 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
         <label className="quick-slider">
           <span>
             Amount <b>{usedPct.toFixed(1)}% of account</b>
+            {capped ? <span className="muted"> (the slider is at {pct.toFixed(1)}%, capped by the safety limit at this leverage)</span> : null}
           </span>
-          <input type="range" min={0} max={Math.max(1, sliderMax)} step={0.5} value={usedPct} disabled={!(wallet > 0)} onChange={(e) => setPct(Number(e.target.value))} />
+          <input type="range" min={0} max={100} step={0.5} value={pct} disabled={!(wallet > 0)} onChange={(e) => setPct(Number(e.target.value))} />
         </label>
         <label className="quick-slider">
           <span>
