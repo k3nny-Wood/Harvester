@@ -774,3 +774,42 @@
 .m-app .m-adjust .m-x {
   background: rgba(22, 30, 44, 0.5);
 }
+
+/* the adjust bar at half the size; its Apply button is solid */
+.m-adjust {
+  gap: 5px;
+  padding: 3px 6px;
+  border-radius: 9px;
+}
+.m-adjust-name b {
+  font-size: 11px;
+}
+.m-adjust-name small {
+  font-size: 9px;
+}
+.m-app .m-adjust input[type='text'] {
+  min-height: 26px;
+  padding: 0 6px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+.m-app .m-adjust .m-apply {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  opacity: 1;
+  background: var(--accent);
+  color: #000;
+}
+.m-app .m-adjust .m-apply:disabled {
+  opacity: 1;
+  background: #8a6d0b;
+  color: #1c1c1c;
+}
+.m-app .m-adjust .m-x {
+  min-width: 24px;
+  min-height: 26px;
+  font-size: 16px;
+  padding: 0;
+}

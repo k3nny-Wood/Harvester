@@ -211,8 +211,8 @@ function AdjustBar({ adjust, busy, style, onPrice, onApply, onCancel }: { adjust
 }
 
 /** The adjust bar sits just above the line being moved (below it when there is no room above) and follows it while the handle is dragged. */
-const ADJUST_H = 66;
-const ADJUST_GAP = 26;
+const ADJUST_H = 36;
+const ADJUST_GAP = 20;
 function adjustStyle(tab: HTMLElement | null, bounds: { top: number; bottom: number } | null): React.CSSProperties {
   const th = tab?.clientHeight ?? 600;
   const y = bounds?.top ?? th / 2;
