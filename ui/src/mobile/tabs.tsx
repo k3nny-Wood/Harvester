@@ -9,6 +9,7 @@ import type { Kline, Position } from '../types';
 import { fmtPrice, type ChartLine } from './chartMath';
 import { ExitSheet } from './ExitSheet';
 import { MobileChart, type FillMark, type PendingLine } from './MobileChart';
+import { IND_LIST, type IndKey } from './indicators';
 import { fillMarkers } from '../chart/ChartFills';
 import { TIMEFRAMES, useMobile } from './store';
 import { useFloater } from './floaterStore';
@@ -402,6 +403,25 @@ export function ChartTab() {
   const hasKeys = useApp((s) => !!s.trading?.hasCredentials);
   const activity = useApp((s) => `${s.orders.length}:${s.account?.positions.length ?? 0}`);
   const [fills, setFills] = useState<FillMark[]>([]);
+  // the chosen indicators (kept on the phone) and whether their picker is open
+  const [inds, setInds] = useState<Partial<Record<IndKey, boolean>>>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem('harvester.mobile.ind.v1') ?? '{}') as Partial<Record<IndKey, boolean>>;
+    } catch {
+      return {};
+    }
+  });
+  const [indOpen, setIndOpen] = useState(false);
+  const toggleInd = (k: IndKey) =>
+    setInds((v) => {
+      const next = { ...v, [k]: !v[k] };
+      try {
+        window.localStorage.setItem('harvester.mobile.ind.v1', JSON.stringify(next));
+      } catch {
+        /* not remembered */
+      }
+      return next;
+    });
   useEffect(() => setFills([]), [symbol, hasKeys]);
   useEffect(() => {
     if (!hasKeys) return;
@@ -606,8 +626,18 @@ export function ChartTab() {
           ))}
         </select>
         <b className="m-last">{mark ? fmtPrice(mark) : ''}</b>
+        <button className={`m-fx${indOpen || Object.values(inds).some(Boolean) ? ' on' : ''}`} onClick={() => setIndOpen((v) => !v)} aria-label="Indicators" title="Indicators">ƒx</button>
         {pos && <span className={`m-pnl ${tone(pos.unrealizedPnl)}`}>{signed(pos.unrealizedPnl)}</span>}
       </div>
+      {indOpen && (
+        <div className="m-chips m-ind-chips">
+          {IND_LIST.map((i) => (
+            <button key={i.key} className={`m-chip on-ind${inds[i.key] ? ' on' : ''}`} onClick={() => toggleInd(i.key)} title={i.hint}>
+              {i.label}
+            </button>
+          ))}
+        </div>
+      )}
       {picking && (
         <div className="m-picker">
           <input autoFocus placeholder={`Search ${symbols.length || ''} symbols`} value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -634,6 +664,7 @@ export function ChartTab() {
           candles={candles}
           lines={lines}
           marks={fills}
+          indicators={inds}
           pending={pendingLines}
           onRemoveLine={(l) => void removeLine(l)}
           onRemovePending={(id) => useFloater.getState().patch(id === 'sl' ? { useSl: false } : { useTp: false })}

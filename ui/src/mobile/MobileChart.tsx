@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Kline } from '../types';
 import { confirmDialog } from '../confirm';
+import { buildPanes, buildSmas, type IndKey } from './indicators';
 import { fibPrices, indexOfTime, hitDistance, loadDrawings, measureText, rayY, saveDrawings, spanOf, timeOfIndex, type Drawing, type DrawKind, type DrawPoint, type Px, type Tool } from './drawings';
 import { fmtPrice, MAX_VISIBLE, MIN_VISIBLE, priceRange, timeLabels, windowOf, zoomed, type ChartLine } from './chartMath';
 
@@ -36,7 +37,7 @@ export interface PendingLine {
   edit?: boolean;
 }
 
-export function MobileChart({ candles, lines, marks = [], pending = [], entryNote, watermark, onRemoveLine, onRemovePending, onPendingMove, onPendingBounds, onPendingDoubleTap, onLongPress, onTap, onDoubleTap }: { candles: Kline[]; lines: ChartLine[]; /** executed trades: an arrow per order (up = buy, down = sell) with its tip on the price */ marks?: FillMark[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; /** text drawn at the position's entry line (above it or below it): what the order being moved would make or lose */ entryNote?: { price: number; lines: string[]; color: string; above: boolean } | null; /** the symbol and timeframe, drawn large and faint behind the candles */ watermark?: { symbol: string; timeframe: string } | null; /** an X at the left of a stop-loss / take-profit line that is on the exchange: asks to remove it */ onRemoveLine?: (line: ChartLine) => void; /** the same for the stop-loss / take-profit line of an order not sent yet: switches it off */ onRemovePending?: (id: string) => void; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number, entry: number | null) => void; /** a double tap on a handle (without dragging it) */ onPendingDoubleTap?: (id: string) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: (p: { price: number; tol: number }) => void; /** a double tap at this price (`tol` = how far a line may be from it to count as hit); return true when it was used, else the chart jumps to the newest candle */ onDoubleTap?: (p: { price: number; tol: number }) => boolean }) {
+export function MobileChart({ candles, lines, indicators = {}, marks = [], pending = [], entryNote, watermark, onRemoveLine, onRemovePending, onPendingMove, onPendingBounds, onPendingDoubleTap, onLongPress, onTap, onDoubleTap }: { candles: Kline[]; lines: ChartLine[]; /** the chosen indicators: volume and the moving averages on the price pane, the others in panes under it */ indicators?: Partial<Record<IndKey, boolean>>; /** executed trades: an arrow per order (up = buy, down = sell) with its tip on the price */ marks?: FillMark[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; /** text drawn at the position's entry line (above it or below it): what the order being moved would make or lose */ entryNote?: { price: number; lines: string[]; color: string; above: boolean } | null; /** the symbol and timeframe, drawn large and faint behind the candles */ watermark?: { symbol: string; timeframe: string } | null; /** an X at the left of a stop-loss / take-profit line that is on the exchange: asks to remove it */ onRemoveLine?: (line: ChartLine) => void; /** the same for the stop-loss / take-profit line of an order not sent yet: switches it off */ onRemovePending?: (id: string) => void; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number, entry: number | null) => void; /** a double tap on a handle (without dragging it) */ onPendingDoubleTap?: (id: string) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: (p: { price: number; tol: number }) => void; /** a double tap at this price (`tol` = how far a line may be from it to count as hit); return true when it was used, else the chart jumps to the newest candle */ onDoubleTap?: (p: { price: number; tol: number }) => boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 320, h: 300 });
@@ -104,7 +105,14 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
     return () => ro.disconnect();
   }, []);
 
-  const plotH = size.h - TIME_H; // the candles and lines use the part above the time axis
+  // the panes of the chosen indicators sit between the price pane and the time axis; a small screen shows fewer of them
+  const axisY = size.h - TIME_H;
+  const indKey = Object.entries(indicators).filter(([, v]) => v).map(([k]) => k).join(',');
+  const allPanes = useMemo(() => buildPanes(candles, indicators), [candles, indKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const smas = useMemo(() => (indicators.sma ? buildSmas(candles) : []), [candles, indKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const panes = allPanes.slice(0, Math.max(0, Math.floor((axisY * 0.55) / 34)));
+  const subH = panes.length ? Math.min(96, Math.floor((axisY * 0.55) / panes.length)) : 0;
+  const plotH = axisY - panes.length * subH; // the candles and lines use the price pane above the indicator panes
   const win = windowOf(candles.length, view.visible, view.offset);
   // the price range holds the candles, the position's lines and the order being set up; while a handle is being dragged the range is held still,
   // so the chart does not rescale under the finger
@@ -172,6 +180,16 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
     // candles
     const step = plotW / shown.length;
     const bodyW = Math.max(1, step * 0.7);
+    if (indicators.volume) {
+      let top = 0;
+      shown.forEach((k) => (top = Math.max(top, k.volume)));
+      const vh = plotH * 0.18;
+      shown.forEach((k, i) => {
+        g.fillStyle = k.close >= k.open ? 'rgba(46, 155, 111, 0.32)' : 'rgba(208, 69, 75, 0.32)';
+        const h = top > 0 ? (k.volume / top) * vh : 0;
+        g.fillRect(i * step + step / 2 - bodyW / 2, plotH - h, bodyW, h);
+      });
+    }
     shown.forEach((k, i) => {
       const x = i * step + step / 2;
       const col = k.close >= k.open ? UP : DOWN;
@@ -210,6 +228,25 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
         g.fill();
         g.stroke();
       }
+    }
+    // moving averages
+    for (const m of smas) {
+      g.strokeStyle = m.color;
+      g.lineWidth = 1.3;
+      g.beginPath();
+      let pen = false;
+      for (let i = 0; i < shown.length; i++) {
+        const v = m.values[win.start + i];
+        if (v == null) {
+          pen = false;
+          continue;
+        }
+        if (pen) g.lineTo(i * step + step / 2, y(v));
+        else g.moveTo(i * step + step / 2, y(v));
+        pen = true;
+      }
+      g.stroke();
+      g.lineWidth = 1;
     }
     // drawings (and the one being drawn)
     {
@@ -376,28 +413,134 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
       g.fillStyle = '#0b0f15';
       g.fillText(fmtPrice(last.close), plotW + 4, ly);
     }
+    // the panes of the other indicators under the price pane
+    panes.forEach((pane, pi) => {
+      const top = plotH + pi * subH;
+      g.fillStyle = '#0b0f15';
+      g.fillRect(0, top, size.w, subH);
+      g.strokeStyle = '#243043';
+      g.beginPath();
+      g.moveTo(0, top + 0.5);
+      g.lineTo(size.w, top + 0.5);
+      g.stroke();
+      let lo = Infinity;
+      let hi = -Infinity;
+      if (pane.fixed) [lo, hi] = pane.fixed;
+      else {
+        for (const s of pane.series) {
+          for (let i = win.start; i < win.end; i++) {
+            const v = s.values[i];
+            if (v != null) {
+              lo = Math.min(lo, v);
+              hi = Math.max(hi, v);
+            }
+          }
+        }
+      }
+      g.font = '10px system-ui, sans-serif';
+      g.textBaseline = 'middle';
+      g.textAlign = 'left';
+      g.fillStyle = '#8b98a5';
+      if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+        g.fillText(`${pane.title}: not enough candles`, 40, top + 10);
+        return;
+      }
+      if (pane.series.some((s) => s.kind === 'hist')) {
+        lo = Math.min(lo, 0);
+        hi = Math.max(hi, 0);
+      }
+      if (hi === lo) {
+        hi += 1;
+        lo -= 1;
+      }
+      if (!pane.fixed) {
+        const pad = (hi - lo) * 0.08;
+        lo -= pad;
+        hi += pad;
+      }
+      const iy = (v: number) => top + 15 + (1 - (v - lo) / (hi - lo)) * (subH - 19);
+      const num = (v: number) => (v === 0 ? '0' : Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : Math.abs(v) >= 1e4 ? `${(v / 1e3).toFixed(0)}K` : Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(2) : v.toFixed(4));
+      g.save();
+      g.beginPath();
+      g.rect(0, top + 1, plotW, subH - 1);
+      g.clip();
+      g.strokeStyle = '#2a3547';
+      g.setLineDash([3, 3]);
+      for (const gv of pane.guides ?? []) {
+        if (gv < lo || gv > hi) continue;
+        g.beginPath();
+        g.moveTo(0, iy(gv));
+        g.lineTo(plotW, iy(gv));
+        g.stroke();
+      }
+      g.setLineDash([]);
+      for (const s of pane.series) {
+        if (s.kind === 'hist') {
+          const zero = iy(0);
+          for (let i = 0; i < shown.length; i++) {
+            const v = s.values[win.start + i];
+            if (v == null) continue;
+            g.fillStyle = v >= 0 ? 'rgba(46, 155, 111, 0.65)' : 'rgba(208, 69, 75, 0.65)';
+            g.fillRect(i * step + step / 2 - bodyW / 2, Math.min(zero, iy(v)), bodyW, Math.max(1, Math.abs(iy(v) - zero)));
+          }
+        } else {
+          g.strokeStyle = s.color;
+          g.lineWidth = 1.3;
+          g.beginPath();
+          let pen = false;
+          for (let i = 0; i < shown.length; i++) {
+            const v = s.values[win.start + i];
+            if (v == null) {
+              pen = false;
+              continue;
+            }
+            if (pen) g.lineTo(i * step + step / 2, iy(v));
+            else g.moveTo(i * step + step / 2, iy(v));
+            pen = true;
+          }
+          g.stroke();
+          g.lineWidth = 1;
+        }
+      }
+      g.restore();
+      // the name and the latest values, and the range at the right
+      const latest = pane.series
+        .filter((s) => s.kind === 'line')
+        .map((s) => {
+          const v = s.values[win.end - 1];
+          return v == null ? '' : num(v);
+        })
+        .filter(Boolean)
+        .join(' ');
+      g.fillStyle = '#c9d2de';
+      g.fillText(`${pane.title}  ${latest}`, 40, top + 9);
+      g.fillStyle = '#8b98a5';
+      g.fillText(num(hi), plotW + 4, top + 14);
+      g.fillText(num(lo), plotW + 4, top + subH - 6);
+      g.font = '11px system-ui, sans-serif';
+    });
     // the time axis along the bottom
     g.fillStyle = '#0b0f15';
-    g.fillRect(0, plotH, size.w, TIME_H);
+    g.fillRect(0, axisY, size.w, TIME_H);
     g.strokeStyle = '#243043';
     g.beginPath();
-    g.moveTo(0, plotH + 0.5);
-    g.lineTo(size.w, plotH + 0.5);
+    g.moveTo(0, axisY + 0.5);
+    g.lineTo(size.w, axisY + 0.5);
     g.stroke();
     g.font = '11px system-ui, sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillStyle = '#8b98a5';
     for (const l of timeLabels(shown, win.start, plotW, watermark?.timeframe ?? '15m')) {
-      g.fillText(l.text, l.x, plotH + TIME_H / 2 + 1);
+      g.fillText(l.text, l.x, axisY + TIME_H / 2 + 1);
       g.strokeStyle = '#243043';
       g.beginPath();
-      g.moveTo(l.x, plotH);
-      g.lineTo(l.x, plotH + 3);
+      g.moveTo(l.x, axisY);
+      g.lineTo(l.x, axisY + 3);
       g.stroke();
     }
     g.textAlign = 'left';
-  }, [candles, lines, marks, drawings, draft, selected, pendingKey, watermark?.symbol, watermark?.timeframe, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, lines, marks, drawings, draft, selected, indKey, panes.length, subH, pendingKey, watermark?.symbol, watermark?.timeframe, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doubleTap = (clientY: number) => {
     lastDouble.current = Date.now();
@@ -474,13 +617,13 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
       press.current = null;
       return;
     }
-    if (bx && pts.length === 1 && range && e.clientX > bx.right - AXIS_W) {
+    if (bx && pts.length === 1 && range && e.clientX > bx.right - AXIS_W && e.clientY < bx.top + plotH) {
       axis.current = { startY: e.clientY, lo: range.lo, hi: range.hi, moved: false };
       press.current = null;
       return;
     }
     // the move tool: a touch on a drawing selects it and drags it (an end point, or the whole drawing); a touch elsewhere deselects and pans as usual
-    if (toolRef.current === 'cursor' && pts.length === 1 && bx && e.clientX < bx.right - AXIS_W && e.clientY < bx.bottom - TIME_H) {
+    if (toolRef.current === 'cursor' && pts.length === 1 && bx && e.clientX < bx.right - AXIS_W && e.clientY < bx.top + plotH) {
       const hit = drawingAt(e.clientX - bx.left, e.clientY - bx.top);
       const pt = hit ? pointAt(e.clientX, e.clientY) : null;
       if (hit && pt) {
@@ -492,7 +635,7 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
       if (selected != null) setSelected(null);
     }
     // a drawing tool is chosen: this touch draws instead of panning
-    if (toolRef.current !== 'cursor' && pts.length === 1 && bx && e.clientX < bx.right - AXIS_W && e.clientY < bx.bottom - TIME_H) {
+    if (toolRef.current !== 'cursor' && pts.length === 1 && bx && e.clientX < bx.right - AXIS_W && e.clientY < bx.top + plotH) {
       const pt = pointAt(e.clientX, e.clientY);
       if (pt) {
         draw.current = { kind: toolRef.current, a: pt };
@@ -501,7 +644,7 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
         return;
       }
     }
-    if (pts.length === 1 && onLongPress) {
+    if (pts.length === 1 && onLongPress && bx && e.clientY < bx.top + plotH) {
       const top = box.current?.getBoundingClientRect().top ?? 0;
       const [cx, cy] = [e.clientX, e.clientY];
       const timer = window.setTimeout(() => {
