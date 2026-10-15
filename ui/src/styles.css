@@ -2251,9 +2251,11 @@ button.mini {
 }
 
 .quick-grip {
-  height: 12px;
-  margin: -4px 0 2px;
-  line-height: 12px;
+  /* the box lets clicks through to the chart; the grip must not */
+  pointer-events: auto;
+  height: 16px;
+  margin: -3px -6px 2px;
+  line-height: 16px;
   text-align: center;
   font-size: 14px;
   letter-spacing: 2px;

@@ -18,7 +18,7 @@ const TAG_W = 156;
 /** The amount box under the entry: 50% wider than a line box, its right edge still just left of the boxes. */
 const AMOUNT_W = Math.round(TAG_W * 1.5);
 /** The height of the amount box with its grip, for keeping it inside the chart. */
-const BOX_H = 122;
+const BOX_H = 126;
 const BOX_KEY = 'harvester.quickbox.v1';
 
 /** Where the amount box was left, as fractions of the free room in the chart (so it lands in the same place on a chart of any size). */
