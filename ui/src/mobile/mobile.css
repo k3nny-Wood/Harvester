@@ -711,3 +711,52 @@
   font-size: 14px;
   font-weight: 700;
 }
+
+/* moving an order that is on the exchange */
+.m-adjust {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 74px;
+  z-index: 56;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+}
+.m-adjust.top {
+  bottom: auto;
+  top: 96px;
+}
+.m-adjust-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+.m-adjust-name small {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.m-app .m-adjust input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  font-weight: 700;
+}
+.m-app .m-apply {
+  min-height: 40px;
+  padding: 0 14px;
+  font-weight: 700;
+  color: #000;
+  background: var(--accent);
+  border: 0;
+}
+.m-app .m-apply:disabled {
+  opacity: 0.4;
+}

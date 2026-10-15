@@ -22,7 +22,7 @@ export interface PendingLine {
   handle: string;
 }
 
-export function MobileChart({ candles, lines, pending = [], onPendingMove, onPendingBounds, onLongPress, onTap }: { candles: Kline[]; lines: ChartLine[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: () => void }) {
+export function MobileChart({ candles, lines, pending = [], onPendingMove, onPendingBounds, onLongPress, onTap, onDoubleTap }: { candles: Kline[]; lines: ChartLine[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: () => void; /** a double tap at this price (`tol` = how far a line may be from it to count as hit); return true when it was used, else the chart jumps to the newest candle */ onDoubleTap?: (p: { price: number; tol: number }) => boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 320, h: 300 });
@@ -32,6 +32,8 @@ export function MobileChart({ candles, lines, pending = [], onPendingMove, onPen
   // press and hold: where the finger went down, the timer that fires after LONG_PRESS_MS, and whether it already fired (then the rest of the touch does nothing)
   const press = useRef<{ x: number; y: number; timer: number; fired: boolean; moved: boolean } | null>(null);
   const rangeRef = useRef<{ lo: number; hi: number; h: number } | null>(null);
+  const lastTap = useRef<{ t: number; x: number; y: number } | null>(null);
+  const lastDouble = useRef(0);
 
   useEffect(() => {
     const el = box.current;
@@ -152,6 +154,18 @@ export function MobileChart({ candles, lines, pending = [], onPendingMove, onPen
     }
   }, [candles, lines, pendingKey, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const doubleTap = (clientY: number) => {
+    lastDouble.current = Date.now();
+    const r = rangeRef.current;
+    const top = box.current?.getBoundingClientRect().top ?? 0;
+    let handled = false;
+    if (r) {
+      const per = (r.hi - r.lo) / (r.h - 4); // price per pixel
+      const price = r.hi - (clientY - top - 2) * per;
+      handled = onDoubleTap?.({ price, tol: 28 * per }) ?? false;
+    }
+    if (!handled) setView({ visible: DEFAULT_VISIBLE, offset: 0 });
+  };
   const cancelPress = () => {
     if (press.current) window.clearTimeout(press.current.timer);
   };
@@ -211,8 +225,18 @@ export function MobileChart({ candles, lines, pending = [], onPendingMove, onPen
     const pr = press.current;
     if (pr) {
       window.clearTimeout(pr.timer);
-      // a quick touch that did not move is a tap
-      if (!pr.fired && !pr.moved && e.type === 'pointerup') onTap?.();
+      // a quick touch that did not move is a tap; two of them close together are a double tap
+      if (!pr.fired && !pr.moved && e.type === 'pointerup') {
+        const now = Date.now();
+        const lt = lastTap.current;
+        if (lt && now - lt.t < 320 && Math.hypot(e.clientX - lt.x, e.clientY - lt.y) < 30) {
+          lastTap.current = null;
+          doubleTap(e.clientY);
+        } else {
+          lastTap.current = { t: now, x: e.clientX, y: e.clientY };
+          onTap?.();
+        }
+      }
       press.current = null;
     }
     pointers.current.delete(e.pointerId);
@@ -243,7 +267,7 @@ export function MobileChart({ candles, lines, pending = [], onPendingMove, onPen
   }, [boundsKey, size.h]);
 
   return (
-    <div ref={box} className="m-chart" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onContextMenu={(e) => e.preventDefault()} onDoubleClick={() => setView({ visible: DEFAULT_VISIBLE, offset: 0 })}>
+    <div ref={box} className="m-chart" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onContextMenu={(e) => e.preventDefault()} onDoubleClick={(e) => Date.now() - lastDouble.current > 600 && doubleTap(e.clientY)}>
       <canvas ref={canvas} style={{ width: size.w, height: size.h }} />
       {pending.map((pl, i) => {
         const hy = handleYs[i];

@@ -1,4 +1,4 @@
-import type { Kline } from '../types';
+import type { Kline, OpenOrder } from '../types';
 
 export const MIN_VISIBLE = 12;
 export const MAX_VISIBLE = 400;
@@ -21,6 +21,8 @@ export interface ChartLine {
   label: string;
   color: string;
   dashed?: boolean;
+  /** present when the line is an order on the exchange that can be adjusted (double-tap it) */
+  adjust?: { kind: 'sl' | 'tp' | 'order'; order: OpenOrder };
 }
 
 /**

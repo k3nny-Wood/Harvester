@@ -12,7 +12,9 @@ import { MobileChart, type PendingLine } from './MobileChart';
 import { TIMEFRAMES, useMobile } from './store';
 import { useFloater } from './floaterStore';
 import { OrderFloater, sideFor } from './OrderFloater';
-import { pctText, resolveBoth } from './exits';
+import { pctText, resolveBoth, resolveExit } from './exits';
+import { snapToTick } from '../ladderMath';
+import type { OpenOrder } from '../types';
 import { TradeSheet } from './TradeSheet';
 
 const coin = (s: string) => s.replace('USDT', '');
@@ -167,6 +169,47 @@ export function ScannerTab() {
 
 const FLOATER_W = 330;
 
+/** The bar for moving an order that is on the exchange: what it is, the new price (typed or from the handle) and Apply / Cancel. */
+function AdjustBar({ adjust, busy, atTop, onPrice, onApply, onCancel }: { adjust: { kind: 'sl' | 'tp' | 'order'; order: OpenOrder; price: number; original: number }; busy: boolean; atTop: boolean; onPrice: (p: number) => void; onApply: () => void; onCancel: () => void }) {
+  const [text, setText] = useState(String(adjust.price));
+  const typed = useRef(false);
+  useEffect(() => {
+    if (typed.current) {
+      typed.current = false;
+      return;
+    }
+    setText(String(adjust.price));
+  }, [adjust.price]);
+  const change = adjust.original > 0 ? (adjust.price / adjust.original - 1) * 100 : 0;
+  const name = adjust.kind === 'sl' ? 'Stop-loss' : adjust.kind === 'tp' ? 'Take-profit' : `${adjust.order.side.toLowerCase()} ${adjust.order.type.replace(/_/g, ' ').toLowerCase()}`;
+  return (
+    <div className={`m-adjust${atTop ? ' top' : ''}`} onPointerDown={(e) => e.stopPropagation()}>
+      <div className="m-adjust-name">
+        <b>{name}</b>
+        <small>{fmtPrice(adjust.original)} → {change >= 0 ? '+' : ''}{change.toFixed(2)}%</small>
+      </div>
+      <input
+        type="text"
+        inputMode="decimal"
+        aria-label="New price"
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          const v = Number(e.target.value.replace(',', '.'));
+          if (Number.isFinite(v) && v > 0) {
+            typed.current = true;
+            onPrice(v);
+          }
+        }}
+      />
+      <button className="m-apply" disabled={busy || adjust.price === adjust.original} onClick={onApply}>
+        {busy ? '…' : 'Apply'}
+      </button>
+      <button className="m-x" onClick={onCancel} aria-label="Cancel">×</button>
+    </div>
+  );
+}
+
 const FLOATER_GAP = 14;
 
 /**
@@ -204,6 +247,18 @@ export function ChartTab() {
   const [bounds, setBounds] = useState<{ top: number; bottom: number } | null>(null);
   const [floaterH, setFloaterH] = useState(250);
   const [error, setError] = useState('');
+  const toast = useApp((s) => s.toast);
+  // an order that is on the exchange and is being moved: double-tap its line, drag the handle, press Apply
+  const [adjust, setAdjust] = useState<{ kind: 'sl' | 'tp' | 'order'; order: OpenOrder; price: number; original: number } | null>(null);
+  const [adjusting, setAdjusting] = useState(false);
+  const [tick, setTick] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let alive = true;
+    void api.symbolFilters(symbol).then((f) => alive && setTick(f.tickSize)).catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [symbol]);
 
   // history, then live candles
   useEffect(() => {
@@ -232,6 +287,7 @@ export function ChartTab() {
   useEffect(() => {
     useFloater.getState().close();
     setBounds(null);
+    setAdjust(null);
   }, [symbol, timeframe]);
 
   const pos = live?.positions.find((p) => p.symbol === symbol && p.amount !== 0);
@@ -242,18 +298,23 @@ export function ChartTab() {
       out.push({ price: pos.entryPrice, label: 'entry', color: '#e6e9ef' });
       if (pos.liquidationPrice > 0) out.push({ price: pos.liquidationPrice, label: 'liq', color: '#e0a33d', dashed: true });
       const ex = exitState(symbol, pos.amount, orders);
-      if (ex.stop) out.push({ price: ex.stop.stopPrice || ex.stop.price, label: 'SL', color: '#d0454b', dashed: true });
-      if (ex.take) out.push({ price: ex.take.stopPrice || ex.take.price, label: 'TP', color: '#2e9b6f', dashed: true });
+      if (ex.stop) out.push({ price: ex.stop.stopPrice || ex.stop.price, label: 'SL', color: '#d0454b', dashed: true, adjust: { kind: 'sl', order: ex.stop } });
+      if (ex.take) out.push({ price: ex.take.stopPrice || ex.take.price, label: 'TP', color: '#2e9b6f', dashed: true, adjust: { kind: 'tp', order: ex.take } });
     }
     for (const o of orders.filter((o) => o.symbol === symbol)) {
       if (pos && o.reduceOnly) continue;
-      out.push({ price: o.stopPrice && !o.price ? o.stopPrice : o.price, label: `${o.side.toLowerCase()} ${o.type.replace(/_/g, ' ').toLowerCase()}`, color: '#5b8def', dashed: true });
+      out.push({ price: o.stopPrice && !o.price ? o.stopPrice : o.price, label: `${o.side.toLowerCase()} ${o.type.replace(/_/g, ' ').toLowerCase()}`, color: '#5b8def', dashed: true, adjust: { kind: 'order', order: o } });
     }
-    return out;
-  }, [pos, orders, symbol]);
+    // the line being moved is drawn as the pending line instead
+    return adjust ? out.filter((l) => !(l.adjust && l.adjust.order.orderId === adjust.order.orderId && l.adjust.order.conditional === adjust.order.conditional)) : out;
+  }, [pos, orders, symbol, adjust?.order.orderId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // the order being set up: the entry line, and the stop-loss and take-profit lines when their buttons are pressed
   const pendingLines = useMemo<PendingLine[]>(() => {
+    if (adjust) {
+      const c = adjust.kind === 'sl' ? '#d0454b' : adjust.kind === 'tp' ? '#2e9b6f' : '#5b8def';
+      return [{ id: 'adjust', price: adjust.price, label: adjust.kind === 'order' ? 'move order' : `new ${adjust.kind.toUpperCase()}`, color: c, handle: adjust.kind === 'order' ? '⇕' : adjust.kind.toUpperCase() }];
+    }
     if (!floater) return [];
     const long = floater.side === 'BUY';
     const out: PendingLine[] = [{ id: 'entry', price: floater.price, label: `${long ? 'buy' : 'sell'} here`, color: long ? '#2e9b6f' : '#d0454b', handle: '⇕' }];
@@ -261,8 +322,12 @@ export function ChartTab() {
     if (ex.sl?.ok) out.push({ id: 'sl', price: ex.sl.price, label: 'SL', color: '#d0454b', handle: 'SL' });
     if (ex.tp?.ok) out.push({ id: 'tp', price: ex.tp.price, label: 'TP', color: '#2e9b6f', handle: 'TP' });
     return out;
-  }, [floater]);
+  }, [floater, adjust]);
   const moveLine = (id: string, price: number) => {
+    if (id === 'adjust') {
+      setAdjust((a) => (a ? { ...a, price: snapToTick(price, tick) } : a));
+      return;
+    }
     const f = useFloater.getState().f;
     if (!f) return;
     if (id === 'entry') return useFloater.getState().patch({ price });
@@ -272,6 +337,52 @@ export function ChartTab() {
     const text = valid ? pctText(f.price, price) : '0.05%';
     useFloater.getState().patch(id === 'sl' ? { sl: text } : { tp: text });
   };
+
+  /** A double tap near the line of an order that is on the exchange starts moving it. */
+  const startAdjust = (price: number, tol: number): boolean => {
+    let best: { l: ChartLine; d: number } | null = null;
+    for (const l of lines) {
+      if (!l.adjust) continue;
+      const d = Math.abs(l.price - price);
+      if (d <= tol && (!best || d < best.d)) best = { l, d };
+    }
+    if (!best?.l.adjust) return false;
+    useFloater.getState().close();
+    const a = best.l.adjust;
+    setAdjust({ kind: a.kind, order: a.order, price: best.l.price, original: best.l.price });
+    return true;
+  };
+
+  const applyAdjust = async () => {
+    if (!adjust || adjusting) return;
+    const { order: o, kind } = adjust;
+    const price = snapToTick(adjust.price, tick);
+    if (kind !== 'order' && pos) {
+      const res = resolveExit(kind === 'sl' ? 'stop' : 'take', pos.amount > 0, mark, { kind: 'price', value: price });
+      if (!res.ok) {
+        toast(res.error, 'warn');
+        return;
+      }
+    }
+    setAdjusting(true);
+    try {
+      if (o.type === 'LIMIT') await api.modifyOrder(symbol, o.orderId, false, price);
+      else if (o.type === 'STOP') await api.modifyOrder(symbol, o.orderId, o.conditional, o.price + (price - o.stopPrice), price);
+      else await api.modifyOrder(symbol, o.orderId, o.conditional, undefined, price);
+      toast(`${symbol}: ${kind === 'order' ? 'order' : kind === 'sl' ? 'stop-loss' : 'take-profit'} moved to ${fmtPrice(price)}`, 'info');
+      void refreshTrading();
+      setAdjust(null);
+    } catch (e) {
+      toast(`Could not move it: ${e}`, 'warn');
+    } finally {
+      setAdjusting(false);
+    }
+  };
+
+  // the order being moved is gone (filled or cancelled elsewhere): stop adjusting
+  useEffect(() => {
+    if (adjust && !orders.some((o) => o.orderId === adjust.order.orderId && o.conditional === adjust.order.conditional)) setAdjust(null);
+  }, [orders, adjust]);
 
   const matches = useMemo(() => {
     const q = query.trim().toUpperCase();
@@ -318,10 +429,12 @@ export function ChartTab() {
             setBounds({ top: top - t, bottom: bottom - t });
           }}
           onTap={() => useFloater.getState().close()}
+          onDoubleTap={({ price, tol }) => startAdjust(price, tol)}
           onLongPress={(p) => {
             const rect = tabRef.current?.getBoundingClientRect();
             if (!rect || !trading?.hasCredentials || !(mark > 0)) return;
             setPicking(false);
+            setAdjust(null);
             useFloater.getState().open(p.price, sideFor(p.price, mark), p.y - rect.top);
           }}
         />}
@@ -337,6 +450,16 @@ export function ChartTab() {
           onClose={() => useFloater.getState().close()}
           onHeight={(h) => setFloaterH((cur) => (Math.abs(cur - h) > 1 ? h : cur))}
           style={floaterStyle(floater.y, tabRef.current, bounds, floaterH)}
+        />
+      )}
+      {adjust && (
+        <AdjustBar
+          adjust={adjust}
+          busy={adjusting}
+          atTop={bounds != null && bounds.top > (tabRef.current?.clientHeight ?? 600) * 0.5}
+          onPrice={(price) => setAdjust((a) => (a ? { ...a, price } : a))}
+          onApply={() => void applyAdjust()}
+          onCancel={() => setAdjust(null)}
         />
       )}
       {trade && <TradeSheet side={trade} symbol={symbol} mark={mark} onClose={() => setTrade(null)} />}
