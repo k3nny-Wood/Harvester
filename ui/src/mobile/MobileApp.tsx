@@ -62,9 +62,10 @@ export function MobileApp() {
           <b>{equity == null ? '…' : `$${equity.toFixed(2)}`}</b>
           {account && <small className={(live?.unrealizedPnl ?? 0) >= 0 ? 'up' : 'down'}>{(live?.unrealizedPnl ?? 0) >= 0 ? '+' : '-'}${Math.abs(live?.unrealizedPnl ?? 0).toFixed(2)} open · ${account.availableBalance.toFixed(0)} free</small>}
         </div>
-        <span className={`m-env ${env === 'live' ? 'live' : ''}`}>{env === 'live' ? 'LIVE' : 'TESTNET'}</span>
-        <button className="m-menu" onClick={() => setMenu((v) => !v)} aria-label="Menu">⋯</button>
-        {menu && (
+        {/* on the chart tab there is no room for them; a LIVE badge stays everywhere */}
+        {(tab !== 'chart' || env === 'live') && <span className={`m-env ${env === 'live' ? 'live' : ''}`}>{env === 'live' ? 'LIVE' : 'TESTNET'}</span>}
+        {tab !== 'chart' && <button className="m-menu" onClick={() => setMenu((v) => !v)} aria-label="Menu">⋯</button>}
+        {menu && tab !== 'chart' && (
           <div className="m-menu-pop" onClick={() => setMenu(false)}>
             <button onClick={() => switchView('desktop')}>Desktop view</button>
             <button onClick={() => window.location.reload()}>Reload</button>
