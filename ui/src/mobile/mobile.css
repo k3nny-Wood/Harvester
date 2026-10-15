@@ -1619,3 +1619,43 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+/* position cards: collapsed to one line, outlined by profit / loss */
+.m-app .m-pos {
+  padding: 7px 10px;
+  border-width: 2px;
+  border-color: var(--text);
+}
+.m-app .m-pos.win {
+  border-color: var(--up);
+}
+.m-app .m-pos.loss {
+  border-color: var(--down);
+}
+.m-pos-head {
+  cursor: pointer;
+  gap: 6px;
+}
+.m-pos .m-coin {
+  font-size: 15px;
+}
+.m-pos .m-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+}
+.m-pos .m-pnl {
+  margin-left: auto;
+  font-size: 13px;
+}
+.m-chev {
+  color: var(--muted);
+  font-size: 12px;
+  width: 12px;
+  text-align: center;
+}
+.m-pos .m-grid {
+  margin-top: 6px;
+}
+.m-pos .m-actions {
+  margin-top: 8px;
+}

@@ -54,6 +54,7 @@ function PositionCard({ p }: { p: Position }) {
   const toast = useApp((s) => s.toast);
   const openChart = useMobile((s) => s.openChart);
   const [exit, setExit] = useState<'stop' | 'take' | null>(null);
+  const [open, setOpen] = useState(false);
   const long = p.amount > 0;
   const ex = exitState(p.symbol, p.amount, orders);
   const level = (o: typeof ex.stop) => (o ? fmtPrice(o.stopPrice || o.price) : 'none');
@@ -70,29 +71,31 @@ function PositionCard({ p }: { p: Position }) {
     }
   };
   return (
-    <div className="m-card">
-      <div className="m-row" onClick={() => openChart(p.symbol)}>
+    <div className={`m-card m-pos ${p.unrealizedPnl > 0 ? 'win' : p.unrealizedPnl < 0 ? 'loss' : 'flat'}`}>
+      <div className="m-row m-pos-head" onClick={() => setOpen((v) => !v)} role="button" aria-expanded={open}>
         <b className="m-coin">{coin(p.symbol)}</b>
         <span className={`m-badge ${long ? 'up' : 'down'}`}>{long ? 'LONG' : 'SHORT'}</span>
         <span className="m-muted">{p.leverage}x {p.isolated ? 'iso' : 'cross'}</span>
         <span className={`m-pnl ${tone(p.unrealizedPnl)}`}>
           {signed(p.unrealizedPnl)} <small>({roe >= 0 ? '+' : ''}{roe.toFixed(1)}%)</small>
         </span>
+        <span className="m-chev">{open ? '▴' : '▾'}</span>
       </div>
-      <div className="m-grid">
+      {open && <div className="m-grid">
         <span>Entry <b>{fmtPrice(p.entryPrice)}</b></span>
         <span>Now <b>{fmtPrice(p.markPrice)}</b></span>
         <span>Size <b>{Math.abs(p.amount)}</b></span>
         <span>Stop <b className={ex.stop ? '' : 'm-warn-text'}>{level(ex.stop)}</b></span>
         <span>Target <b>{level(ex.take)}</b></span>
         <span>Liq <b>{p.liquidationPrice > 0 ? fmtPrice(p.liquidationPrice) : '-'}</b></span>
-      </div>
-      <div className="m-actions">
+      </div>}
+      {open && <div className="m-actions">
+        <button onClick={() => openChart(p.symbol)}>Chart</button>
         <button onClick={() => setExit('stop')} title={ex.stop ? 'Move the stop-loss' : 'Set a stop-loss'}>{ex.stop ? 'SL ✎' : '+ SL'}</button>
         <button onClick={() => setExit('take')} title={ex.take ? 'Move the take-profit' : 'Set a take-profit'}>{ex.take ? 'TP ✎' : '+ TP'}</button>
         <button className="m-danger" onClick={() => void close(0.5)}>50%</button>
         <button className="m-danger" onClick={() => void close(1)}>Close</button>
-      </div>
+      </div>}
       {exit && <ExitSheet kind={exit} position={p} onClose={() => setExit(null)} />}
     </div>
   );
