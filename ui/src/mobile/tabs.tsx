@@ -79,6 +79,17 @@ function PositionCard({ p }: { p: Position }) {
         <span className={`m-pnl ${tone(p.unrealizedPnl)}`}>
           {signed(p.unrealizedPnl)} <small>({roe >= 0 ? '+' : ''}{roe.toFixed(1)}%)</small>
         </span>
+        <button
+          className="m-pos-chart"
+          aria-label={`Open the ${p.symbol} chart`}
+          title="Open the chart"
+          onClick={(e) => {
+            e.stopPropagation();
+            openChart(p.symbol);
+          }}
+        >
+          ▥
+        </button>
         <span className="m-chev">{open ? '▴' : '▾'}</span>
       </div>
       {open && <div className="m-grid">
@@ -90,7 +101,6 @@ function PositionCard({ p }: { p: Position }) {
         <span>Liq <b>{p.liquidationPrice > 0 ? fmtPrice(p.liquidationPrice) : '-'}</b></span>
       </div>}
       {open && <div className="m-actions">
-        <button onClick={() => openChart(p.symbol)}>Chart</button>
         <button onClick={() => setExit('stop')} title={ex.stop ? 'Move the stop-loss' : 'Set a stop-loss'}>{ex.stop ? 'SL ✎' : '+ SL'}</button>
         <button onClick={() => setExit('take')} title={ex.take ? 'Move the take-profit' : 'Set a take-profit'}>{ex.take ? 'TP ✎' : '+ TP'}</button>
         <button className="m-danger" onClick={() => void close(0.5)}>50%</button>
