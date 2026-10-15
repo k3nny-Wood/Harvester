@@ -1,5 +1,7 @@
 /** Chart drawings of the phone chart: points are (time, price) so they stay put when the chart is panned, zoomed or switched to another timeframe. */
 
+import { fmtPrice } from './chartMath';
+
 export type Tool = 'cursor' | 'trend' | 'ray' | 'hline' | 'rect' | 'fib' | 'measure';
 export type DrawKind = Exclude<Tool, 'cursor' | 'measure'>;
 
@@ -60,11 +62,22 @@ export function fibPrices(a: number, b: number): Array<{ level: number; price: n
   return FIB_LEVELS.map((level) => ({ level, price: b + (a - b) * level }));
 }
 
-/** The label of a measurement between two points. */
+/** A duration as "3h 15m" / "2d 4h" / "45m". */
+export function durationText(ms: number): string {
+  const m = Math.round(Math.abs(ms) / 60_000);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
+  const d = Math.floor(h / 24);
+  return h % 24 ? `${d}d ${h % 24}h` : `${d}d`;
+}
+
+/** The label of a measurement between two points: the move in percent and in price, the bars and the time. */
 export function measureText(a: DrawPoint, b: DrawPoint, span: number): string {
   const pct = a.p > 0 ? ((b.p - a.p) / a.p) * 100 : 0;
   const bars = Math.round((b.t - a.t) / span);
-  return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% · ${Math.abs(bars)} bars`;
+  const diff = b.p - a.p;
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% (${diff >= 0 ? '+' : '-'}${fmtPrice(Math.abs(diff))}) · ${Math.abs(bars)} bars · ${durationText(b.t - a.t)}`;
 }
 
 const KEY = 'harvester.mobile.draw.v1';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fibPrices, indexOfTime, measureText, rayY, spanOf, timeOfIndex } from '../src/mobile/drawings';
+import { durationText, fibPrices, indexOfTime, measureText, rayY, spanOf, timeOfIndex } from '../src/mobile/drawings';
 
 const times = [1000, 2000, 3000, 4000];
 
@@ -26,7 +26,11 @@ describe('drawings', () => {
     expect(f.find((x) => x.level === 0.5)?.price).toBe(150);
   });
   it('words a measurement', () => {
-    expect(measureText({ t: 0, p: 100 }, { t: 5000, p: 110 }, 1000)).toBe('+10.00% · 5 bars');
+    // 5 bars of 15 minutes, 100 -> 110
+    expect(measureText({ t: 0, p: 100 }, { t: 75 * 60_000, p: 110 }, 15 * 60_000)).toBe('+10.00% (+10.0000) · 5 bars · 1h 15m');
+    expect(durationText(45 * 60_000)).toBe('45m');
+    expect(durationText(26 * 3_600_000)).toBe('26h');
+    expect(durationText(76 * 3_600_000)).toBe('3d 4h');
   });
 });
 

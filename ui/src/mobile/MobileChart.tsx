@@ -759,7 +759,7 @@ export function MobileChart({ candles, lines, marks = [], pending = [], entryNot
               ['hline', '─', 'Horizontal line: tap a price'],
               ['rect', '▭', 'Rectangle: drag across'],
               ['fib', 'Fib', 'Fibonacci retracement: drag from one end of a move to the other'],
-              ['measure', '↔', 'Measure: drag to see % and bars'],
+              ['measure', '📏', 'Measure: drag to see the move in % and price, the bars and the time'],
             ] as Array<[Tool, string, string]>
           ).map(([t, icon, hint]) => (
             <button
