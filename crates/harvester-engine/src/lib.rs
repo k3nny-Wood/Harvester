@@ -6,6 +6,7 @@ pub mod brackets;
 pub mod cardimg;
 pub mod chartimg;
 pub mod events;
+pub mod health;
 pub mod held;
 pub mod lab;
 pub mod market;

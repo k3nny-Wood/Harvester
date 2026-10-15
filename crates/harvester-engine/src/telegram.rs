@@ -14,7 +14,8 @@ use crate::market::Market;
 use crate::scanner::SignalReader;
 use crate::news::NewsHub;
 use crate::trading::{Account, OpenOrder, OrderRequest, OrderType, Side, Trading};
-use harvester_core::alerts::{self, AlertState, ExitKind, Level};
+use crate::health::Health;
+use harvester_core::alerts::{self, AlertState, ExitKind, Level, Trouble};
 use harvester_core::report::{self, Command, OrderRow, PositionRow, Summary};
 use rust_decimal::prelude::ToPrimitive;
 use std::collections::HashSet;
@@ -49,6 +50,7 @@ struct Bot {
     market: Arc<Market>,
     signals: SignalReader,
     pending: Mutex<Option<Pending>>,
+    health: Arc<Health>,
 }
 
 fn env_label(t: &Trading) -> &'static str {
@@ -115,7 +117,7 @@ impl Bot {
         chunks.push(chunk);
         for c in chunks {
             if let Err(e) = self.call("sendMessage", json!({"chat_id": self.chat, "text": c, "parse_mode": "HTML", "disable_web_page_preview": true})).await {
-                eprintln!("[telegram] sending failed: {e}");
+                crate::health::log(&format!("[telegram] sending failed: {e}"));
             }
         }
     }
@@ -350,6 +352,30 @@ impl Bot {
         }
     }
 
+    async fn health_text(&self) -> String {
+        let st = self.signals.status();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        let log_file = crate::health::log_path().display().to_string();
+        let scanner = report::ScannerView {
+            phase: &st.phase,
+            symbols: st.symbols,
+            seeded: st.seeded,
+            signals: st.crack_count + st.near_count + st.drop_count + st.pump_count + st.dump_count,
+            updated_ago: (st.last_update_ms > 0).then(|| now.saturating_sub(st.last_update_ms) / 1000),
+            error: st.error.as_deref(),
+        };
+        report::format_health(&report::HealthView {
+            program: self.health.program,
+            env: env_label(&self.trading),
+            uptime_secs: self.health.uptime_secs(),
+            has_keys: self.trading.status().has_credentials,
+            account_ok_ago: self.health.account_ok_ago(),
+            last_error: self.health.last_error(),
+            scanner: Some(scanner),
+            log_file: &log_file,
+        })
+    }
+
     async fn handle(&self, text: &str) {
         match report::parse_command(text) {
             Command::NotACommand => {}
@@ -401,6 +427,10 @@ impl Bot {
             Command::Exit { kind, symbol, level } => self.set_exit(kind, &symbol, level).await,
             Command::Open { long, symbol, margin } => self.prepare_open(long, &symbol, margin).await,
             Command::Confirm => self.confirm_open().await,
+            Command::Health => {
+                let t = self.health_text().await;
+                self.say(&t).await
+            }
             Command::Cancel => {
                 let had = self.pending.lock().unwrap().take().is_some();
                 self.say(if had { "Cancelled: nothing was sent." } else { "Nothing was waiting." }).await
@@ -440,24 +470,24 @@ fn chrono_free_time() -> String {
 }
 
 /// Start the bot if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set.
-pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader, news: Arc<NewsHub>) {
+pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader, news: Arc<NewsHub>, program: &'static str) {
     let token = std::env::var("TELEGRAM_BOT_TOKEN").unwrap_or_default().trim().to_string();
     let chat = std::env::var("TELEGRAM_CHAT_ID").unwrap_or_default().trim().to_string();
     if token.is_empty() || chat.is_empty() {
-        println!("[telegram] disabled: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the .env file");
+        crate::health::log(&format!("[telegram] disabled: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the .env file"));
         return;
     }
     // two programs must not poll one bot: HARVESTER_TELEGRAM=off keeps this one out of it (for example while the headless server runs)
     if matches!(std::env::var("HARVESTER_TELEGRAM").unwrap_or_default().trim().to_lowercase().as_str(), "off" | "0" | "false" | "no") {
-        println!("[telegram] switched off by HARVESTER_TELEGRAM");
+        crate::health::log(&format!("[telegram] switched off by HARVESTER_TELEGRAM"));
         return;
     }
-    let bot = Arc::new(Bot { http: reqwest::Client::builder().timeout(Duration::from_secs(45)).build().unwrap_or_default(), token, chat, trading, market, signals, pending: Mutex::new(None) });
+    let bot = Arc::new(Bot { http: reqwest::Client::builder().timeout(Duration::from_secs(45)).build().unwrap_or_default(), token, chat, trading, market, signals, pending: Mutex::new(None), health: Health::new(program) });
 
     // the summary: one a minute after start, then every 30 minutes
     let reporter = bot.clone();
     crate::rt::spawn(async move {
-        reporter.say(&format!("<b>Harvester started</b> · {}\nSummary every 30 minutes. /help for the commands.", env_label(&reporter.trading))).await;
+        reporter.say(&format!("<b>Harvester started</b> ({}) · {}\nSummary every 30 minutes. /health shows how it is doing, /help lists the commands.", reporter.health.program, env_label(&reporter.trading))).await;
         tokio::time::sleep(FIRST_REPORT_AFTER).await;
         let (mut session_start, mut previous) = (None, None);
         loop {
@@ -481,15 +511,45 @@ pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader, 
         let (mut seen_signals, mut told_delistings): (HashSet<String>, HashSet<String>) = (HashSet::new(), HashSet::new());
         let mut seeded = false;
         let mut round: u32 = 0;
+        // the account must fail for 2 minutes (6 looks) and the scanner for 5 (15 looks) before they are reported
+        let (mut account_trouble, mut scanner_trouble) = (Trouble::new(6), Trouble::new(15));
         tokio::time::sleep(Duration::from_secs(15)).await;
         loop {
             round = round.wrapping_add(1);
             let mut held: Vec<PositionRow> = Vec::new();
-            if let Ok((acc, orders)) = watcher.snapshot().await {
-                held = position_rows(&acc, &orders);
-                for e in state.update(&held) {
-                    watcher.say(&alerts::format_event(&e)).await;
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+            if watcher.trading.status().has_credentials {
+                match watcher.snapshot().await {
+                    Ok((acc, orders)) => {
+                        watcher.health.record_ok();
+                        if let Some(n) = account_trouble.record(Ok(()), now) {
+                            crate::health::log("[telegram] the account can be read again");
+                            watcher.say(&alerts::format_notice("Binance account", &n)).await;
+                        }
+                        held = position_rows(&acc, &orders);
+                        for e in state.update(&held) {
+                            watcher.say(&alerts::format_event(&e)).await;
+                        }
+                    }
+                    Err(e) => {
+                        watcher.health.record_error(&e);
+                        if let Some(n) = account_trouble.record(Err(&e), now) {
+                            crate::health::log(&format!("[telegram] account trouble: {e}"));
+                            watcher.say(&alerts::format_notice("Binance account", &n)).await;
+                        }
+                    }
                 }
+            }
+            // the scanner: an error it reports, or no update for 5 minutes
+            let st = watcher.signals.status();
+            let scanner_problem = match (&st.error, st.last_update_ms) {
+                (Some(e), _) => Some(e.clone()),
+                (None, t) if t > 0 && now.saturating_sub(t) > 300_000 => Some(format!("no update for {} min", now.saturating_sub(t) / 60_000)),
+                _ => None,
+            };
+            if let Some(n) = scanner_trouble.record(scanner_problem.as_deref().map_or(Ok(()), Err), now) {
+                crate::health::log(&format!("[telegram] scanner notice: {n:?}"));
+                watcher.say(&alerts::format_notice("Scanner", &n)).await;
             }
             // a delisting of a coin that is held, told once (checked about every 4 minutes)
             if round % 12 == 1 && !held.is_empty() {
@@ -524,12 +584,12 @@ pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader, 
                 offset = last + 1;
             }
         }
-        println!("[telegram] enabled (summary every 30 min, /help for the commands)");
+        crate::health::log(&format!("[telegram] enabled (summary every 30 min, /help for the commands)"));
         loop {
             let updates = match bot.call("getUpdates", json!({"offset": offset, "timeout": 25, "allowed_updates": ["message"]})).await {
                 Ok(v) => v.as_array().cloned().unwrap_or_default(),
                 Err(e) => {
-                    eprintln!("[telegram] polling failed: {e}");
+                    crate::health::log(&format!("[telegram] polling failed: {e}"));
                     tokio::time::sleep(Duration::from_secs(5)).await;
                     continue;
                 }

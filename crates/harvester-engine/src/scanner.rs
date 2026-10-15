@@ -115,6 +115,10 @@ impl SignalReader {
     pub fn signals(&self) -> Vec<Signal> {
         sorted(&self.inner.lock().unwrap())
     }
+
+    pub fn status(&self) -> ScannerStatus {
+        self.inner.lock().unwrap().status.clone()
+    }
 }
 
 #[derive(Default)]

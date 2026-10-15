@@ -18,6 +18,7 @@ use harvester_engine::movers;
 use harvester_engine::news::{self, NewsHub};
 use harvester_engine::scanner::{Scanner, ScannerConfig};
 use harvester_engine::trading::Trading;
+use harvester_engine::health::{self, log};
 use harvester_engine::{rt, telegram};
 use std::sync::{Arc, Mutex};
 
@@ -30,11 +31,11 @@ async fn main() {
     let _ = dotenvy::dotenv();
     rt::init(tokio::runtime::Handle::current());
     let env = Env::from_name(&std::env::var("HARVESTER_ENV").unwrap_or_default());
-    println!("[server] Harvester headless: {}", if env == Env::Live { "LIVE (real money)" } else { "testnet" });
+    log(&format!("[server] Harvester headless: {}", if env == Env::Live { "LIVE (real money)" } else { "testnet" }));
     let market = Arc::new(Market::new(env));
     let trading = Arc::new(Trading::new(market.clone()));
     let status = trading.status();
-    println!("[server] {}", if status.has_credentials { "Binance keys found".to_string() } else { format!("no Binance keys: {}", status.message) });
+    log(&format!("[server] {}", if status.has_credentials { "Binance keys found".to_string() } else { format!("no Binance keys: {}", status.message) }));
 
     let events = Events::none();
     let scanner = Scanner::default();
@@ -52,11 +53,11 @@ async fn main() {
         let (bracket_store, held_store) = (Arc::new(BracketStore::open(brackets::default_path())), Arc::new(HeldStore::open(held::default_path())));
         brackets::start(events.clone(), trading.clone(), bracket_store);
         held::start(events.clone(), trading.clone(), held_store);
-        println!("[server] processing held and armed orders (do not run the desktop app at the same time)");
+        log(&format!("[server] processing held and armed orders (do not run the desktop app at the same time)"));
     }
 
-    telegram::start(trading, market, scanner.reader(), hub);
-    println!("[server] running. Press Ctrl+C to stop.");
+    telegram::start(trading, market, scanner.reader(), hub, "headless server");
+    log(&format!("[server] running. Log file: {}. Press Ctrl+C to stop.", health::log_path().display()));
     let _ = tokio::signal::ctrl_c().await;
-    println!("[server] stopped");
+    log(&format!("[server] stopped"));
 }

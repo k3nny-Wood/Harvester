@@ -374,7 +374,7 @@ fn main() {
             { let hub = state.news.clone(); tauri::async_runtime::spawn(async move { hub.load_names().await; }); }
             held::start(events.clone(), state.trading.clone(), state.held.clone());
             movers::start(events.clone(), state.market.clone(), state.scanner.injector(), state.movers.clone());
-            telegram::start(state.trading.clone(), state.market.clone(), state.scanner.reader(), state.news.clone());
+            telegram::start(state.trading.clone(), state.market.clone(), state.scanner.reader(), state.news.clone(), "desktop app");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

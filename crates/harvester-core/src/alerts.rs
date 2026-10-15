@@ -153,6 +153,80 @@ impl AlertState {
     }
 }
 
+/// Something went wrong (or came right again) with a thing that is checked over and over, such as the account or the scanner.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Notice {
+    /// it has failed for a while
+    Down { reason: String },
+    /// the exchange does not accept the API keys: no point waiting for it to come back by itself
+    KeysRejected { reason: String },
+    /// it works again after `down_for_secs`
+    Recovered { down_for_secs: u64 },
+}
+
+/// True for the errors Binance gives for a key that is wrong, expired, restricted or from another IP address.
+pub fn is_key_problem(error: &str) -> bool {
+    ["-2015", "-2014", "-2008", "-1022", "Invalid API-key", "Invalid API key", "Signature for this request"].iter().any(|m| error.contains(m))
+}
+
+/// Turns a stream of "worked / failed" checks into notices: one when it has been failing for `down_after` checks in a row, one at once for
+/// rejected keys, and one when it works again. Never repeats itself while the state stays the same.
+pub struct Trouble {
+    down_after: u32,
+    fails: u32,
+    down_since_ms: Option<u64>,
+    told_down: bool,
+    told_keys: bool,
+}
+
+impl Trouble {
+    pub fn new(down_after: u32) -> Trouble {
+        Trouble { down_after: down_after.max(1), fails: 0, down_since_ms: None, told_down: false, told_keys: false }
+    }
+
+    pub fn record(&mut self, result: Result<(), &str>, now_ms: u64) -> Option<Notice> {
+        match result {
+            Ok(()) => {
+                let notice = (self.told_down || self.told_keys).then(|| Notice::Recovered { down_for_secs: self.down_since_ms.map_or(0, |t| now_ms.saturating_sub(t) / 1000) });
+                *self = Trouble::new(self.down_after);
+                notice
+            }
+            Err(reason) => {
+                self.fails += 1;
+                self.down_since_ms.get_or_insert(now_ms);
+                if is_key_problem(reason) && !self.told_keys {
+                    self.told_keys = true;
+                    return Some(Notice::KeysRejected { reason: reason.to_string() });
+                }
+                if self.fails >= self.down_after && !self.told_down && !self.told_keys {
+                    self.told_down = true;
+                    return Some(Notice::Down { reason: reason.to_string() });
+                }
+                None
+            }
+        }
+    }
+}
+
+fn duration_text(secs: u64) -> String {
+    if secs < 90 {
+        format!("{secs} s")
+    } else if secs < 5400 {
+        format!("{} min", secs / 60)
+    } else {
+        format!("{:.1} h", secs as f64 / 3600.0)
+    }
+}
+
+pub fn format_notice(subject: &str, n: &Notice) -> String {
+    let e = crate::report::esc;
+    match n {
+        Notice::Down { reason } => format!("⚠️ <b>{}: not working</b>\n{}", e(subject), e(reason)),
+        Notice::KeysRejected { reason } => format!("🚨 <b>{}: Binance does not accept the API keys</b>\nCheck the key, its permissions and its IP restriction in the .env file / Binance.\n{}", e(subject), e(reason)),
+        Notice::Recovered { down_for_secs } => format!("✅ <b>{}: working again</b> after {}", e(subject), duration_text(*down_for_secs)),
+    }
+}
+
 fn coin(s: &str) -> String {
     crate::report::esc(s.strip_suffix("USDT").unwrap_or(s))
 }
@@ -291,6 +365,42 @@ mod tests {
         assert!(t.contains("ETH") && t.contains("stop-loss hit (probably)") && t.contains("-$4.80"), "{t}");
         let t = format_event(&Event::LiquidationNear { pos: pos("ETHUSDT", 1.0, 85.0, 80.0, None, None), distance_pct: 5.9 });
         assert!(t.contains("close to liquidation") && t.contains("5.9%"), "{t}");
+    }
+
+    #[test]
+    fn a_failing_check_is_reported_once_and_again_when_it_recovers() {
+        let mut t = Trouble::new(3);
+        assert_eq!(t.record(Err("timeout"), 0), None);
+        assert_eq!(t.record(Err("timeout"), 20_000), None);
+        assert_eq!(t.record(Err("timeout"), 40_000), Some(Notice::Down { reason: "timeout".into() }));
+        assert_eq!(t.record(Err("timeout"), 60_000), None, "not repeated");
+        assert_eq!(t.record(Ok(()), 100_000), Some(Notice::Recovered { down_for_secs: 100 }));
+        assert_eq!(t.record(Ok(()), 120_000), None, "nothing to say while it is fine");
+        // a short blip that recovers by itself is never mentioned
+        assert_eq!(t.record(Err("blip"), 130_000), None);
+        assert_eq!(t.record(Ok(()), 131_000), None);
+    }
+
+    #[test]
+    fn rejected_keys_are_reported_at_once() {
+        let mut t = Trouble::new(6);
+        let n = t.record(Err("Binance error -2015: Invalid API-key, IP, or permissions for action"), 0);
+        assert!(matches!(n, Some(Notice::KeysRejected { .. })), "{n:?}");
+        assert_eq!(t.record(Err("Binance error -2015: Invalid API-key"), 20_000), None);
+        for i in 0..10 {
+            assert_eq!(t.record(Err("Invalid API-key"), 40_000 + i * 20_000), None, "the keys notice already covers it");
+        }
+        assert!(matches!(t.record(Ok(()), 300_000), Some(Notice::Recovered { .. })));
+        assert!(is_key_problem("code -1022 Signature for this request is not valid") && !is_key_problem("connection reset"));
+    }
+
+    #[test]
+    fn notices_read_well() {
+        assert!(format_notice("Account", &Notice::Down { reason: "a<b".into() }).contains("Account: not working") && format_notice("Account", &Notice::Down { reason: "a<b".into() }).contains("a&lt;b"));
+        assert!(format_notice("Account", &Notice::KeysRejected { reason: "x".into() }).contains("does not accept the API keys"));
+        assert!(format_notice("Scanner", &Notice::Recovered { down_for_secs: 600 }).contains("working again** after 10 min".replace("**", "</b>").as_str()));
+        assert_eq!(duration_text(45), "45 s");
+        assert_eq!(duration_text(7200), "2.0 h");
     }
 
     #[test]

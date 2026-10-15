@@ -158,6 +158,68 @@ pub fn format_summary(s: &Summary) -> String {
     m
 }
 
+/// What the program knows about its own state, for `/health`.
+pub struct HealthView<'a> {
+    pub program: &'a str,
+    pub env: &'a str,
+    pub uptime_secs: u64,
+    pub has_keys: bool,
+    /// seconds since the account was last read successfully
+    pub account_ok_ago: Option<u64>,
+    /// (seconds ago, text) of the latest error
+    pub last_error: Option<(u64, String)>,
+    pub scanner: Option<ScannerView<'a>>,
+    pub log_file: &'a str,
+}
+
+pub struct ScannerView<'a> {
+    pub phase: &'a str,
+    pub symbols: usize,
+    pub seeded: usize,
+    pub signals: usize,
+    pub updated_ago: Option<u64>,
+    pub error: Option<&'a str>,
+}
+
+fn ago(secs: u64) -> String {
+    if secs < 90 {
+        format!("{secs} s ago")
+    } else if secs < 5400 {
+        format!("{} min ago", secs / 60)
+    } else {
+        format!("{:.1} h ago", secs as f64 / 3600.0)
+    }
+}
+
+pub fn format_health(h: &HealthView) -> String {
+    let up = h.uptime_secs;
+    let mut m = format!("<b>Harvester {}</b> · {}\nRunning for {}d {}h {}m\n", esc(h.program), esc(h.env), up / 86_400, (up / 3600) % 24, (up / 60) % 60);
+    m.push_str(&if !h.has_keys {
+        "Binance: <b>no API keys</b> set for this environment\n".to_string()
+    } else {
+        match h.account_ok_ago {
+            Some(s) if s < 120 => format!("Binance account: ✅ read {}\n", ago(s)),
+            Some(s) => format!("Binance account: ⚠️ last read {}\n", ago(s)),
+            None => "Binance account: not read yet\n".to_string(),
+        }
+    });
+    if let Some(s) = &h.scanner {
+        let state = match (s.error, s.updated_ago) {
+            (Some(e), _) => format!("⚠️ {}", esc(e)),
+            (None, Some(a)) if a > 300 => format!("⚠️ no update {}", ago(a)),
+            (None, Some(a)) => format!("✅ updated {}", ago(a)),
+            (None, None) => "starting".to_string(),
+        };
+        m.push_str(&format!("Scanner: {} · {} · {}/{} symbols loaded · {} signals\n", esc(s.phase), state, s.seeded, s.symbols, s.signals));
+    }
+    match &h.last_error {
+        Some((s, e)) => m.push_str(&format!("Last error ({}): {}\n", ago(*s), esc(e))),
+        None => m.push_str("No errors since the start.\n"),
+    }
+    m.push_str(&format!("Log file: {}", esc(h.log_file)));
+    m
+}
+
 pub fn format_positions(positions: &[PositionRow]) -> String {
     if positions.is_empty() {
         return "No open positions.".into();
@@ -207,6 +269,8 @@ pub enum Command {
     Open { long: bool, symbol: String, margin: f64 },
     Confirm,
     Cancel,
+    /// how the program itself is doing
+    Health,
     /// the command was not understood; the text is what was typed
     Unknown(String),
     /// a usage problem the user should be told about
@@ -227,6 +291,7 @@ pub const HELP: &str = "<b>Harvester commands</b>\n\
 /tp SYMBOL LEVEL - the same for the take-profit\n\
 /long SYMBOL USDT, /short SYMBOL USDT - open a position at market with that much margin; asks for /confirm first\n\
 /cancel - drop a pending /long or /short\n\
+/health - is the program working: uptime, Binance, scanner, recent errors\n\
 \nAlerts arrive by themselves: a position opened or closed (stop-loss / take-profit hit), close to liquidation, a delisting of a coin you hold, a very strong scanner entry. The summary comes every 30 minutes.";
 
 const TIMEFRAMES: &[&str] = &["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"];
@@ -273,6 +338,7 @@ pub fn parse_command(text: &str) -> Command {
             _ => Command::Usage("Usage: /long SYMBOL USDT or /short SYMBOL USDT (the margin to put in; the position is that times the leverage)"),
         },
         "confirm" => Command::Confirm,
+        "health" | "ping" => Command::Health,
         "cancel" => Command::Cancel,
         "close" => match args.as_slice() {
             [sym] => match normalize_symbol(sym) {
@@ -385,11 +451,23 @@ mod tests {
         assert!(matches!(parse_command("/long btc 0"), Command::Usage(_)));
         assert!(matches!(parse_command("/long btc -5"), Command::Usage(_)));
         assert!(matches!(parse_command("/short btc ten"), Command::Usage(_)));
+        assert_eq!(parse_command("/health"), Command::Health);
+        assert_eq!(parse_command("/ping"), Command::Health);
         assert_eq!(parse_command("/confirm"), Command::Confirm);
         assert_eq!(parse_command("/cancel"), Command::Cancel);
         assert_eq!(parse_command("/nope"), Command::Unknown("nope".into()));
         assert_eq!(parse_command("hello there"), Command::NotACommand);
         assert_eq!(parse_command("   "), Command::NotACommand);
+    }
+
+    #[test]
+    fn the_health_text_says_what_is_wrong() {
+        let ok = format_health(&HealthView { program: "headless server", env: "testnet", uptime_secs: 90_000, has_keys: true, account_ok_ago: Some(12), last_error: None, scanner: Some(ScannerView { phase: "live", symbols: 300, seeded: 300, signals: 12, updated_ago: Some(3), error: None }), log_file: "C:\\logs\\h.log" });
+        assert!(ok.contains("headless server") && ok.contains("Running for 1d 1h 0m") && ok.contains("account: ✅ read 12 s ago") && ok.contains("300/300 symbols") && ok.contains("No errors since the start."), "{ok}");
+        let bad = format_health(&HealthView { program: "app", env: "live", uptime_secs: 60, has_keys: true, account_ok_ago: Some(600), last_error: Some((30, "timed out <x>".into())), scanner: Some(ScannerView { phase: "live", symbols: 300, seeded: 10, signals: 0, updated_ago: Some(900), error: None }), log_file: "f" });
+        assert!(bad.contains("⚠️ last read 10 min ago") && bad.contains("no update 15 min ago") && bad.contains("Last error (30 s ago): timed out &lt;x&gt;"), "{bad}");
+        let nokeys = format_health(&HealthView { program: "app", env: "testnet", uptime_secs: 0, has_keys: false, account_ok_ago: None, last_error: None, scanner: None, log_file: "f" });
+        assert!(nokeys.contains("no API keys") && !nokeys.contains("Scanner"), "{nokeys}");
     }
 
     #[test]
