@@ -31,6 +31,19 @@ export function setToken(token: string): void {
   }
 }
 
+/**
+ * A link like `https://host/#token=...` logs a device in once: the token is kept in this browser and removed from the address. It is in the
+ * part after `#`, which the browser never sends to the server and never writes to its logs.
+ */
+function adoptTokenFromUrl(): void {
+  if (typeof window === 'undefined') return;
+  const m = /(?:^#|&)token=([^&]+)/.exec(window.location.hash);
+  if (!m) return;
+  setToken(decodeURIComponent(m[1]));
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
+}
+adoptTokenFromUrl();
+
 let authNeeded = false;
 const authListeners = new Set<(needed: boolean) => void>();
 

@@ -195,3 +195,23 @@ and open http://127.0.0.1:8787. The server refuses to start without a token. Eve
 In web mode the server runs everything the desktop app runs: the scanner, the account stream, held and armed orders, and the Telegram bot. So do not run the desktop app at the same time (or start it with `HARVESTER_TELEGRAM=off`, and expect both to try to process held / armed orders). While developing the page, `pnpm --dir ui dev` serves it on port 1420 and forwards `/api` and `/ws` to the server on 8787.
 
 The desktop window and the browser share one code path: the engine (`harvester-engine::core::Core`) answers every command, the window reaches it through one Tauri command and the browser through `POST /api/<command>`.
+
+## Mobile layout (a phone browser, installable as an app)
+
+The same web page switches to a phone layout on a narrow screen (or with `?mobile=1`; `?desktop=1` forces the docked layout, and the ⋯ menu switches back). It has four tabs:
+
+- **Positions**: each position with live profit, entry, price, stop-loss, take-profit and liquidation; set or move the stop-loss and take-profit (a price or a distance such as `2%`), close half or all.
+- **Chart**: candles that you drag to pan and pinch to zoom, with your position and orders drawn on them; **Long** / **Short** opens a position at market with its stop-loss and take-profit (amount as a share of the account, leverage, exits as percentages), after a confirmation.
+- **Orders**: open orders, with cancel.
+- **Scanner**: the live signals; tap one to open its chart.
+
+On the phone, open the server's address once with the token in the part after `#` (`https://your-host/#token=...`): it is remembered in that browser and removed from the address. Then use *Share > Add to Home Screen* (iPhone) or *Install app* (Android) to get an icon that opens it full screen. The page works over plain `http://` only on `localhost`; from another device it needs `https://`.
+
+### Hosting it (for example on AWS)
+
+- Run `harvester-server` in web mode on the instance and put an HTTPS front in front of it (Caddy or nginx with a Let's Encrypt certificate for your domain, or an Application Load Balancer with an ACM certificate). The server itself speaks plain HTTP and should listen on `127.0.0.1` or a private address, with only the HTTPS front reachable from outside.
+- **Choose a region where Binance is reachable.** Binance blocks many US addresses, so a US region (us-east-1, us-west-2 ...) can fail with "restricted location" errors; the testnet is more forgiving, the live exchange is not. Frankfurt, Ireland, Tokyo or Singapore are the usual choices. Check from the instance before building anything on it.
+- Give the instance an Elastic IP and put that address in the API key's IP restriction on Binance. Keep withdrawals disabled on the key.
+- Keep `.env` out of the image and the repository: in AWS Systems Manager Parameter Store or Secrets Manager, or a root-only file on the instance. Use a long random `HARVESTER_WEB_TOKEN`.
+- Restrict the security group to what is needed (HTTPS, and SSH from your own address only), or reach the server only through a private network such as Tailscale.
+- Build the program somewhere with enough memory (about 4 GB, or add swap) and copy the binary and the `ui/dist` folder to a 1 to 2 GB instance; run it with a systemd unit so it restarts after a reboot.

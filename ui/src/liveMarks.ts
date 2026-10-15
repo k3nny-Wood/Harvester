@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from './api';
+import { api, inTauri } from './api';
 
 /** Mark prices of the given symbols from the live websocket (Binance's own mark price), refreshed four times a second (Binance sends a new mark price once a second). */
 export function useLiveMarks(symbols: string[]): Record<string, number> {
@@ -10,7 +10,7 @@ export function useLiveMarks(symbols: string[]): Record<string, number> {
     let stop = false;
     const load = () => void api.markPrices(key.split(',')).then((m) => !stop && setMarks(m)).catch(() => undefined);
     load();
-    const t = window.setInterval(load, 250);
+    const t = window.setInterval(load, inTauri ? 250 : 1000); // over the network once a second is plenty (Binance sends a new price once a second)
     return () => {
       stop = true;
       window.clearInterval(t);
