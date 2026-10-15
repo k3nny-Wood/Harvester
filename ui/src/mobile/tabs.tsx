@@ -229,7 +229,7 @@ const FLOATER_GAP = 14;
  * flicks to below the lowest line; when the lines span the chart and there is no room outside them it goes on the entry line (above or below
  * it); only when it fits nowhere does it take the side with more room and scroll inside. `h` is the height the box wants.
  */
-function floaterStyle(startY: number, tab: HTMLElement | null, bounds: { top: number; bottom: number; entry: number | null } | null, h: number): React.CSSProperties {
+function floaterLayout(startY: number, tab: HTMLElement | null, bounds: { top: number; bottom: number; entry: number | null } | null, h: number): React.CSSProperties {
   // the box stays inside the chart itself: it never reaches the Long / Short buttons below it or the rows above it
   const tabRect = tab?.getBoundingClientRect();
   const chartRect = tab?.querySelector('.m-chart')?.getBoundingClientRect();
@@ -256,6 +256,20 @@ function floaterStyle(startY: number, tab: HTMLElement | null, bounds: { top: nu
     return aboveEntry >= belowEntry ? { left, width, bottom: th - e + FLOATER_GAP, maxHeight: Math.max(120, aboveEntry) } : { left, width, top: e + FLOATER_GAP, maxHeight: Math.max(120, belowEntry) };
   }
   return above >= below ? { left, width, bottom: th - top + FLOATER_GAP, maxHeight: Math.max(120, above) } : { left, width, top: bottom + FLOATER_GAP, maxHeight: Math.max(120, below) };
+}
+
+/** The order box is drawn at this fraction of its natural size (the box is laid out full size and scaled, so everything in it shrinks together). */
+const FLOATER_SCALE = 0.7;
+
+/**
+ * The style of the order box: where it goes (see floaterLayout, worked out with the height the box really takes once scaled) and the scale itself,
+ * anchored at the edge nearest the lines so it stays right beside them.
+ */
+function floaterStyle(startY: number, tab: HTMLElement | null, bounds: { top: number; bottom: number; entry: number | null } | null, h: number): React.CSSProperties {
+  const base = floaterLayout(startY, tab, bounds, h * FLOATER_SCALE);
+  const fromBottom = base.bottom != null;
+  const maxHeight = typeof base.maxHeight === 'number' ? base.maxHeight / FLOATER_SCALE : undefined;
+  return { ...base, maxHeight, transform: `scale(${FLOATER_SCALE})`, transformOrigin: fromBottom ? 'left bottom' : 'left top' };
 }
 
 export function ChartTab() {
