@@ -380,6 +380,21 @@ export function ChartTab() {
     useFloater.getState().patch(id === 'sl' ? { sl: text } : { tp: text });
   };
 
+  /** The X on a stop-loss / take-profit line: cancel that order (after a confirmation: a position without its stop is exposed). */
+  const removeLine = async (l: ChartLine) => {
+    if (!l.adjust || l.adjust.kind === 'order') return;
+    const name = l.adjust.kind === 'sl' ? 'stop-loss' : 'take-profit';
+    const o = l.adjust.order;
+    if (!(await confirmDialog(`Remove the ${name} of ${symbol} (${fmtPrice(l.price)})?${l.adjust.kind === 'sl' ? ' The position will have no stop.' : ''}`, { confirmLabel: 'Remove', danger: true }))) return;
+    try {
+      await api.cancelOrder(symbol, o.orderId, o.conditional);
+      toast(`${symbol}: ${name} removed`, 'info');
+      void refreshTrading();
+    } catch (e) {
+      toast(`Could not remove it: ${e}`, 'warn');
+    }
+  };
+
   /** A double tap near the line of an order that is on the exchange starts moving it. */
   const startAdjust = (price: number, tol: number): boolean => {
     // already moving an order: a double tap on its line sets it, as a double tap on its handle does
@@ -517,6 +532,8 @@ export function ChartTab() {
           candles={candles}
           lines={lines}
           pending={pendingLines}
+          onRemoveLine={(l) => void removeLine(l)}
+          onRemovePending={(id) => useFloater.getState().patch(id === 'sl' ? { useSl: false } : { useTp: false })}
           entryNote={entryNote}
           watermark={{ symbol, timeframe }}
           onPendingMove={moveLine}

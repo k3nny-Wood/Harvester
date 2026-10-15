@@ -26,7 +26,7 @@ export interface PendingLine {
   edit?: boolean;
 }
 
-export function MobileChart({ candles, lines, pending = [], entryNote, watermark, onPendingMove, onPendingBounds, onPendingDoubleTap, onLongPress, onTap, onDoubleTap }: { candles: Kline[]; lines: ChartLine[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; /** text drawn at the position's entry line (above it or below it): what the order being moved would make or lose */ entryNote?: { price: number; lines: string[]; color: string; above: boolean } | null; /** the symbol and timeframe, drawn large and faint behind the candles */ watermark?: { symbol: string; timeframe: string } | null; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number, entry: number | null) => void; /** a double tap on a handle (without dragging it) */ onPendingDoubleTap?: (id: string) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: (p: { price: number; tol: number }) => void; /** a double tap at this price (`tol` = how far a line may be from it to count as hit); return true when it was used, else the chart jumps to the newest candle */ onDoubleTap?: (p: { price: number; tol: number }) => boolean }) {
+export function MobileChart({ candles, lines, pending = [], entryNote, watermark, onRemoveLine, onRemovePending, onPendingMove, onPendingBounds, onPendingDoubleTap, onLongPress, onTap, onDoubleTap }: { candles: Kline[]; lines: ChartLine[]; /** the order being set up: lines with handles to drag */ pending?: PendingLine[]; /** text drawn at the position's entry line (above it or below it): what the order being moved would make or lose */ entryNote?: { price: number; lines: string[]; color: string; above: boolean } | null; /** the symbol and timeframe, drawn large and faint behind the candles */ watermark?: { symbol: string; timeframe: string } | null; /** an X at the left of a stop-loss / take-profit line that is on the exchange: asks to remove it */ onRemoveLine?: (line: ChartLine) => void; /** the same for the stop-loss / take-profit line of an order not sent yet: switches it off */ onRemovePending?: (id: string) => void; onPendingMove?: (id: string, price: number) => void; /** the screen heights (client y) of the highest and lowest pending line, so the order box can stay clear of them */ onPendingBounds?: (top: number, bottom: number, entry: number | null) => void; /** a double tap on a handle (without dragging it) */ onPendingDoubleTap?: (id: string) => void; onLongPress?: (p: { price: number; x: number; y: number }) => void; onTap?: (p: { price: number; tol: number }) => void; /** a double tap at this price (`tol` = how far a line may be from it to count as hit); return true when it was used, else the chart jumps to the newest candle */ onDoubleTap?: (p: { price: number; tol: number }) => boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 320, h: 300 });
@@ -149,7 +149,7 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
       g.lineWidth = 1;
       g.fillStyle = l.color;
       g.textBaseline = 'bottom';
-      g.fillText(`${l.label} ${fmtPrice(l.price)}`, 6, y(l.price) - 2);
+      g.fillText(`${l.label} ${fmtPrice(l.price)}`, l.adjust && l.adjust.kind !== 'order' ? 34 : 6, y(l.price) - 2);
       g.textBaseline = 'middle';
     }
     // the order being set up
@@ -166,7 +166,7 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
       g.lineWidth = 1;
       g.fillStyle = pl.color;
       g.textBaseline = 'bottom';
-      g.fillText(`${pl.label} ${fmtPrice(pl.price)}`, 6, y(pl.price) - 3);
+      g.fillText(`${pl.label} ${fmtPrice(pl.price)}`, pl.id === 'sl' || pl.id === 'tp' ? 34 : 6, y(pl.price) - 3);
       g.textBaseline = 'middle';
     }
     // what the order being moved would make or lose, at the entry line
@@ -176,10 +176,10 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
       g.lineJoin = 'round';
       entryNote.lines.forEach((line, k) => {
         const big = k === 0;
-        g.font = `${big ? 800 : 600} ${big ? 18 : 12}px system-ui, sans-serif`;
+        g.font = `${big ? 800 : 600} ${big ? 10 : 8}px system-ui, sans-serif`;
         // above the line: the first line is the one nearest to it
-        const dy = entryNote.above ? -(big ? 17 : 38) : big ? 19 : 40;
-        g.lineWidth = 4;
+        const dy = entryNote.above ? -(big ? 10 : 22) : big ? 12 : 24;
+        g.lineWidth = 3;
         g.strokeStyle = '#05080c';
         g.strokeText(line, plotW - 8, ey + dy);
         g.fillStyle = big ? entryNote.color : '#cfd6df';
@@ -424,6 +424,39 @@ export function MobileChart({ candles, lines, pending = [], entryNote, watermark
   return (
     <div ref={box} className="m-chart" data-visible={win.visible} data-offset={win.offset} data-manual={manual ? 1 : 0} data-lo={range ? range.lo.toFixed(2) : ""} data-hi={range ? range.hi.toFixed(2) : ""} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onContextMenu={(e) => e.preventDefault()} onDoubleClick={(e) => Date.now() - lastDouble.current > 600 && doubleTap(e.clientY)}>
       <canvas ref={canvas} style={{ width: size.w, height: size.h }} />
+      {range &&
+        lines.map((l, i) => {
+          if (!l.adjust || l.adjust.kind === 'order' || !onRemoveLine || l.price < range.lo || l.price > range.hi) return null;
+          const ly = yOfPrice(l.price);
+          if (ly == null) return null;
+          return (
+            <button
+              key={`x-${i}-${l.adjust.order.orderId}`}
+              className="m-line-x"
+              style={{ top: ly - 13, color: l.color, borderColor: l.color }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemoveLine(l);
+              }}
+              aria-label={`Remove the ${l.label}`}
+              title={`Remove the ${l.label}`}
+            >
+              ×
+            </button>
+          );
+        })}
+      {range &&
+        pending.map((pl) => {
+          if ((pl.id !== 'sl' && pl.id !== 'tp') || !onRemovePending || pl.price < range.lo || pl.price > range.hi) return null;
+          const ly = yOfPrice(pl.price);
+          if (ly == null) return null;
+          return (
+            <button key={`px-${pl.id}`} className="m-line-x" style={{ top: ly - 13, color: pl.color, borderColor: pl.color }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onRemovePending(pl.id); }} aria-label={`Remove the ${pl.label}`} title={`Remove the ${pl.label}`}>
+              ×
+            </button>
+          );
+        })}
       {pending.map((pl, i) => {
         const hy = handleYs[i];
         if (hy == null) return null;

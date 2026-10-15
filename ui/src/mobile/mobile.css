@@ -1115,3 +1115,37 @@
   width: 100%;
   border-bottom: 0;
 }
+
+/* the readout while a stop-loss / take-profit is being moved, at half the size */
+.m-adjust-read {
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 14px;
+}
+.m-adjust-read i {
+  margin-left: 5px;
+}
+.m-adjust-read .m-adjust-hint {
+  font-size: 9px;
+}
+
+/* the X at the left end of a stop-loss / take-profit line */
+.m-app .m-line-x {
+  position: absolute;
+  left: 4px;
+  z-index: 6;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid;
+  background: rgba(11, 15, 21, 0.85);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+}
