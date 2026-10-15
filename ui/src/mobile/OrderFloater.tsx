@@ -28,7 +28,7 @@ export interface FloaterState {
  * The small order box that opens where the chart was pressed and held: a limit order (or, when the level is beyond the price, a stop-limit)
  * at that price, with its stop-loss and take-profit. The take-profit and stop-loss wait for the entry to fill when they could not be placed yet.
  */
-export function OrderFloater({ symbol, mark, state, onClose, onPrice, onSide, style }: { symbol: string; mark: number; state: FloaterState; onClose: () => void; onPrice: (p: number, side: Side) => void; onSide: (s: Side) => void; style: React.CSSProperties }) {
+export function OrderFloater({ symbol, mark, state, onClose, onPrice, onSide, onHeight, style }: { symbol: string; mark: number; state: FloaterState; onClose: () => void; onPrice: (p: number, side: Side) => void; onSide: (s: Side) => void; /** the box's natural height, so the tab can decide whether it fits above the level */ onHeight: (h: number) => void; style: React.CSSProperties }) {
   const account = useApp((s) => s.account);
   const trading = useApp((s) => s.trading);
   const toast = useApp((s) => s.toast);
@@ -43,6 +43,12 @@ export function OrderFloater({ symbol, mark, state, onClose, onPrice, onSide, st
   const [side, setSide] = useState<Side>(sideFor(state.price, mark));
   const [text, setText] = useState('');
   const tick = filters?.tickSize;
+  const ref = useRef<HTMLDivElement>(null);
+  // tell the tab how tall the box wants to be (after every render: a warning line adds height)
+  useEffect(() => {
+    const h = ref.current?.scrollHeight;
+    if (h) onHeight(h);
+  });
 
   // the price box follows the level when it is moved by the handle on the chart (not while the price is being typed)
   const typed = useRef(false);
@@ -207,7 +213,7 @@ export function OrderFloater({ symbol, mark, state, onClose, onPrice, onSide, st
   };
 
   return (
-    <div className="m-floater" style={style} onPointerDown={(e) => e.stopPropagation()}>
+    <div ref={ref} className="m-floater" style={style} onPointerDown={(e) => e.stopPropagation()}>
       <div className="m-fl-head">
         <input
           type="text"
@@ -229,37 +235,32 @@ export function OrderFloater({ symbol, mark, state, onClose, onPrice, onSide, st
         </div>
         <button className="m-x" onClick={onClose} aria-label="Close">×</button>
       </div>
-      <div className="m-muted m-fl-note">
-        {entryOk ? `${kind === 'STOP' ? 'Stop-limit: triggers when the price reaches the level' : 'Limit: waits at the level'} · ${(((entry / mark - 1) * 100) >= 0 ? '+' : '')}${((entry / mark - 1) * 100).toFixed(2)}% vs price` : ''}
+      <div className="m-fl-note">
+        {entryOk ? `${kind === 'STOP' ? 'Stop-limit: triggers at the level' : 'Limit: waits at the level'} · ${(entry / mark - 1) * 100 >= 0 ? '+' : ''}${((entry / mark - 1) * 100).toFixed(2)}% vs price` : ' '}
       </div>
-      <label className="m-fl-row">
-        <span>Amount <b>{usedPct.toFixed(1)}%</b></span>
-        <input type="range" min={0} max={100} step={0.5} value={pct} onChange={(e) => setPct(Number(e.target.value))} />
-      </label>
-      <label className="m-fl-row">
-        <span>Leverage <b>{lev}x</b></span>
-        <input type="range" min={1} max={maxLev} step={1} value={lev} onChange={(e) => setLev(Number(e.target.value))} />
-      </label>
-      <div className="m-two">
+      <div className="m-fl-pair">
+        <label>
+          <span>Amount <b>{usedPct.toFixed(1)}%</b></span>
+          <input type="range" min={0} max={100} step={0.5} value={pct} onChange={(e) => setPct(Number(e.target.value))} />
+        </label>
+        <label>
+          <span>Leverage <b>{lev}x</b></span>
+          <input type="range" min={1} max={maxLev} step={1} value={lev} onChange={(e) => setLev(Number(e.target.value))} />
+        </label>
+      </div>
+      <div className="m-fl-pair">
         <label className="m-fl-in">
-          <span>SL</span>
+          <span>Stop-loss <small className={slRes?.ok ? '' : 'down'}>{slRes?.ok ? fmtPrice(slRes.price) : ''}</small></span>
           <input type="text" inputMode="decimal" value={sl} onChange={(e) => setSl(e.target.value)} />
-          <small className={slRes?.ok ? 'm-muted' : 'down'}>{slRes?.ok ? fmtPrice(slRes.price) : ''}</small>
         </label>
         <label className="m-fl-in">
-          <span>TP</span>
+          <span>Take-profit <small className={tpRes?.ok ? '' : 'down'}>{tpRes?.ok ? fmtPrice(tpRes.price) : ''}</small></span>
           <input type="text" inputMode="decimal" value={tp} onChange={(e) => setTp(e.target.value)} />
-          <small className={tpRes?.ok ? 'm-muted' : 'down'}>{tpRes?.ok ? fmtPrice(tpRes.price) : ''}</small>
         </label>
       </div>
-      <div className="m-sum">
-        <span>{qty > 0 ? qty : 0} {symbol.replace('USDT', '')}</span>
-        <span>≈ {(qty * entry || 0).toFixed(2)} USDT</span>
-        <span className="down">risk {risk.toFixed(2)}</span>
-        <span className="up">reward {reward.toFixed(2)}</span>
+      <div className="m-fl-sum">
+        {qty > 0 ? qty : 0} {symbol.replace('USDT', '')} · ≈ {(qty * entry || 0).toFixed(2)} USDT · <span className="down">risk {risk.toFixed(2)}</span> · <span className="up">reward {reward.toFixed(2)}</span>
       </div>
-      {problem && <div className="m-warn">{problem}</div>}
-      {waits && !problem && <div className="m-muted m-fl-note">SL / TP are armed and sent when the entry fills (the server must stay running).</div>}
       <div className="m-apply-row">
         <button
           className={`m-market ${long ? 'buy' : 'sell'}`}

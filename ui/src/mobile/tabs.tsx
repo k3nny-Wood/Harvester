@@ -166,20 +166,23 @@ export function ScannerTab() {
 
 const FLOATER_W = 330;
 
-/** The least room above the level for the box to sit there; closer to the top than this it goes below the level instead. */
-const MIN_ROOM_ABOVE = 230;
+const FLOATER_GAP = 14;
 
 /**
- * Where the order box goes: ABOVE the level, so the line stays in view. `levelY` is where the level is in the tab (it follows the handle while
- * it is dragged); only a level too close to the top puts the box below it.
+ * Where the order box goes: above the level so the line stays in view; when the level is too high for the box to fit above it, the box flicks
+ * to below the level; when it fits neither way it takes the side with more room and scrolls inside. `h` is the height the box wants.
  */
-function floaterStyle(f: { y: number }, tab: HTMLElement | null, levelY: number | null): React.CSSProperties {
+function floaterStyle(f: { y: number }, tab: HTMLElement | null, levelY: number | null, h: number): React.CSSProperties {
   const w = tab?.clientWidth ?? 360;
-  const h = tab?.clientHeight ?? 600;
+  const th = tab?.clientHeight ?? 600;
   const width = Math.min(FLOATER_W, w - 16);
   const left = Math.max(8, (w - width) / 2);
   const y = levelY ?? f.y;
-  return y >= MIN_ROOM_ABOVE ? { left, width, bottom: h - y + 16, maxHeight: y - 24 } : { left, width, top: y + 16, maxHeight: h - y - 24 };
+  const above = y - FLOATER_GAP - 4;
+  const below = th - y - FLOATER_GAP - 4;
+  if (above >= h) return { left, width, bottom: th - y + FLOATER_GAP };
+  if (below >= h) return { left, width, top: y + FLOATER_GAP };
+  return above >= below ? { left, width, bottom: th - y + FLOATER_GAP, maxHeight: Math.max(120, above) } : { left, width, top: y + FLOATER_GAP, maxHeight: Math.max(120, below) };
 }
 
 export function ChartTab() {
@@ -197,6 +200,7 @@ export function ChartTab() {
   const tabRef = useRef<HTMLDivElement>(null);
   // where the pending order's line is, in the coordinates of the tab
   const [levelY, setLevelY] = useState<number | null>(null);
+  const [floaterH, setFloaterH] = useState(250);
   const [error, setError] = useState('');
 
   // history, then live candles
@@ -308,7 +312,8 @@ export function ChartTab() {
           onClose={() => setFloater(null)}
           onPrice={(price, side) => setFloater((f) => (f ? { ...f, price, side } : f))}
           onSide={(side) => setFloater((f) => (f ? { ...f, side } : f))}
-          style={floaterStyle(floater, tabRef.current, levelY)}
+          onHeight={(h) => setFloaterH((cur) => (Math.abs(cur - h) > 1 ? h : cur))}
+          style={floaterStyle(floater, tabRef.current, levelY, floaterH)}
         />
       )}
       {trade && <TradeSheet side={trade} symbol={symbol} mark={mark} onClose={() => setTrade(null)} />}
