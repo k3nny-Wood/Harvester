@@ -53,6 +53,10 @@ export function MobileApp() {
 
   const equity = account ? account.walletBalance + (live?.unrealizedPnl ?? account.unrealizedPnl) : null;
   const open = live?.positions.filter((p) => p.amount !== 0).length ?? 0;
+  const upnl = live?.unrealizedPnl ?? account?.unrealizedPnl ?? 0;
+  // the margin Binance holds for the open positions (estimated from entry value and leverage where it did not say)
+  const marginUsed = (live?.positions ?? []).filter((p) => p.amount !== 0).reduce((t, p) => t + (p.initialMargin && p.initialMargin > 0 ? p.initialMargin : (Math.abs(p.amount) * p.entryPrice) / Math.max(1, p.leverage)), 0);
+  const money = (n: number) => `${n < 0 ? '-' : ''}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: Math.abs(n) < 100 ? 2 : 0 })}`;
 
   return (
     <div className={`m-app${docked ? ' docked' : ''}`}>
@@ -60,8 +64,16 @@ export function MobileApp() {
         <img className="m-logo" src={logo} alt="" />
         <div className="m-equity">
           <b>{equity == null ? '…' : `$${equity.toFixed(2)}`}</b>
-          {account && <small className={(live?.unrealizedPnl ?? 0) >= 0 ? 'up' : 'down'}>{(live?.unrealizedPnl ?? 0) >= 0 ? '+' : '-'}${Math.abs(live?.unrealizedPnl ?? 0).toFixed(2)} open · ${account.availableBalance.toFixed(0)} free</small>}
+          {account && tab !== 'chart' && <small className={(live?.unrealizedPnl ?? 0) >= 0 ? 'up' : 'down'}>{(live?.unrealizedPnl ?? 0) >= 0 ? '+' : '-'}${Math.abs(live?.unrealizedPnl ?? 0).toFixed(2)} open · ${account.availableBalance.toFixed(0)} free</small>}
         </div>
+        {tab === 'chart' && account && (
+          <div className="m-stats">
+            <span>uPnL <b className={upnl > 0 ? 'up' : upnl < 0 ? 'down' : ''}>{upnl >= 0 ? '+' : ''}{money(upnl)}</b></span>
+            <span>Free <b>{money(account.availableBalance)}</b></span>
+            <span>Margin <b>{money(marginUsed)}</b></span>
+            <span>Open <b>{open}</b></span>
+          </div>
+        )}
         {/* on the chart tab there is no room for them; a LIVE badge stays everywhere */}
         {(tab !== 'chart' || env === 'live') && <span className={`m-env ${env === 'live' ? 'live' : ''}`}>{env === 'live' ? 'LIVE' : 'TESTNET'}</span>}
         {tab !== 'chart' && <button className="m-menu" onClick={() => setMenu((v) => !v)} aria-label="Menu">⋯</button>}
