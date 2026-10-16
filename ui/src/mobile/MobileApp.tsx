@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, hasBackend } from '../api';
 import logo from '../assets/logo.png';
 import { ConfirmHost } from '../confirm';
@@ -6,9 +6,10 @@ import { WebLogin } from '../components/WebLogin';
 import { useLivePositions } from '../livePositions';
 import { useScannerEvents } from '../scannerEvents';
 import { useApp } from '../store';
-import { startTradingPoll } from '../trade';
+import { refreshTrading, startTradingPoll } from '../trade';
 import './mobile.css';
 import { useDragScroll } from './dragScroll';
+import { PULL_TRIGGER, usePullRefresh } from './pullRefresh';
 import { useFloater } from './floaterStore';
 import { useMobile, type Tab } from './store';
 import { ChartTab, OrdersTab, PositionsTab, ScannerTab } from './tabs';
@@ -35,6 +36,18 @@ export function MobileApp() {
   // while the order dock is open it takes the place of the bottom navigation (in portrait)
   const docked = useFloater((s) => !!s.f);
   const dragScroll = useDragScroll();
+  // the scrolling area, also given to the pull-down-to-refresh (not on the chart tab: a drag there pans the chart)
+  const [mainEl, setMainEl] = useState<HTMLElement | null>(null);
+  const mainRef = useCallback(
+    (el: HTMLElement | null) => {
+      setMainEl(el);
+      dragScroll(el);
+    },
+    [dragScroll],
+  );
+  const pull = usePullRefresh(mainEl, tab !== 'chart', async () => {
+    await Promise.all([refreshTrading(), api.listSymbols().then(setSymbols)]);
+  });
 
   useScannerEvents();
   useEffect(() => startTradingPoll(), []);
@@ -73,7 +86,13 @@ export function MobileApp() {
         {/* the TESTNET badge and the menu are gone; a LIVE badge stays */}
         {env === 'live' && <span className={`m-env ${env === 'live' ? 'live' : ''}`}>{env === 'live' ? 'LIVE' : 'TESTNET'}</span>}
       </header>
-      <main className="m-main" ref={dragScroll}>
+      <main className="m-main" ref={mainRef}>
+        {(pull.dist > 0 || pull.refreshing) && (
+          <div className="m-pull" style={{ height: pull.dist }}>
+            <span className={pull.refreshing ? 'spin' : ''} style={pull.refreshing ? undefined : { transform: `rotate(${Math.min(180, (pull.dist / PULL_TRIGGER) * 180)}deg)` }}>↓</span>
+            {pull.refreshing ? 'Refreshing…' : pull.dist >= PULL_TRIGGER ? 'Release to refresh' : 'Pull to refresh'}
+          </div>
+        )}
         {tab === 'positions' && <PositionsTab />}
         {tab === 'chart' && <ChartTab />}
         {tab === 'orders' && <OrdersTab />}

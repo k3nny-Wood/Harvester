@@ -2047,3 +2047,30 @@
   color: var(--accent);
   border-color: var(--accent);
 }
+
+/* pull down to refresh */
+.m-main {
+  overscroll-behavior-y: contain;
+}
+.m-pull {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+}
+.m-pull span {
+  display: inline-block;
+  font-size: 15px;
+  transition: transform 0.1s;
+}
+.m-pull .spin {
+  animation: m-spin 0.8s linear infinite;
+}
+@keyframes m-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
