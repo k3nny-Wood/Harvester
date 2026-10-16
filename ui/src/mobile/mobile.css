@@ -2139,3 +2139,25 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* the minimum score slider of the scanner */
+.m-minscore {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 12px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.m-minscore span {
+  flex: none;
+  min-width: 78px;
+}
+.m-minscore b {
+  color: var(--text);
+}
+.m-minscore input[type='range'] {
+  flex: 1;
+  height: 26px;
+  accent-color: var(--accent);
+}

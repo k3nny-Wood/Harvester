@@ -443,11 +443,19 @@ export function ScannerTab() {
       return false;
     }
   });
+  // the lowest score shown (kept on the phone)
+  const [minScore, setMinScore] = useState(() => {
+    try {
+      return Math.max(0, Math.min(100, Number(window.localStorage.getItem('harvester.mobile.minScore')) || 0));
+    } catch {
+      return 0;
+    }
+  });
   const rows = useMemo(() => {
-    const list = signals.filter((s) => kinds[s.kind]);
+    const list = signals.filter((s) => kinds[s.kind] && s.score >= minScore);
     if (byReversal) list.sort((a, b) => (b.reversal ?? -1) - (a.reversal ?? -1) || b.score - a.score);
     return list.slice(0, 60);
-  }, [signals, kinds, byReversal]);
+  }, [signals, kinds, byReversal, minScore]);
   return (
     <div className="m-list">
       <div className="m-chips">
@@ -472,6 +480,26 @@ export function ScannerTab() {
           ↧ Reversal
         </button>
       </div>
+      <label className="m-minscore">
+        <span>Min score <b>{minScore}</b></span>
+        <input
+          type="range"
+          min={0}
+          max={90}
+          step={5}
+          value={minScore}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            setMinScore(v);
+            try {
+              window.localStorage.setItem('harvester.mobile.minScore', String(v));
+            } catch {
+              /* not remembered */
+            }
+          }}
+          aria-label="Minimum score"
+        />
+      </label>
       <div className="m-muted m-pad">{scanner ? `${scanner.phase} · ${scanner.seeded}/${scanner.symbols} symbols · ${rows.length} of ${signals.length} signals` : 'Scanner starting…'}</div>
       {!rows.length && <div className="m-empty">No signals right now.</div>}
       {rows.map((s) => {
