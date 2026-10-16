@@ -282,7 +282,9 @@ export function HistoryTab() {
 
   const loaded = Object.keys(fills).length;
   const since = Date.now() - days * 86_400_000;
-  const trades = useMemo(() => closedTrades(Object.values(fills).flat()).filter((t) => t.time >= since), [fills, since]); // eslint-disable-line react-hooks/exhaustive-deps
+  const account = useApp((s) => s.account);
+  const openSizes = useMemo(() => Object.fromEntries((account?.positions ?? []).map((p) => [p.symbol, p.amount])), [account]);
+  const trades = useMemo(() => closedTrades(Object.values(fills).flat(), openSizes).filter((t) => t.time >= since), [fills, since, openSizes]); // eslint-disable-line react-hooks/exhaustive-deps
   const totals = historyTotals(trades);
   if (trading && !trading.hasCredentials) return <div className="m-empty">No Binance API keys are set on the server for this environment.</div>;
   const when = (ms: number) => {
@@ -324,6 +326,7 @@ export function HistoryTab() {
               </button>
               <b className="m-coin">{coin(t.symbol)}</b>
               <span className={`m-badge ${t.long ? 'up' : 'down'}`}>{t.long ? 'LONG' : 'SHORT'}</span>
+              {t.partial && <span className="m-badge warn" title="Closed only part of the position">PARTIAL</span>}
               <span className="m-muted m-sig-meta">{when(t.time)}</span>
               <span className={`m-pnl ${tone(t.net)}`}>
                 {signed(t.net)} <small>({t.pct >= 0 ? '+' : ''}{t.pct.toFixed(1)}%)</small>
@@ -338,6 +341,7 @@ export function HistoryTab() {
                 <span>Value <b>${usd(t.notional)}</b></span>
                 <span>Gross <b className={tone(t.pnl)}>{signed(t.pnl)}</b></span>
                 <span>Fees <b>${t.fees.toFixed(2)}</b></span>
+                {t.partial && <span>Still open <b>{t.remaining}</b></span>}
               </div>
             )}
           </div>
