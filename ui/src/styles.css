@@ -2288,3 +2288,22 @@ button.mini {
 .quick-grip:active {
   cursor: grabbing;
 }
+
+.sig-insight {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+.sig-insight .ins {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  color: var(--muted);
+  cursor: default;
+}
+.sig-insight .ins.up { color: var(--up); }
+.sig-insight .ins.down { color: var(--down); }
+.sig-insight .ins.warn { color: var(--warn); }

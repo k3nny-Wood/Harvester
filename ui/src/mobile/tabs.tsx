@@ -11,6 +11,7 @@ import { ExitSheet } from './ExitSheet';
 import { MobileChart, type FillMark, type PendingLine } from './MobileChart';
 import { IND_LIST, type IndKey } from './indicators';
 import { closedTrades, historyTotals } from './history';
+import { insightBadges } from '../insight';
 import { fillMarkers } from '../chart/ChartFills';
 import { TIMEFRAMES, useMobile } from './store';
 import { useFloater } from './floaterStore';
@@ -404,7 +405,19 @@ export function ScannerTab() {
     for (const s of signals) c[s.kind] = (c[s.kind] ?? 0) + 1;
     return c;
   }, [signals]);
-  const rows = useMemo(() => signals.filter((s) => kinds[s.kind]).slice(0, 60), [signals, kinds]);
+  // sorted as the server sends them (by score), or by the reversal score (the signs that the move is ending), strongest first
+  const [byReversal, setByReversal] = useState(() => {
+    try {
+      return window.localStorage.getItem('harvester.mobile.scanSort') === 'reversal';
+    } catch {
+      return false;
+    }
+  });
+  const rows = useMemo(() => {
+    const list = signals.filter((s) => kinds[s.kind]);
+    if (byReversal) list.sort((a, b) => (b.reversal ?? -1) - (a.reversal ?? -1) || b.score - a.score);
+    return list.slice(0, 60);
+  }, [signals, kinds, byReversal]);
   return (
     <div className="m-list">
       <div className="m-chips">
@@ -413,6 +426,21 @@ export function ScannerTab() {
             {SCAN_LABEL[k]} {counts[k] ?? 0}
           </button>
         ))}
+        <button
+          className={`m-chip on-ind${byReversal ? ' on' : ''}`}
+          onClick={() => {
+            const next = !byReversal;
+            setByReversal(next);
+            try {
+              window.localStorage.setItem('harvester.mobile.scanSort', next ? 'reversal' : 'score');
+            } catch {
+              /* not remembered */
+            }
+          }}
+          title="Strongest signs of a reversal first (RSI, MACD, CMF, OBV)"
+        >
+          ↧ Reversal
+        </button>
       </div>
       <div className="m-muted m-pad">{scanner ? `${scanner.phase} · ${scanner.seeded}/${scanner.symbols} symbols · ${rows.length} of ${signals.length} signals` : 'Scanner starting…'}</div>
       {!rows.length && <div className="m-empty">No signals right now.</div>}
@@ -430,11 +458,21 @@ export function ScannerTab() {
             {isOpen && (
               <div className="m-sig-more" onClick={(e) => e.stopPropagation()}>
                 {s.thumb.length > 0 && <Thumb candles={s.thumb} base={s.base} crackLevel={s.crackLevel} width={thumbW} height={120} />}
+                {insightBadges(s).length > 0 && (
+                  <div className="m-ins-row">
+                    {insightBadges(s).map((b) => (
+                      <span key={b.text} className={`m-ins ${b.tone}`}>
+                        {b.text}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {(s.reversalNotes ?? []).length > 0 && <div className="m-muted m-ins-notes">{(s.reversalNotes ?? []).join(' · ')}</div>}
                 <div className="m-grid">
                   <span>Price <b>{fmtPrice(s.price)}</b></span>
                   <span>Drop <b>{s.dropPct.toFixed(1)}%</b></span>
                   {s.distancePct != null && <span>vs crack <b>{s.distancePct.toFixed(2)}%</b></span>}
-                  <span>Volume <b>{s.volRatio.toFixed(1)}x</b></span>
+                  <span>Volume <b>{s.volSpikePct != null ? `+${Math.round(s.volSpikePct)}%` : `${s.volRatio.toFixed(1)}x`}</b></span>
                   {s.base != null && <span>Base <b>{fmtPrice(s.base)}</b></span>}
                   {s.crackLevel != null && <span>Crack <b>{fmtPrice(s.crackLevel)}</b></span>}
                 </div>

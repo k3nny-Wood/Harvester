@@ -2103,3 +2103,25 @@
   text-overflow: ellipsis;
   text-align: left;
 }
+
+.m-ins-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+.m-ins {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  color: var(--muted);
+}
+.m-ins.up { color: var(--up); }
+.m-ins.down { color: var(--down); }
+.m-ins.warn { color: var(--warn); }
+.m-ins-notes {
+  font-size: 11px;
+  margin-bottom: 5px;
+}

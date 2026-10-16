@@ -12,6 +12,7 @@ export const DEFAULT_MOVERS: MoverParams = {
   minQuoteVolume: 3_000_000,
   cooldownSecs: 600,
   warmupSecs: 180,
+  rangeMode: true,
 };
 
 const KEY = 'harvester.movers.v1';

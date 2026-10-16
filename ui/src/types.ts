@@ -109,6 +109,15 @@ export interface Signal {
   reasons: string[];
   /** [time, open, high, low, close] */
   thumb: Array<[number, number, number, number, number]>;
+  /** the move is still at its extreme (true) or has already come back a good part (false) */
+  stillMoving?: boolean | null;
+  /** how much of the move has been given back, % of its size */
+  retracePct?: number | null;
+  /** the latest candle's volume as a percentage above the recent average */
+  volSpikePct?: number | null;
+  /** 0..100: signs the move is ending (RSI / MACD / CMF / OBV divergence) */
+  reversal?: number | null;
+  reversalNotes?: string[];
 }
 
 export interface ScannerStatus {
@@ -159,6 +168,8 @@ export interface MoverParams {
   minQuoteVolume: number;
   cooldownSecs: number;
   warmupSecs: number;
+  /** also report the biggest swing inside each window, even when the price has come back */
+  rangeMode?: boolean;
 }
 
 export interface ScannerConfig {

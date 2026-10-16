@@ -68,7 +68,7 @@ fn default_sources() -> Sources {
 
 impl Default for ScannerConfig {
     fn default() -> Self {
-        ScannerConfig { timeframe: "15m".into(), universe: 40, params: SignalParams { fresh_bars: 8, ..Default::default() }, sources: default_sources() }
+        ScannerConfig { timeframe: "15m".into(), universe: 150, params: SignalParams { fresh_bars: 8, ..Default::default() }, sources: default_sources() }
     }
 }
 
@@ -620,6 +620,7 @@ mod tests {
             parts: ScoreParts { structure: 0.0, volume: 0.0, magnitude: 0.0, pivot: 0.0, stabilising: 0.0 },
             reasons: vec![],
             thumb: vec![],
+            insight: Default::default(),
         }
     }
 

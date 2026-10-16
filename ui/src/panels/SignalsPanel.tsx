@@ -4,6 +4,7 @@ import { DEFAULT_MOVERS, useMovers, windowLabel } from '../moversConfig';
 import { useScannerParams } from '../scannerParams';
 import { api } from '../api';
 import { WithBasePreview } from '../components/BasePreview';
+import { insightBadges } from '../insight';
 import { Thumb } from '../components/Thumb';
 import { openChart } from '../dock';
 import { TIMEFRAMES } from '../intervals';
@@ -129,7 +130,7 @@ export function SignalsPanel() {
               </option>
             ))}
           </select>
-          <select value={config?.universe ?? 40} onChange={(e) => restart({ universe: Number(e.target.value) })} title="How many of the busiest perpetuals to watch">
+          <select value={config?.universe ?? 150} onChange={(e) => restart({ universe: Number(e.target.value) })} title="How many of the busiest perpetuals to watch">
             {UNIVERSES.map((n) => (
               <option key={n} value={n}>
                 top {n}
@@ -209,6 +210,9 @@ export function SignalsPanel() {
             <label className="minscore">
               Quiet for <b>{Math.round(movers.cooldownSecs / 60)} min</b> after a report
               <input type="range" min={1} max={60} step={1} value={movers.cooldownSecs / 60} onChange={(e) => changeMovers({ cooldownSecs: Number(e.target.value) * 60 })} />
+            </label>
+            <label className="minscore" title="Also report the biggest swing (lowest to highest price) inside each window, even when the price has already come back">
+              <input type="checkbox" checked={movers.rangeMode !== false} onChange={(e) => changeMovers({ rangeMode: e.target.checked })} /> Count swings that came back
             </label>
             <button className="chip" onClick={() => changeMovers(DEFAULT_MOVERS)}>
               Reset
@@ -298,6 +302,15 @@ function SignalCard({ s, now }: { s: Signal; now: number }) {
             </span>
           )}
         </div>
+        {insightBadges(s).length > 0 && (
+          <div className="sig-insight">
+            {insightBadges(s).map((b) => (
+              <span key={b.text} className={`ins ${b.tone}`} title={b.title}>
+                {b.text}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="sig-reasons">
           {s.reasons.slice(0, 3).map((r, i) => (
             <div key={i}>• {r}</div>

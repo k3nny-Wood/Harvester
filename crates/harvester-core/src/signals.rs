@@ -12,6 +12,7 @@
 
 use crate::candle::{atr_pct, Candle};
 use crate::movers::{window_label, Spike};
+use crate::reversal;
 use crate::qfl::{detect_filtered, BaseRangeFilter, QflParams};
 use serde::{Deserialize, Serialize};
 
@@ -63,6 +64,22 @@ pub struct ScoreParts {
     pub stabilising: f64,
 }
 
+/// What a signal says about how the move is going, next to the score: is it still running, how much volume came in, and whether the price action
+/// disagrees with the move (a reversal score, see `reversal`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Insight {
+    /// the move is still at its extreme (true) or the price has given a good part of it back (false)
+    pub still_moving: Option<bool>,
+    /// how much of the move has been given back, % of its size
+    pub retrace_pct: Option<f64>,
+    /// the latest candle's volume as a percentage above the recent average
+    pub vol_spike_pct: Option<f64>,
+    /// 0..100: signs that the move is ending (RSI / MACD / CMF / OBV divergence, oversold / overbought, volume)
+    pub reversal: Option<f64>,
+    pub reversal_notes: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Signal {
@@ -86,6 +103,8 @@ pub struct Signal {
     pub reasons: Vec<String>,
     /// last candles for the thumbnail: [time, open, high, low, close]
     pub thumb: Vec<[f64; 5]>,
+    #[serde(flatten)]
+    pub insight: Insight,
 }
 
 fn clamp01(x: f64) -> f64 {
@@ -169,7 +188,14 @@ fn fmt_money(v: f64) -> String {
 pub fn spike_signal(spike: &Spike, candles: &[Candle], thumb_bars: usize) -> Signal {
     let pump = spike.is_pump();
     let reasons = vec![
-        format!("{:+.1}% in {} ({:.1}x its typical move for that long)", spike.change_pct, window_label(spike.window_secs), spike.multiple),
+        format!(
+            "{:+.1}% in {} ({:.1}x its typical move for that long){}{}",
+            spike.change_pct,
+            window_label(spike.window_secs),
+            spike.multiple,
+            if spike.swing { ", low to high inside the window" } else { "" },
+            if spike.sustained { ", still at the extreme".to_string() } else { format!(", {:.0}% given back", spike.retrace_pct) }
+        ),
         format!("From {:.6} to {:.6}", spike.from_price, spike.price),
         format!("24h volume {} USDT", fmt_money(spike.quote_volume)),
     ];
@@ -190,7 +216,24 @@ pub fn spike_signal(spike: &Spike, candles: &[Candle], thumb_bars: usize) -> Sig
         parts: ScoreParts { structure: 0.0, volume: 0.0, magnitude: 0.0, pivot: 0.0, stabilising: 0.0 },
         reasons,
         thumb: thumb(candles, thumb_bars),
+        insight: spike_insight(spike, candles),
     }
+}
+
+/// The insight of a sudden move: whether it is still running (from the detector), the volume of the latest 1-minute candle against the ten before it, and the
+/// reversal score of the recent 1-minute candles.
+fn spike_insight(spike: &Spike, candles: &[Candle]) -> Insight {
+    let n = candles.len();
+    // the live candle is only partly filled: the best of the last two candles against the ten before them
+    let vol_spike_pct = if n > 12 {
+        let avg = candles[n - 12..n - 2].iter().map(|c| c.volume).sum::<f64>() / 10.0;
+        let best = candles[n - 2].volume.max(candles[n - 1].volume);
+        (avg > 0.0).then(|| (best / avg - 1.0) * 100.0).filter(|v| *v > 0.0)
+    } else {
+        None
+    };
+    let rev = reversal::analyse_for(candles, Some(spike.is_pump()));
+    Insight { still_moving: Some(spike.sustained), retrace_pct: Some(spike.retrace_pct), vol_spike_pct, reversal: rev.as_ref().map(|r| r.score), reversal_notes: rev.map(|r| r.notes).unwrap_or_default() }
 }
 
 fn thumb(candles: &[Candle], bars: usize) -> Vec<[f64; 5]> {
@@ -285,6 +328,7 @@ pub fn analyse(symbol: &str, timeframe: &str, candles: &[Candle], p: &SignalPara
                     parts: sp,
                     reasons,
                     thumb: thumb(candles, p.thumb_bars),
+                    insight: insight_of(candles, p, &c),
                 });
             }
             None => {
@@ -311,6 +355,7 @@ pub fn analyse(symbol: &str, timeframe: &str, candles: &[Candle], p: &SignalPara
                         parts: sp,
                         reasons,
                         thumb: thumb(candles, p.thumb_bars),
+                        insight: insight_of(candles, p, &c),
                     });
                 }
             }
@@ -355,7 +400,29 @@ pub fn analyse_drop(symbol: &str, timeframe: &str, candles: &[Candle], p: &Signa
         parts: sp,
         reasons,
         thumb: thumb(candles, p.thumb_bars),
+        insight: insight_of(candles, p, &c),
     })
+}
+
+/// The insight of a scanner signal: volume spike, whether the fall from the recent high is still running (the price near its low) and the reversal score.
+fn insight_of(candles: &[Candle], p: &SignalParams, c: &Common) -> Insight {
+    let n = candles.len();
+    let w = &candles[n.saturating_sub(p.drop_window.max(1))..];
+    let hi = w.iter().map(|x| x.high).fold(f64::NEG_INFINITY, f64::max);
+    let lo = w.iter().map(|x| x.low).fold(f64::INFINITY, f64::min);
+    let close = candles[n - 1].close;
+    let (still_moving, retrace_pct) = if hi > lo && lo > 0.0 {
+        let size = (hi - lo) / hi * 100.0;
+        let back = (close - lo) / lo * 100.0; // how far it has bounced off the low
+        (Some(back < 0.4 * size), Some(((close - lo) / (hi - lo) * 100.0).clamp(0.0, 100.0)))
+    } else {
+        (None, None)
+    };
+    // a scanner signal is about a fall (a crack, a drop): the signs looked for are those of a fall ending
+    let rev = reversal::analyse_for(candles, Some(false));
+    // the live candle is only partly filled, so its volume looks small: the best of the last three candles stands for the spike
+    let vol_ratio = (n.saturating_sub(3)..n).map(|i| volume_ratio(candles, i)).fold(c.vol_ratio, f64::max);
+    Insight { still_moving, retrace_pct, vol_spike_pct: Some((vol_ratio - 1.0) * 100.0).filter(|v| *v > 0.0), reversal: rev.as_ref().map(|r| r.score), reversal_notes: rev.map(|r| r.notes).unwrap_or_default() }
 }
 
 #[cfg(test)]
@@ -453,7 +520,7 @@ mod tests {
 
     #[test]
     fn a_spike_becomes_a_pump_or_dump_signal_with_a_score_from_how_unusual_it_is() {
-        let up = Spike { symbol: "ABCUSDT".into(), time_ms: 1_700_000_000_000, window_secs: 300, change_pct: 4.2, from_price: 1.0, price: 1.042, multiple: 6.0, quote_volume: 82e6 };
+        let up = Spike { symbol: "ABCUSDT".into(), time_ms: 1_700_000_000_000, window_secs: 300, change_pct: 4.2, from_price: 1.0, price: 1.042, multiple: 6.0, quote_volume: 82e6, sustained: true, retrace_pct: 0.0, swing: false };
         let s = spike_signal(&up, &[], 60);
         assert_eq!(s.kind, SignalKind::Pump);
         assert_eq!(s.timeframe, "1m");

@@ -31,6 +31,9 @@ pub struct MoverParams {
     pub cooldown_secs: u64,
     /// no reports until a symbol has been watched this long (its normal move is not known before)
     pub warmup_secs: u64,
+    /// also report the biggest swing (lowest to highest price) inside each window, even when the price has since come back: a spike that
+    /// retraced is still a move worth seeing (the MarketScanner rapid scan works this way)
+    pub range_mode: bool,
 }
 
 impl Default for MoverParams {
@@ -41,6 +44,7 @@ impl Default for MoverParams {
             min_quote_volume: 3_000_000.0,
             cooldown_secs: 600,
             warmup_secs: 180,
+            range_mode: true,
         }
     }
 }
@@ -58,6 +62,15 @@ pub struct Spike {
     /// the move divided by the coin's normal move for this window
     pub multiple: f64,
     pub quote_volume: f64,
+    /// the move is still at (within 40% of its size from) its extreme; false = the price has already given a good part of it back
+    #[serde(default)]
+    pub sustained: bool,
+    /// how much of the move has been given back, % of its size
+    #[serde(default)]
+    pub retrace_pct: f64,
+    /// the report is the swing inside the window (low to high), not the net change over it
+    #[serde(default)]
+    pub swing: bool,
 }
 
 impl Spike {
@@ -162,26 +175,54 @@ impl MoverDetector {
                 continue;
             }
             let Some(from) = price_at(&book.samples, start) else { continue };
-            let change = (price / from - 1.0) * 100.0;
-            if change.abs() < rule.min_pct {
-                continue;
+            // the extremes inside the window (the price at its start counts), and which came first
+            let (mut hi, mut hi_t, mut lo, mut lo_t) = (from, start, from, start);
+            for &(t, p) in book.samples.iter().filter(|s| s.0 > start) {
+                if p > hi {
+                    hi = p;
+                    hi_t = t;
+                }
+                if p < lo {
+                    lo = p;
+                    lo_t = t;
+                }
             }
-            let up = change > 0.0;
-            let last_fire = if up { book.last_fire_up } else { book.last_fire_down };
-            if last_fire > 0 && t_ms.saturating_sub(last_fire) < self.params.cooldown_secs * 1000 {
-                continue;
+            // two candidates: the net change over the window, and (range mode) the swing inside it
+            let net = (price / from - 1.0) * 100.0;
+            let mut candidates: Vec<(f64, bool)> = Vec::new();
+            if net.abs() >= rule.min_pct {
+                candidates.push((net, false));
             }
-            // normal move: from the quarter hour BEFORE the window when there is enough of it, else from everything there is
-            let sigma = typical_return(&book.samples, start, 900).or_else(|| typical_return(&book.samples, t_ms, 900));
-            let Some(sigma) = sigma else { continue };
-            let normal = (sigma * ((rule.secs as f64) / GRID_SECS as f64).sqrt() * 100.0).max(0.02);
-            let multiple = change.abs() / normal;
-            if multiple < self.params.normal_multiple {
-                continue;
+            if self.params.range_mode && lo > 0.0 {
+                let swing = (hi / lo - 1.0) * 100.0;
+                if swing >= rule.min_pct {
+                    candidates.push((if lo_t <= hi_t { swing } else { -swing }, true)); // the low first = a rise, the high first = a fall
+                }
             }
-            let spike = Spike { symbol: symbol.to_string(), time_ms: t_ms, window_secs: rule.secs, change_pct: change, from_price: from, price, multiple, quote_volume };
-            if best.as_ref().map_or(true, |b| spike.multiple > b.multiple) {
-                best = Some(spike);
+            for (change, is_swing) in candidates {
+                let up = change > 0.0;
+                let last_fire = if up { book.last_fire_up } else { book.last_fire_down };
+                if last_fire > 0 && t_ms.saturating_sub(last_fire) < self.params.cooldown_secs * 1000 {
+                    continue;
+                }
+                // normal move: from the quarter hour BEFORE the window when there is enough of it, else from everything there is
+                let sigma = typical_return(&book.samples, start, 900).or_else(|| typical_return(&book.samples, t_ms, 900));
+                let Some(sigma) = sigma else { continue };
+                let normal = (sigma * ((rule.secs as f64) / GRID_SECS as f64).sqrt() * 100.0).max(0.02);
+                let multiple = change.abs() / normal;
+                if multiple < self.params.normal_multiple {
+                    continue;
+                }
+                // how far the price has come back from the end of the move
+                let (from_price, extreme) = if is_swing { if up { (lo, hi) } else { (hi, lo) } } else if up { (from, hi) } else { (from, lo) };
+                let size = ((extreme - from_price).abs() / from_price) * 100.0;
+                let back = ((price - extreme).abs() / extreme) * 100.0;
+                let sustained = size <= 0.0 || back < 0.4 * size;
+                let retrace_pct = if size > 0.0 { (back / size * 100.0).min(100.0) } else { 0.0 };
+                let spike = Spike { symbol: symbol.to_string(), time_ms: t_ms, window_secs: rule.secs, change_pct: change, from_price, price, multiple, quote_volume, sustained, retrace_pct, swing: is_swing };
+                if best.as_ref().map_or(true, |b| spike.multiple > b.multiple) {
+                    best = Some(spike);
+                }
             }
         }
         if let Some(s) = &best {
