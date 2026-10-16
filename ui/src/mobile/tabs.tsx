@@ -238,6 +238,22 @@ export function HistoryTab() {
   const [loading, setLoading] = useState(false);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  // "Clear" hides everything up to now on this phone (Binance keeps the real history, which cannot be deleted); "Show all" brings it back
+  const [clearedAt, setClearedAt] = useState(() => {
+    try {
+      return Number(window.localStorage.getItem('harvester.mobile.histClear.v1')) || 0;
+    } catch {
+      return 0;
+    }
+  });
+  const keepCleared = (ms: number) => {
+    setClearedAt(ms);
+    try {
+      window.localStorage.setItem('harvester.mobile.histClear.v1', String(ms));
+    } catch {
+      /* not remembered */
+    }
+  };
   const hasKeys = !!trading?.hasCredentials;
 
   // a pull-down refresh asks for everything again
@@ -285,7 +301,7 @@ export function HistoryTab() {
   const since = Date.now() - days * 86_400_000;
   const account = useApp((s) => s.account);
   const openSizes = useMemo(() => Object.fromEntries((account?.positions ?? []).map((p) => [p.symbol, p.amount])), [account]);
-  const trades = useMemo(() => closedTrades(Object.values(fills).flat(), openSizes).filter((t) => t.time >= since), [fills, since, openSizes]); // eslint-disable-line react-hooks/exhaustive-deps
+  const trades = useMemo(() => closedTrades(Object.values(fills).flat(), openSizes).filter((t) => t.time >= since && t.time > clearedAt), [fills, since, openSizes, clearedAt]); // eslint-disable-line react-hooks/exhaustive-deps
   const totals = historyTotals(trades);
   if (trading && !trading.hasCredentials) return <div className="m-empty">No Binance API keys are set on the server for this environment.</div>;
   const when = (ms: number) => {
@@ -301,7 +317,21 @@ export function HistoryTab() {
             {d === 1 ? '24h' : `${d} days`}
           </button>
         ))}
+        <button
+          className="m-chip m-chip-clear"
+          disabled={!trades.length}
+          onClick={() => {
+            void confirmDialog(`Clear the ${trades.length} trade${trades.length === 1 ? '' : 's'} shown? They are only hidden on this phone; Binance keeps the history.`, { confirmLabel: 'Clear', danger: true }).then((ok) => ok && keepCleared(Date.now()));
+          }}
+        >
+          Clear
+        </button>
       </div>
+      {clearedAt > 0 && (
+        <div className="m-muted m-pad">
+          Showing trades after {when(clearedAt)} · <a onClick={() => keepCleared(0)}>Show all</a>
+        </div>
+      )}
       <div className="m-hist-sum">
         <span>Trades <b>{totals.count}</b></span>
         <span>Net <b className={tone(totals.net)}>{signed(totals.net)}</b></span>

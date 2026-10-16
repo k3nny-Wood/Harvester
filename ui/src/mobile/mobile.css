@@ -2125,3 +2125,17 @@
   font-size: 11px;
   margin-bottom: 5px;
 }
+
+.m-app .m-chip-clear {
+  margin-left: auto;
+  color: var(--down);
+  border-color: var(--down);
+}
+.m-app .m-chip-clear:disabled {
+  opacity: 0.35;
+}
+.m-pad a {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
