@@ -2,11 +2,12 @@ import { ema, macd, rsi, sma } from '../analyst/indicators';
 import type { Kline } from '../types';
 
 /** The indicators the phone chart can show: volume and the moving averages sit on the price pane, the rest get a pane of their own under it. */
-export type IndKey = 'volume' | 'sma' | 'macd' | 'trix' | 'rsi' | 'obv' | 'cmf';
+export type IndKey = 'volume' | 'sma' | 'bb' | 'macd' | 'trix' | 'rsi' | 'obv' | 'cmf';
 
 export const IND_LIST: Array<{ key: IndKey; label: string; hint: string }> = [
   { key: 'volume', label: 'Volume', hint: 'Volume bars at the bottom of the price pane' },
   { key: 'sma', label: 'SMA', hint: 'Simple moving averages: 20 (gold) and 50 (blue)' },
+  { key: 'bb', label: 'BB', hint: 'Bollinger bands 20, 2' },
   { key: 'macd', label: 'MACD', hint: 'MACD 12 / 26 / 9' },
   { key: 'trix', label: 'TRIX', hint: 'TRIX 15 with a 9 period signal line' },
   { key: 'rsi', label: 'RSI', hint: 'Relative strength index 14' },
@@ -101,4 +102,23 @@ export function buildSmas(candles: Kline[]): Array<{ n: number; color: string; v
     { n: 20, color: '#f0b90b', values: sma(closes, 20) },
     { n: 50, color: '#4f8fdd', values: sma(closes, 50) },
   ];
+}
+
+/** Bollinger bands: the 20 period average and the bands 2 standard deviations (of the population) either side. */
+export function bollingerSeries(closes: number[], n = 20, k = 2): { mid: Series; upper: Series; lower: Series } {
+  const mid: Series = new Array(closes.length).fill(null);
+  const upper: Series = new Array(closes.length).fill(null);
+  const lower: Series = new Array(closes.length).fill(null);
+  for (let i = n - 1; i < closes.length; i++) {
+    let sum = 0;
+    for (let j = i - n + 1; j <= i; j++) sum += closes[j];
+    const m = sum / n;
+    let sq = 0;
+    for (let j = i - n + 1; j <= i; j++) sq += (closes[j] - m) ** 2;
+    const sd = Math.sqrt(sq / n);
+    mid[i] = m;
+    upper[i] = m + k * sd;
+    lower[i] = m - k * sd;
+  }
+  return { mid, upper, lower };
 }

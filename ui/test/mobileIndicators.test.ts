@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPanes, cmf, obv, trix } from '../src/mobile/indicators';
+import { bollingerSeries, buildPanes, cmf, obv, trix } from '../src/mobile/indicators';
 import type { Kline } from '../src/types';
 
 const k = (i: number, o: number, h: number, l: number, c: number, v = 100): Kline => ({ time: i * 60_000, open: o, high: h, low: l, close: c, volume: v });
@@ -26,5 +26,19 @@ describe('phone chart indicators', () => {
     const candles = Array.from({ length: 60 }, (_, i) => k(i, 1, 2, 1, 1 + (i % 5)));
     expect(buildPanes(candles, {}).length).toBe(0);
     expect(buildPanes(candles, { rsi: true, macd: true, volume: true, sma: true }).map((p) => p.key)).toEqual(['macd', 'rsi']);
+  });
+});
+
+describe('bollinger bands', () => {
+  it('collapse to the average on a flat market and widen with volatility', () => {
+    const flat = bollingerSeries(Array.from({ length: 30 }, () => 100));
+    expect(flat.mid[29]).toBe(100);
+    expect(flat.upper[29]).toBe(100);
+    expect(flat.lower[29]).toBe(100);
+    expect(flat.mid[18]).toBeNull();
+    // 20 closes alternating 99 / 101: average 100, deviation 1, bands 98..102
+    const alt = bollingerSeries(Array.from({ length: 20 }, (_, i) => (i % 2 ? 101 : 99)));
+    expect(alt.upper[19]).toBeCloseTo(102);
+    expect(alt.lower[19]).toBeCloseTo(98);
   });
 });

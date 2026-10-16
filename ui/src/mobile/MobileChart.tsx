@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Kline } from '../types';
 import { confirmDialog } from '../confirm';
-import { buildPanes, buildSmas, type IndKey } from './indicators';
+import { bollingerSeries, buildPanes, buildSmas, type IndKey } from './indicators';
 import { fibPrices, indexOfTime, hitDistance, loadDrawings, measureText, rayY, saveDrawings, spanOf, timeOfIndex, type Drawing, type DrawKind, type DrawPoint, type Px, type Tool } from './drawings';
 import { fmtPrice, MAX_VISIBLE, MIN_VISIBLE, priceRange, timeLabels, windowOf, zoomed, type ChartLine } from './chartMath';
 
@@ -110,6 +110,7 @@ export function MobileChart({ candles, lines, indicators = {}, marks = [], pendi
   const indKey = Object.entries(indicators).filter(([, v]) => v).map(([k]) => k).join(',');
   const allPanes = useMemo(() => buildPanes(candles, indicators), [candles, indKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const smas = useMemo(() => (indicators.sma ? buildSmas(candles) : []), [candles, indKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const bands = useMemo(() => (indicators.bb ? bollingerSeries(candles.map((c) => c.close)) : null), [candles, indKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const panes = allPanes.slice(0, Math.max(0, Math.floor((axisY * 0.55) / 34)));
   const subH = panes.length ? Math.min(96, Math.floor((axisY * 0.55) / panes.length)) : 0;
   const plotH = axisY - panes.length * subH; // the candles and lines use the price pane above the indicator panes
@@ -228,6 +229,48 @@ export function MobileChart({ candles, lines, indicators = {}, marks = [], pendi
         g.fill();
         g.stroke();
       }
+    }
+    // bollinger bands: a faint fill between the bands, the bands and the average
+    if (bands) {
+      const at = (series: Array<number | null>, i: number) => series[win.start + i];
+      g.fillStyle = 'rgba(79, 143, 221, 0.10)';
+      g.beginPath();
+      let started = false;
+      let lastI = -1;
+      for (let i = 0; i < shown.length; i++) {
+        const u = at(bands.upper, i);
+        if (u == null) continue;
+        if (!started) g.moveTo(i * step + step / 2, y(u));
+        else g.lineTo(i * step + step / 2, y(u));
+        started = true;
+        lastI = i;
+      }
+      for (let i = lastI; i >= 0; i--) {
+        const l = at(bands.lower, i);
+        if (l != null) g.lineTo(i * step + step / 2, y(l));
+      }
+      g.closePath();
+      g.fill();
+      for (const [series, color, dash] of [[bands.upper, '#4f8fdd', []], [bands.lower, '#4f8fdd', []], [bands.mid, '#8fb4e8', [4, 3]]] as Array<[Array<number | null>, string, number[]]>) {
+        g.strokeStyle = color;
+        g.lineWidth = 1.1;
+        g.setLineDash(dash);
+        g.beginPath();
+        let pen = false;
+        for (let i = 0; i < shown.length; i++) {
+          const v = at(series, i);
+          if (v == null) {
+            pen = false;
+            continue;
+          }
+          if (pen) g.lineTo(i * step + step / 2, y(v));
+          else g.moveTo(i * step + step / 2, y(v));
+          pen = true;
+        }
+        g.stroke();
+      }
+      g.setLineDash([]);
+      g.lineWidth = 1;
     }
     // moving averages
     for (const m of smas) {
@@ -540,7 +583,7 @@ export function MobileChart({ candles, lines, indicators = {}, marks = [], pendi
       g.stroke();
     }
     g.textAlign = 'left';
-  }, [candles, lines, marks, drawings, draft, selected, indKey, panes.length, subH, pendingKey, watermark?.symbol, watermark?.timeframe, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [candles, lines, marks, drawings, draft, selected, indKey, bands, panes.length, subH, pendingKey, watermark?.symbol, watermark?.timeframe, entryNote?.price, entryNote?.lines.join('|'), entryNote?.above, range, size, win.start, win.end, win.offset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doubleTap = (clientY: number) => {
     lastDouble.current = Date.now();
