@@ -28,6 +28,12 @@ impl Env {
             Env::Live => "https://fapi.binance.com",
         }
     }
+    /// The market-data streams (prices, klines, mark prices). Binance moved them to a `/market` path: on the real futures exchange the old
+    /// `/ws/...` URLs still connect but never deliver a message (the pump / dump watcher sat "silent" because of it); the testnet takes both.
+    pub fn ws_market(self) -> String {
+        format!("{}/market", self.ws_base())
+    }
+
     pub fn ws_base(self) -> &'static str {
         match self {
             Env::Testnet => "wss://stream.binancefuture.com",

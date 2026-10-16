@@ -49,7 +49,7 @@ pub fn start(trading: Arc<Trading>, marks: Marks) {
         let mut backoff = 2u64;
         loop {
             let env = trading.env();
-            let url = format!("{}/ws/!markPrice@arr@1s", env.ws_base());
+            let url = format!("{}/ws/!markPrice@arr@1s", env.ws_market());
             if let Ok((mut ws, _)) = tokio_tungstenite::connect_async(&url).await {
                 backoff = 2;
                 marks.write().unwrap().clear(); // the other environment's prices must not linger

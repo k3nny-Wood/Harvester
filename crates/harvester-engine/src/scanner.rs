@@ -461,7 +461,7 @@ async fn full_seed(app: &Events, market: &Arc<Market>, inner: &Arc<Mutex<Inner>>
 async fn live_session(app: &Events, market: &Arc<Market>, inner: &Arc<Mutex<Inner>>, symbols: &[String], timeframe: &str) -> Result<(), String> {
     let streams: Vec<String> = symbols.iter().map(|s| format!("{}@kline_{}", s.to_lowercase(), timeframe)).collect();
     let env: Env = market.env();
-    let url = format!("{}/stream?streams={}", env.ws_base(), streams.join("/"));
+    let url = format!("{}/stream?streams={}", env.ws_market(), streams.join("/"));
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.map_err(|e| format!("websocket: {e}"))?;
     // The kline stream of dozens of symbols never goes quiet. If it does, the connection is dead without having said so (sleep, a network change):
     // reconnect, which also reloads the candles.

@@ -53,7 +53,7 @@ impl Streams {
     /// Start (or restart) the stream for a symbol / interval.
     pub fn subscribe(&self, app: Events, env: Env, symbol: &str, interval: &str) {
         let key = Self::key(symbol, interval);
-        let url = format!("{}/ws/{}@kline_{}", env.ws_base(), symbol.to_lowercase(), interval);
+        let url = format!("{}/ws/{}@kline_{}", env.ws_market(), symbol.to_lowercase(), interval);
         let task = crate::rt::spawn(async move {
             let mut backoff = 1u64;
             loop {

@@ -51,7 +51,7 @@ pub fn start(app: Events, market: Arc<Market>, injector: Injector, detector: Sha
     });
 
     crate::rt::spawn(async move {
-        let url = format!("{}/ws/!ticker@arr", Env::Live.ws_base());
+        let url = format!("{}/ws/!ticker@arr", Env::Live.ws_market());
         let mut backoff = 2u64;
         loop {
             match tokio_tungstenite::connect_async(&url).await {
