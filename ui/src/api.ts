@@ -44,6 +44,8 @@ export const api = {
   heldMove: (id: string, price: number) => invoke<void>('held_move', { id, price }),
   cancelOrder: (symbol: string, orderId: number, conditional = false) => invoke<void>('cancel_order', { symbol, orderId, conditional }),
   orderHistory: (symbol: string, limit = 100) => invoke<OrderRecord[]>('order_history', { symbol, limit }),
+  /** the symbols that realised profit or loss in the last `days` days, newest first: where the closed trades are */
+  incomeSymbols: (days = 30) => invoke<Array<{ symbol: string; lastTime: number; pnl: number; count: number }>>('income_symbols', { days }),
   tradeHistory: (symbol: string, limit = 200) => invoke<TradeRecord[]>('trade_history', { symbol, limit }),
   modifyOrder: (symbol: string, orderId: number, conditional: boolean, price?: number, stopPrice?: number, quantity?: number) =>
     invoke<OrderAck>('modify_order', { symbol, orderId, conditional, price: price ?? null, stopPrice: stopPrice ?? null, quantity: quantity ?? null }),

@@ -2074,3 +2074,32 @@
     transform: rotate(360deg);
   }
 }
+
+/* history */
+.m-hist-sum {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.m-hist-sum b {
+  color: var(--text);
+  font-weight: 600;
+}
+.m-hist-sum b.up {
+  color: var(--up);
+}
+.m-hist-sum b.down {
+  color: var(--down);
+}
+.m-nav button {
+  min-width: 0;
+}
+
+.m-pos .m-sig-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}

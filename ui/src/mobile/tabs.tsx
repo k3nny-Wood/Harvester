@@ -10,6 +10,7 @@ import { fmtPrice, type ChartLine } from './chartMath';
 import { ExitSheet } from './ExitSheet';
 import { MobileChart, type FillMark, type PendingLine } from './MobileChart';
 import { IND_LIST, type IndKey } from './indicators';
+import { closedTrades, historyTotals } from './history';
 import { fillMarkers } from '../chart/ChartFills';
 import { TIMEFRAMES, useMobile } from './store';
 import { useFloater } from './floaterStore';
@@ -215,6 +216,146 @@ export function OrdersTab() {
           ))}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- history
+
+const HISTORY_DAYS = [1, 7, 30] as const;
+/** How many symbols' fills are fetched at a time (each is one request to Binance). */
+const HISTORY_BATCH = 8;
+
+/** The closed trades of the account: every order that realised profit or loss, grouped from the fills of the symbols that did. */
+export function HistoryTab() {
+  const trading = useApp((s) => s.trading);
+  const toast = useApp((s) => s.toast);
+  const openChart = useMobile((s) => s.openChart);
+  const [days, setDays] = useState<(typeof HISTORY_DAYS)[number]>(7);
+  const [symbols, setSymbols] = useState<string[]>([]);
+  const [fills, setFills] = useState<Record<string, import('../types').TradeRecord[]>>({});
+  const [loading, setLoading] = useState(false);
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  const hasKeys = !!trading?.hasCredentials;
+
+  // a pull-down refresh asks for everything again
+  useEffect(() => {
+    const again = () => setTick((t) => t + 1);
+    window.addEventListener('harvester-refresh', again);
+    return () => window.removeEventListener('harvester-refresh', again);
+  }, []);
+
+  const loadSymbols = async (n: number, list: string[]) => {
+    const next = list.slice(0, n);
+    const got: Record<string, import('../types').TradeRecord[]> = {};
+    for (const sym of next) {
+      try {
+        got[sym] = await api.tradeHistory(sym, 300);
+      } catch (e) {
+        toast(`${sym}: ${e}`, 'warn');
+      }
+    }
+    setFills((f) => ({ ...f, ...got }));
+  };
+
+  useEffect(() => {
+    if (!hasKeys) return;
+    let alive = true;
+    setLoading(true);
+    api
+      .incomeSymbols(days)
+      .then(async (rows) => {
+        if (!alive) return;
+        const list = rows.map((r) => r.symbol);
+        setSymbols(list);
+        setFills({});
+        await loadSymbols(HISTORY_BATCH, list);
+      })
+      .catch((e) => toast(`History: ${e}`, 'warn'))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days, hasKeys, tick]);
+
+  const loaded = Object.keys(fills).length;
+  const since = Date.now() - days * 86_400_000;
+  const trades = useMemo(() => closedTrades(Object.values(fills).flat()).filter((t) => t.time >= since), [fills, since]); // eslint-disable-line react-hooks/exhaustive-deps
+  const totals = historyTotals(trades);
+  if (trading && !trading.hasCredentials) return <div className="m-empty">No Binance API keys are set on the server for this environment.</div>;
+  const when = (ms: number) => {
+    const d = new Date(ms);
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
+  };
+  return (
+    <div className="m-list">
+      <div className="m-chips">
+        {HISTORY_DAYS.map((d) => (
+          <button key={d} className={`m-chip on-ind${days === d ? ' on' : ''}`} onClick={() => setDays(d)}>
+            {d === 1 ? '24h' : `${d} days`}
+          </button>
+        ))}
+      </div>
+      <div className="m-hist-sum">
+        <span>Trades <b>{totals.count}</b></span>
+        <span>Net <b className={tone(totals.net)}>{signed(totals.net)}</b></span>
+        <span>Win <b>{totals.count ? Math.round((totals.wins / totals.count) * 100) : 0}%</b></span>
+        <span>Fees <b>${totals.fees.toFixed(2)}</b></span>
+      </div>
+      {!trades.length && <div className="m-empty">{loading ? 'Loading…' : 'No closed trades in this period.'}</div>}
+      {trades.map((t) => {
+        const isOpen = openKey === t.key;
+        return (
+          <div key={t.key} className={`m-card m-pos ${t.net > 0 ? 'win' : t.net < 0 ? 'loss' : 'flat'}`} onClick={() => setOpenKey(isOpen ? null : t.key)}>
+            <div className="m-row m-pos-head">
+              <button
+                className="m-pos-chart"
+                aria-label={`Open the ${t.symbol} chart`}
+                title="Open the chart"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openChart(t.symbol);
+                }}
+              >
+                ▥
+              </button>
+              <b className="m-coin">{coin(t.symbol)}</b>
+              <span className={`m-badge ${t.long ? 'up' : 'down'}`}>{t.long ? 'LONG' : 'SHORT'}</span>
+              <span className="m-muted m-sig-meta">{when(t.time)}</span>
+              <span className={`m-pnl ${tone(t.net)}`}>
+                {signed(t.net)} <small>({t.pct >= 0 ? '+' : ''}{t.pct.toFixed(1)}%)</small>
+              </span>
+              <span className="m-chev">{isOpen ? '▴' : '▾'}</span>
+            </div>
+            {isOpen && (
+              <div className="m-grid">
+                <span>Entry <b>{fmtPrice(t.entry)}</b></span>
+                <span>Exit <b>{fmtPrice(t.exit)}</b></span>
+                <span>Tokens <b>{t.qty}</b></span>
+                <span>Value <b>${usd(t.notional)}</b></span>
+                <span>Gross <b className={tone(t.pnl)}>{signed(t.pnl)}</b></span>
+                <span>Fees <b>${t.fees.toFixed(2)}</b></span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {loaded < symbols.length && (
+        <div className="m-actions">
+          <button
+            disabled={loading}
+            onClick={() => {
+              setLoading(true);
+              void loadSymbols(loaded + HISTORY_BATCH, symbols).finally(() => setLoading(false));
+            }}
+          >
+            {loading ? 'Loading…' : `Load older (${symbols.length - loaded} more symbols)`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

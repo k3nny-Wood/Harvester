@@ -185,6 +185,7 @@ impl Core {
             "resize_exits" => out(self.trading.resize_exits(&arg::<String>(a, "symbol")?, arg(a, "expected")?).await?),
             "order_history" => out(self.trading.order_history(&arg::<String>(a, "symbol")?, arg::<Option<u32>>(a, "limit")?.unwrap_or(100)).await?),
             "trade_history" => out(self.trading.trade_history(&arg::<String>(a, "symbol")?, arg::<Option<u32>>(a, "limit")?.unwrap_or(200)).await?),
+            "income_symbols" => out(self.trading.income_symbols(arg::<Option<u32>>(a, "days")?.unwrap_or(30)).await?),
             "leverage_brackets" => out(self.trading.leverage_brackets(&arg::<String>(a, "symbol")?).await?),
             "symbol_leverage" => out(self.trading.leverage(&arg::<String>(a, "symbol")?).await?),
             "cancel_all_orders" => out(self.trading.cancel_all(&arg::<String>(a, "symbol")?).await?),

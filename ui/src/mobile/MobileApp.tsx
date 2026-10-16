@@ -12,12 +12,13 @@ import { useDragScroll } from './dragScroll';
 import { PULL_TRIGGER, usePullRefresh } from './pullRefresh';
 import { useFloater } from './floaterStore';
 import { useMobile, type Tab } from './store';
-import { ChartTab, OrdersTab, PositionsTab, ScannerTab } from './tabs';
+import { ChartTab, HistoryTab, OrdersTab, PositionsTab, ScannerTab } from './tabs';
 
 const TABS: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'positions', label: 'Positions', icon: '◆' },
   { id: 'chart', label: 'Chart', icon: '▥' },
   { id: 'orders', label: 'Orders', icon: '≡' },
+  { id: 'history', label: 'History', icon: '⟲' },
   { id: 'scanner', label: 'Scanner', icon: '◎' },
 ];
 
@@ -46,6 +47,7 @@ export function MobileApp() {
     [dragScroll],
   );
   const pull = usePullRefresh(mainEl, tab !== 'chart', async () => {
+    window.dispatchEvent(new Event('harvester-refresh'));
     await Promise.all([refreshTrading(), api.listSymbols().then(setSymbols)]);
   });
 
@@ -96,6 +98,7 @@ export function MobileApp() {
         {tab === 'positions' && <PositionsTab />}
         {tab === 'chart' && <ChartTab />}
         {tab === 'orders' && <OrdersTab />}
+        {tab === 'history' && <HistoryTab />}
         {tab === 'scanner' && <ScannerTab />}
       </main>
       <nav className="m-nav">

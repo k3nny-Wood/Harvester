@@ -147,6 +147,35 @@ pub struct OrderRecord {
     pub conditional: bool,
 }
 
+/// A symbol that realised profit or loss recently: when the last one was and how much it came to.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct IncomeSymbol {
+    pub symbol: String,
+    pub last_time: u64,
+    pub pnl: f64,
+    pub count: u32,
+}
+
+/// The symbols of an income answer (`REALIZED_PNL` rows), newest first.
+pub fn parse_income_symbols(v: &Value) -> Vec<IncomeSymbol> {
+    let mut by: std::collections::HashMap<String, IncomeSymbol> = std::collections::HashMap::new();
+    for r in v.as_array().map(|a| a.as_slice()).unwrap_or(&[]) {
+        let symbol = text(&r["symbol"]);
+        if symbol.is_empty() {
+            continue;
+        }
+        let time = r["time"].as_u64().unwrap_or(0);
+        let e = by.entry(symbol.clone()).or_insert(IncomeSymbol { symbol, last_time: 0, pnl: 0.0, count: 0 });
+        e.last_time = e.last_time.max(time);
+        e.pnl += num(&r["income"]);
+        e.count += 1;
+    }
+    let mut out: Vec<IncomeSymbol> = by.into_values().collect();
+    out.sort_by(|a, b| b.last_time.cmp(&a.last_time).then(a.symbol.cmp(&b.symbol)));
+    out
+}
+
 /// One fill from the account's trade history.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -720,6 +749,14 @@ impl Trading {
         Ok(out)
     }
 
+    /// The symbols that realised profit or loss in the last `days` days (newest first): where the closed trades are.
+    pub async fn income_symbols(&self, days: u32) -> Result<Vec<IncomeSymbol>, String> {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        let start = now.saturating_sub(days.clamp(1, 90) as u64 * 86_400_000);
+        let v = self.signed(reqwest::Method::GET, "/fapi/v1/income", vec![("incomeType".to_string(), "REALIZED_PNL".to_string()), ("startTime".to_string(), start.to_string()), ("limit".to_string(), "1000".to_string())]).await?;
+        Ok(parse_income_symbols(&v))
+    }
+
     /// The maintenance-margin brackets of a symbol (for estimating a liquidation price).
     pub async fn leverage_brackets(&self, symbol: &str) -> Result<Vec<LeverageBracket>, String> {
         let v = self.signed(reqwest::Method::GET, "/fapi/v1/leverageBracket", vec![("symbol".to_string(), symbol.to_string())]).await?;
@@ -1127,6 +1164,21 @@ mod tests {
         assert_eq!(order_type_from("STOP_MARKET"), Some(OrderType::StopMarket));
         assert_eq!(order_type_from("TAKE_PROFIT"), Some(OrderType::TakeProfit));
         assert_eq!(order_type_from("TRAILING_STOP_MARKET"), None);
+    }
+
+    #[test]
+    fn groups_income_rows_by_symbol_newest_first() {
+        let v = json!([
+            {"symbol": "ETHUSDT", "incomeType": "REALIZED_PNL", "income": "2.5", "time": 1000u64},
+            {"symbol": "BTCUSDT", "incomeType": "REALIZED_PNL", "income": "-1.0", "time": 3000u64},
+            {"symbol": "ETHUSDT", "incomeType": "REALIZED_PNL", "income": "1.5", "time": 2000u64},
+            {"symbol": "", "income": "9", "time": 5000u64}
+        ]);
+        let s = parse_income_symbols(&v);
+        assert_eq!(s.len(), 2);
+        assert_eq!((s[0].symbol.as_str(), s[0].last_time, s[0].count), ("BTCUSDT", 3000, 1));
+        assert_eq!((s[1].symbol.as_str(), s[1].last_time, s[1].count, s[1].pnl), ("ETHUSDT", 2000, 2, 4.0));
+        assert!(parse_income_symbols(&json!({})).is_empty());
     }
 
     #[test]

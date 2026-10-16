@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type Tab = 'positions' | 'chart' | 'orders' | 'scanner';
+export type Tab = 'positions' | 'chart' | 'orders' | 'history' | 'scanner';
 export const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
 
 const KEY = 'harvester.mobile.v1';
@@ -16,7 +16,7 @@ function load(): Remembered {
     const v = JSON.parse(window.localStorage.getItem(KEY) ?? 'null') as Partial<Remembered> | null;
     if (v) {
       return {
-        tab: (['positions', 'chart', 'orders', 'scanner'] as string[]).includes(v.tab ?? '') ? (v.tab as Tab) : 'positions',
+        tab: (['positions', 'chart', 'orders', 'history', 'scanner'] as string[]).includes(v.tab ?? '') ? (v.tab as Tab) : 'positions',
         symbol: typeof v.symbol === 'string' && v.symbol ? v.symbol : 'BTCUSDT',
         timeframe: (TIMEFRAMES as readonly string[]).includes(v.timeframe ?? '') ? (v.timeframe as string) : '15m',
       };
