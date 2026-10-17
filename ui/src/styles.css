@@ -2307,3 +2307,40 @@ button.mini {
 .sig-insight .ins.up { color: var(--up); }
 .sig-insight .ins.down { color: var(--down); }
 .sig-insight .ins.warn { color: var(--warn); }
+
+.crack-bar { margin-top: 4px; }
+.crack-track {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel-2, #1a2230);
+  overflow: hidden;
+}
+.crack-track i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--warn, #e0a33d);
+  border-radius: 3px;
+}
+.crack-bar.recovered .crack-track i { background: var(--up, #2e9b6f); }
+.crack-bar.expired .crack-track i { background: var(--muted, #8b98a5); }
+.crack-track u {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.25);
+}
+.crack-nums {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.crack-nums b { color: var(--text); font-weight: 600; }
+.crack-nums b.down, .crack-nums .down { color: var(--down); }
+.crack-nums b.up, .crack-nums .up { color: var(--up); }

@@ -7,6 +7,7 @@ pub mod held;
 pub mod lab;
 pub mod marketdata;
 pub mod ladder;
+pub mod cracks;
 pub mod movers;
 pub mod reversal;
 pub mod alerts;

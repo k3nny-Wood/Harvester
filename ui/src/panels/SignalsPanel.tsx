@@ -5,6 +5,7 @@ import { useScannerParams } from '../scannerParams';
 import { api } from '../api';
 import { WithBasePreview } from '../components/BasePreview';
 import { insightBadges } from '../insight';
+import { CrackBar } from '../components/CrackBar';
 import { Thumb } from '../components/Thumb';
 import { openChart } from '../dock';
 import { TIMEFRAMES } from '../intervals';
@@ -264,6 +265,7 @@ export function SignalsPanel() {
 }
 
 function SignalCard({ s, now }: { s: Signal; now: number }) {
+  const tracked = useApp((st) => st.cracks.find((c) => c.id === s.id));
   const open = () => openChart(s.symbol, s.timeframe);
   return (
     <div className={`sig-card ${s.kind}`}>
@@ -302,6 +304,7 @@ function SignalCard({ s, now }: { s: Signal; now: number }) {
             </span>
           )}
         </div>
+        {tracked && <CrackBar c={tracked} />}
         {insightBadges(s).length > 0 && (
           <div className="sig-insight">
             {insightBadges(s).map((b) => (

@@ -81,6 +81,31 @@ export interface LadderPreview {
   averageEntry: number;
 }
 
+/** A cracked base the scanner follows until the price is back at it. */
+export interface CrackView {
+  id: string;
+  symbol: string;
+  timeframe: string;
+  base: number;
+  crackLevel: number;
+  /** the open time of the candle that cracked the base (ms) */
+  crackedAt: number;
+  /** the lowest price since the crack, and when */
+  low: number;
+  lowAt: number;
+  price: number;
+  updatedAt: number;
+  status: 'active' | 'recovered' | 'expired';
+  endedAt: number | null;
+  score: number;
+  /** where the price is relative to the base, % (negative = below) */
+  belowBasePct: number;
+  /** the deepest point relative to the base, % (negative = below) */
+  depthPct: number;
+  /** how much of the fall has been won back, 0..100 */
+  recoveryPct: number;
+}
+
 export type SignalKind = 'crack' | 'near' | 'drop' | 'pump' | 'dump';
 
 export interface ScoreParts {

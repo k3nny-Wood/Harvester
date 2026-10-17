@@ -1,5 +1,6 @@
 import { hasBackend, inTauri, invoke, listen, type Unlisten } from './transport';
-import type { Derivatives, AiEntry, AiModel, AiTrack, Delisting, NewsResult, SignalParams, LeverageBracket, Account, ArmedBracket, MoverParams, HeldEvent, HeldOrder, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
+import type {
+  CrackView, Derivatives, AiEntry, AiModel, AiTrack, Delisting, NewsResult, SignalParams, LeverageBracket, Account, ArmedBracket, MoverParams, HeldEvent, HeldOrder, BaseZone, SmcZone, LabConfig, LabProgress, LabReport, Sources, Env, LeverageInfo, OrderRecord, TradeRecord, OpenOrder, OrderAck, OrderRequest, TradingStatus, Kline, KlineEvent, LadderPreview, LadderSpec, ScannerConfig, ScannerStatus, Signal, SymbolFilters, SymbolQuote } from './types';
 
 export { hasBackend, inTauri };
 
@@ -13,6 +14,8 @@ export const api = {
   subscribeKlines: (symbol: string, interval: string) => invoke<void>('subscribe_klines', { symbol, interval }),
   unsubscribeKlines: (symbol: string, interval: string) => invoke<void>('unsubscribe_klines', { symbol, interval }),
   scannerSignals: () => invoke<Signal[]>('scanner_signals'),
+  /** the cracked bases being followed: how far below the base, how deep, how much is won back */
+  scannerCracks: () => invoke<CrackView[]>('scanner_cracks'),
   scannerStatus: () => invoke<ScannerStatus>('scanner_status'),
   scannerConfig: () => invoke<ScannerConfig>('scanner_config'),
   scannerSources: (sources: Sources) => invoke<void>('scanner_sources', { sources }),
@@ -71,6 +74,14 @@ export function onKline(handler: (e: KlineEvent) => void): Promise<Unlisten> {
 
 export function onSignals(handler: (s: Signal[]) => void): Promise<Unlisten> {
   return listen<Signal[]>('signals', handler);
+}
+
+export function onCracks(handler: (c: CrackView[]) => void): Promise<Unlisten> {
+  return listen<CrackView[]>('cracks', handler);
+}
+
+export function onCrackProgress(handler: (p: { id: string; symbol: string; level: number; recoveryPct: number; depthPct: number }) => void): Promise<Unlisten> {
+  return listen('crack-progress', handler);
 }
 
 export function onSignalNew(handler: (s: Signal) => void): Promise<Unlisten> {

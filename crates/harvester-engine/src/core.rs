@@ -152,6 +152,7 @@ impl Core {
             // ---- scanner
             "scanner_signals" => out(self.scanner.signals()),
             "scanner_status" => out(self.scanner.status()),
+            "scanner_cracks" => out(self.scanner.cracks()),
             "scanner_config" => out(self.scanner.config()),
             "scanner_sources" => {
                 self.scanner.set_sources(&self.events, arg::<Sources>(a, "sources")?);

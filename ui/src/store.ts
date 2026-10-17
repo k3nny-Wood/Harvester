@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Account, Env, HeldOrder, OpenOrder, OrderKind, ScannerConfig, ScannerStatus, Side, Signal, SymbolQuote, TradingStatus } from './types';
+import type { Account, Env, HeldOrder, OpenOrder, OrderKind, ScannerConfig, ScannerStatus, Side, Signal, SymbolQuote, TradingStatus, CrackView } from './types';
 
 /** App-wide state. Everything that belongs to one chart tab lives in `chartStore.ts` instead. */
 /** The order-entry form. Shared so the Orders panel, the chart's right-click menu and the ladder card agree. */
@@ -24,6 +24,8 @@ interface AppState {
   /** dockview panel id of the chart tab that has focus */
   activeChartId: string;
   signals: Signal[];
+  /** the cracked bases being followed */
+  cracks: CrackView[];
   scanner: ScannerStatus | null;
   scannerConfig: ScannerConfig | null;
   trading: TradingStatus | null;
@@ -45,6 +47,7 @@ interface AppState {
   setSymbols: (s: SymbolQuote[]) => void;
   setActiveChart: (id: string) => void;
   setSignals: (s: Signal[]) => void;
+  setCracks: (c: CrackView[]) => void;
   setScanner: (s: ScannerStatus) => void;
   setScannerConfig: (c: ScannerConfig) => void;
   toast: (text: string, tone?: 'info' | 'signal' | 'warn') => void;
@@ -58,6 +61,7 @@ export const useApp = create<AppState>((set) => ({
   symbols: [],
   activeChartId: '',
   signals: [],
+  cracks: [],
   scanner: null,
   scannerConfig: null,
   trading: null,
@@ -77,6 +81,7 @@ export const useApp = create<AppState>((set) => ({
   setSymbols: (symbols) => set({ symbols }),
   setActiveChart: (activeChartId) => set({ activeChartId }),
   setSignals: (signals) => set({ signals }),
+  setCracks: (cracks) => set({ cracks }),
   setScanner: (scanner) => set({ scanner }),
   setScannerConfig: (scannerConfig) => set({ scannerConfig }),
   toast: (text, tone = 'info') => {

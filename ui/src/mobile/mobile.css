@@ -2161,3 +2161,8 @@
   height: 26px;
   accent-color: var(--accent);
 }
+
+/* the cracked-base progress bar inside the phone cards */
+.m-card .crack-nums {
+  font-size: 11px;
+}

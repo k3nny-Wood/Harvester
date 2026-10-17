@@ -12,6 +12,7 @@ import { MobileChart, type FillMark, type PendingLine } from './MobileChart';
 import { IND_LIST, type IndKey } from './indicators';
 import { closedTrades, historyTotals } from './history';
 import { insightBadges } from '../insight';
+import { CrackBar } from '../components/CrackBar';
 import { fillMarkers } from '../chart/ChartFills';
 import { TIMEFRAMES, useMobile } from './store';
 import { useFloater } from './floaterStore';
@@ -418,6 +419,11 @@ export function ScannerTab() {
   const openChart = useMobile((s) => s.openChart);
   const [kinds, setKinds] = useState(loadScanKinds);
   const [openId, setOpenId] = useState<string | null>(null);
+  // the cracked bases being followed (a tab of their own, and the numbers on the crack entries)
+  const cracks = useApp((s) => s.cracks);
+  const trackedBy = useMemo(() => new Map(cracks.map((c) => [c.id, c])), [cracks]);
+  const [tracking, setTracking] = useState(false);
+  const activeCracks = cracks.filter((c) => c.status === 'active').length;
   // the thumbnail fills the card (the screen less the list's and the card's padding)
   const thumbW = Math.max(200, Math.min(window.innerWidth, 560) - 60);
   const toggle = (k: string) =>
@@ -464,6 +470,9 @@ export function ScannerTab() {
             {SCAN_LABEL[k]} {counts[k] ?? 0}
           </button>
         ))}
+        <button className={`m-chip on-ind${tracking ? ' on' : ''}`} onClick={() => setTracking((v) => !v)} title="Cracked bases being followed until the price is back at the base">
+          TRACKING {activeCracks}
+        </button>
         <button
           className={`m-chip on-ind${byReversal ? ' on' : ''}`}
           onClick={() => {
@@ -500,22 +509,38 @@ export function ScannerTab() {
           aria-label="Minimum score"
         />
       </label>
-      <div className="m-muted m-pad">{scanner ? `${scanner.phase} · ${scanner.seeded}/${scanner.symbols} symbols · ${rows.length} of ${signals.length} signals` : 'Scanner starting…'}</div>
-      {!rows.length && <div className="m-empty">No signals right now.</div>}
-      {rows.map((s) => {
+      <div className="m-muted m-pad">{tracking ? `${activeCracks} being followed · ${cracks.length - activeCracks} finished in the last 24 h` : scanner ? `${scanner.phase} · ${scanner.seeded}/${scanner.symbols} symbols · ${rows.length} of ${signals.length} signals` : 'Scanner starting…'}</div>
+      {tracking && (
+        <>
+          {!cracks.length && <div className="m-empty">No cracked bases are being followed yet. A base that cracks is followed here until the price is back at it (up to 7 days).</div>}
+          {cracks.map((c) => (
+            <div key={c.id} className="m-card m-sig" onClick={() => openChart(c.symbol)}>
+              <div className="m-row">
+                <b className="m-coin">{coin(c.symbol)}</b>
+                <span className={`m-badge ${c.status === 'recovered' ? 'up' : c.status === 'expired' ? '' : 'warn'}`}>{c.status === 'active' ? 'CRACKED' : c.status === 'recovered' ? 'BACK' : 'EXPIRED'}</span>
+                <span className="m-muted m-sig-meta">{c.timeframe} · cracked {ago(c.crackedAt)} ago · base {fmtPrice(c.base)}</span>
+              </div>
+              <CrackBar c={c} />
+            </div>
+          ))}
+        </>
+      )}
+      {!tracking && !rows.length && <div className="m-empty">No signals right now.</div>}
+      {!tracking && rows.map((s) => {
         const isOpen = openId === s.id;
         return (
           <div key={s.id} className="m-card m-sig" onClick={() => setOpenId(isOpen ? null : s.id)}>
             <div className="m-row">
               <b className="m-coin">{coin(s.symbol)}</b>
               <span className={`m-badge ${s.kind === 'pump' ? 'up' : s.kind === 'dump' || s.kind === 'drop' ? 'down' : 'warn'}`}>{s.kind.toUpperCase()}</span>
-              <span className="m-muted m-sig-meta">{s.distancePct != null ? `${s.distancePct.toFixed(2)}%` : `drop ${s.dropPct.toFixed(1)}%`} · {s.timeframe} · {ago(s.timeMs)}</span>
+              <span className="m-muted m-sig-meta">{trackedBy.get(s.id) ? `${trackedBy.get(s.id)!.belowBasePct.toFixed(1)}% vs base · ${Math.round(trackedBy.get(s.id)!.recoveryPct)}% back` : s.distancePct != null ? `${s.distancePct.toFixed(2)}%` : `drop ${s.dropPct.toFixed(1)}%`} · {s.timeframe} · {ago(s.timeMs)}</span>
               <span className="m-pnl">{s.score}</span>
               <span className="m-chev">{isOpen ? '▴' : '▾'}</span>
             </div>
             {isOpen && (
               <div className="m-sig-more" onClick={(e) => e.stopPropagation()}>
                 {s.thumb.length > 0 && <Thumb candles={s.thumb} base={s.base} crackLevel={s.crackLevel} width={thumbW} height={120} />}
+                {trackedBy.get(s.id) && <CrackBar c={trackedBy.get(s.id)!} />}
                 {insightBadges(s).length > 0 && (
                   <div className="m-ins-row">
                     {insightBadges(s).map((b) => (

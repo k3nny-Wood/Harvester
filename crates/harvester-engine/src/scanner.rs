@@ -2,6 +2,8 @@
 //! websocket for all of them, runs the signal engine whenever a symbol updates, and pushes results to the UI as Tauri events:
 //!   `signals`        the full current list (throttled)
 //!   `signal-new`     a newly triggered crack
+//!   `cracks`         the cracked bases being followed (how far below the base, how deep, how much is won back); `crack-progress` when one
+//!                    passes 50 / 80 / 100 % of the way back
 //!   `scanner-status` progress / health
 //! All numbers come from `harvester-core::signals`; this file only does I/O and bookkeeping.
 
@@ -9,6 +11,7 @@ use crate::market::{Env, Market};
 use crate::stream::parse_kline_value;
 use futures_util::{stream, StreamExt};
 use harvester_core::candle::Candle;
+use harvester_core::cracks::{CrackTracker, CrackView, TrackedCrack};
 use harvester_core::signals::{analyse, analyse_drop, Signal, SignalKind, SignalParams};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -103,6 +106,8 @@ struct Inner {
     announced: HashSet<String>,
     status: ScannerStatus,
     last_emit: Option<Instant>,
+    /// the cracked bases being followed; it outlives a restart of the scanner (and is kept on disk)
+    tracker: Arc<Mutex<CrackTracker>>,
 }
 
 /// See [`Scanner::reader`].
@@ -114,6 +119,11 @@ pub struct SignalReader {
 impl SignalReader {
     pub fn signals(&self) -> Vec<Signal> {
         sorted(&self.inner.lock().unwrap())
+    }
+
+    /// The cracked bases being followed.
+    pub fn cracks(&self) -> Vec<CrackView> {
+        cracks_of(&self.inner.lock().unwrap())
     }
 
     pub fn status(&self) -> ScannerStatus {
@@ -147,6 +157,31 @@ fn sorted(inner: &Inner) -> Vec<Signal> {
     v
 }
 
+fn cracks_of(inner: &Inner) -> Vec<CrackView> {
+    inner.tracker.lock().unwrap().views()
+}
+
+/// Where the followed cracks are kept between runs.
+pub fn cracks_path() -> std::path::PathBuf {
+    let base = std::env::var("APPDATA").ok().filter(|v| !v.is_empty()).map(std::path::PathBuf::from).or_else(|| std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf()))).unwrap_or_else(|| std::path::PathBuf::from("."));
+    base.join("Harvester").join("tracked_cracks.json")
+}
+
+fn save_cracks(tracker: &CrackTracker) {
+    let path = cracks_path();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(bytes) = serde_json::to_vec(tracker.items()) {
+        let _ = std::fs::write(path, bytes);
+    }
+}
+
+fn load_cracks() -> CrackTracker {
+    let items = std::fs::read(cracks_path()).ok().and_then(|b| serde_json::from_slice::<Vec<TrackedCrack>>(&b).ok()).unwrap_or_default();
+    CrackTracker::from_items(items)
+}
+
 fn refresh_counts(inner: &mut Inner) {
     let count = |k: SignalKind| inner.signals.values().filter(|s| s.kind == k).count();
     let (c, n, d) = (count(SignalKind::Crack), count(SignalKind::Near), count(SignalKind::Drop));
@@ -168,6 +203,7 @@ fn emit_signals(app: &Events, inner: &mut Inner, force: bool) {
     inner.last_emit = Some(Instant::now());
     refresh_counts(inner);
     let _ = app.emit("signals", sorted(inner));
+    let _ = app.emit("cracks", cracks_of(inner));
     emit_status(app, inner);
 }
 
@@ -185,6 +221,14 @@ fn analyse_symbol(app: &Events, inner: &mut Inner, symbol: &str) {
         inner.signals.retain(|_, s| !(s.symbol == symbol && s.kind == SignalKind::Near));
         // drops are checked on every live update by `analyse_drops`, not here
         for s in fresh.into_iter().filter(|s| s.kind != SignalKind::Drop) {
+            if s.kind == SignalKind::Crack {
+                if let (Some(base), Some(level)) = (s.base, s.crack_level) {
+                    let mut t = inner.tracker.lock().unwrap();
+                    if t.track(&s.id, &s.symbol, &s.timeframe, base, level, s.time_ms, s.price, s.score, now) {
+                        save_cracks(&t);
+                    }
+                }
+            }
             if s.kind == SignalKind::Crack && inner.announced.insert(s.id.clone()) {
                 let _ = app.emit("signal-new", s.clone());
             }
@@ -223,6 +267,22 @@ fn prune_signals(signals: &mut HashMap<String, Signal>, now: u64, candle_ms: u64
 }
 
 /// The drop check of one symbol: cheap (only the latest candles), so it runs on every live update. A drop that is no longer a drop disappears.
+/// The price of a symbol against the cracked bases being followed: the lowest price since the crack, how far back it is, and the reports at 50 / 80 / 100 %.
+fn follow_cracks(app: &Events, inner: &mut Inner, symbol: &str) {
+    let tf = inner.config.timeframe.clone();
+    let Some(buf) = inner.buffers.get(symbol) else { return };
+    let mut t = inner.tracker.lock().unwrap();
+    let before: Vec<_> = t.items().iter().filter(|c| c.symbol == symbol).map(|c| (c.status, c.reported)).collect();
+    let progress = t.update(symbol, &tf, buf, now_ms());
+    let after: Vec<_> = t.items().iter().filter(|c| c.symbol == symbol).map(|c| (c.status, c.reported)).collect();
+    for p in progress {
+        let _ = app.emit("crack-progress", serde_json::json!({ "id": p.id, "symbol": p.symbol, "level": p.level, "recoveryPct": p.recovery_pct, "depthPct": p.depth_pct }));
+    }
+    if before != after {
+        save_cracks(&t);
+    }
+}
+
 fn analyse_drops(inner: &mut Inner, symbol: &str) {
     if !inner.config.sources.qfl {
         return;
@@ -284,6 +344,11 @@ impl Scanner {
         self.inner.lock().unwrap().config.clone()
     }
 
+    /// The cracked bases being followed.
+    pub fn cracks(&self) -> Vec<CrackView> {
+        cracks_of(&self.inner.lock().unwrap())
+    }
+
     /// Turn the QFL source on or off without restarting: its entries leave the list at once.
     pub fn set_sources(&self, app: &Events, sources: Sources) {
         let mut g = self.inner.lock().unwrap();
@@ -337,7 +402,14 @@ impl Scanner {
             // a restart (another timeframe or universe) keeps the sudden moves already seen
             let spikes: Vec<(String, Signal)> = g.signals.iter().filter(|(_, s)| matches!(s.kind, SignalKind::Pump | SignalKind::Dump)).map(|(k, s)| (k.clone(), s.clone())).collect();
             let mover_state = g.status.mover_state.clone();
-            *g = Inner { config: config.clone(), ..Default::default() };
+            let tracker = g.tracker.clone();
+            {
+                let mut t = tracker.lock().unwrap();
+                if t.is_empty() {
+                    *t = load_cracks();
+                }
+            }
+            *g = Inner { config: config.clone(), tracker, ..Default::default() };
             for (k, s) in spikes {
                 g.announced.insert(k.clone());
                 g.signals.insert(k, s);
@@ -476,6 +548,12 @@ async fn live_session(app: &Events, market: &Arc<Market>, inner: &Arc<Mutex<Inne
                 }
                 // expired results leave the list even when nothing new arrives
                 let mut g = inner.lock().unwrap();
+                {
+                    let mut t = g.tracker.lock().unwrap();
+                    if t.housekeeping(now_ms()) {
+                        save_cracks(&t);
+                    }
+                }
                 let tf = timeframe_ms(&g.config.timeframe);
                 let before = g.signals.len();
                 prune_signals(&mut g.signals, now_ms(), tf);
@@ -502,6 +580,7 @@ async fn live_session(app: &Events, market: &Arc<Market>, inner: &Arc<Mutex<Inne
         g.status.last_update_ms = now_ms();
         // a drop is looked for on EVERY update: it is cheap and is exactly what must not wait
         analyse_drops(&mut g, &ev.symbol);
+        follow_cracks(app, &mut g, &ev.symbol);
         // the heavy QFL analysis only once the long history is there, and not on every tick
         let due = g.full.contains(&ev.symbol) && (ev.closed || g.last_run.get(&ev.symbol).map_or(true, |t| t.elapsed() >= Duration::from_secs(FULL_REFRESH_SECS)));
         if due {

@@ -510,6 +510,7 @@ pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader, 
         let mut state = AlertState::default();
         let (mut seen_signals, mut told_delistings): (HashSet<String>, HashSet<String>) = (HashSet::new(), HashSet::new());
         let mut seeded = false;
+        let (mut told_levels, mut cracks_seeded): (HashSet<String>, bool) = (HashSet::new(), false);
         let mut round: u32 = 0;
         // the account must fail for 2 minutes (6 looks) and the scanner for 5 (15 looks) before they are reported
         let (mut account_trouble, mut scanner_trouble) = (Trouble::new(6), Trouble::new(15));
@@ -571,6 +572,22 @@ pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader, 
                 seen_signals.extend(strong.into_iter().map(|s| s.id));
                 seeded = true;
             }
+            // a cracked base that has won back 50 / 80 / 100 % of its fall, told once per level; what has already happened at start-up is not announced
+            for c in watcher.signals.cracks() {
+                for level in harvester_core::cracks::LEVELS {
+                    if c.crack.reported < level || !told_levels.insert(format!("{}:{level}", c.crack.id)) || !cracks_seeded {
+                        continue;
+                    }
+                    let name = report::esc(c.crack.symbol.strip_suffix("USDT").unwrap_or(&c.crack.symbol));
+                    let text = if level >= 100 {
+                        format!("<b>Back at the base</b>: {name} is back at its base {} (it fell {:.1}% below it).", report::price(c.crack.base), -c.depth_pct)
+                    } else {
+                        format!("<b>Cracked base</b>: {name} is {level}% of the way back to its base {} (now {:.1}% below it, deepest {:.1}% below).", report::price(c.crack.base), -c.below_base_pct, -c.depth_pct)
+                    };
+                    watcher.say(&text).await;
+                }
+            }
+            cracks_seeded = true;
             tokio::time::sleep(WATCH_EVERY).await;
         }
     });
