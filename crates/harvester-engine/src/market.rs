@@ -67,6 +67,14 @@ pub struct Market {
     http: reqwest::Client,
     env: RwLock<Env>,
     filters: RwLock<HashMap<String, SymbolFilters>>,
+    /// while Binance is limiting this IP ("Way too many requests", HTTP 418 / 429): when it lets requests through again (epoch ms; 0 = no limit)
+    blocked_until: std::sync::atomic::AtomicU64,
+}
+
+/// The time (epoch ms) a "banned until 1792212599246" message names, if it has one.
+pub fn banned_until(msg: &str) -> Option<u64> {
+    let rest = msg.split("banned until ").nth(1)?;
+    rest.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok()
 }
 
 fn f(v: &Value) -> f64 {
@@ -94,7 +102,34 @@ pub fn parse_klines(rows: &Value) -> Vec<Kline> {
 impl Market {
     pub fn new(env: Env) -> Market {
         let http = reqwest::Client::builder().user_agent("harvester").timeout(std::time::Duration::from_secs(20)).build().expect("http client");
-        Market { http, env: RwLock::new(env), filters: RwLock::new(HashMap::new()) }
+        Market { http, env: RwLock::new(env), filters: RwLock::new(HashMap::new()), blocked_until: std::sync::atomic::AtomicU64::new(0) }
+    }
+
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    }
+
+    /// Err while Binance is limiting this IP: nothing is sent, because every request during a ban makes it longer.
+    pub fn check_limit(&self) -> Result<(), String> {
+        let until = self.blocked_until.load(std::sync::atomic::Ordering::Relaxed);
+        let now = Self::now_ms();
+        if until > now {
+            let secs = (until - now).div_ceil(1000);
+            let wait = if secs >= 120 { format!("{} min", secs.div_ceil(60)) } else { format!("{secs} s") };
+            return Err(format!("Binance is limiting this server's requests (too many); paused for another {wait}"));
+        }
+        Ok(())
+    }
+
+    /// Look at a failed answer: a rate-limit answer starts a pause (until the time Binance names, else the Retry-After header, else a minute).
+    pub fn note_failure(&self, http_status: u16, code: i64, msg: &str, retry_after_secs: Option<u64>) {
+        if !(code == -1003 || http_status == 418 || http_status == 429) {
+            return;
+        }
+        let now = Self::now_ms();
+        let until = banned_until(msg).or_else(|| retry_after_secs.map(|s| now + s * 1000)).unwrap_or(now + 60_000).clamp(now + 5_000, now + 3 * 86_400_000);
+        self.blocked_until.fetch_max(until, std::sync::atomic::Ordering::Relaxed);
+        crate::health::log(&format!("[binance] rate limit: pausing requests until {until} ({msg})"));
     }
 
     pub fn env(&self) -> Env {
@@ -107,11 +142,14 @@ impl Market {
     }
 
     async fn get(&self, path: &str, query: &[(&str, String)]) -> Result<Value, String> {
+        self.check_limit()?;
         let url = format!("{}{}", self.env().rest_base(), path);
         let resp = self.http.get(&url).query(query).send().await.map_err(|e| format!("{path}: {e}"))?;
         let status = resp.status();
+        let retry_after = resp.headers().get("retry-after").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<u64>().ok());
         let body: Value = resp.json().await.map_err(|e| format!("{path}: bad response: {e}"))?;
         if !status.is_success() {
+            self.note_failure(status.as_u16(), body["code"].as_i64().unwrap_or(0), body.get("msg").and_then(|m| m.as_str()).unwrap_or(""), retry_after);
             return Err(format!("{path}: HTTP {status}: {}", body.get("msg").and_then(|m| m.as_str()).unwrap_or("error")));
         }
         Ok(body)
@@ -240,5 +278,36 @@ mod tests {
         assert_eq!(Env::from_name("LIVE"), Env::Live);
         assert_eq!(Env::from_name("anything else"), Env::Testnet);
         assert!(Env::Testnet.rest_base().contains("testnet"));
+    }
+}
+
+#[cfg(test)]
+mod rate_limit_tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_ban_time_out_of_binances_message() {
+        let msg = "Way too many requests; IP(15.158.242.112) banned until 1792212599246. Please use the websocket for live updates to avoid bans.";
+        assert_eq!(banned_until(msg), Some(1_792_212_599_246));
+        assert_eq!(banned_until("Too many requests"), None);
+    }
+
+    #[test]
+    fn a_rate_limit_answer_pauses_every_request_until_the_ban_ends() {
+        let m = Market::new(Env::Testnet);
+        assert!(m.check_limit().is_ok());
+        m.note_failure(400, -1021, "timestamp", None); // some other error: no pause
+        assert!(m.check_limit().is_ok());
+        let in_a_minute = Market::now_ms() + 60_000;
+        m.note_failure(418, -1003, &format!("banned until {in_a_minute}"), None);
+        let e = m.check_limit().unwrap_err();
+        assert!(e.contains("limiting"), "{e}");
+        // a Retry-After alone starts a pause too, and a pause is never shortened by a later, shorter one
+        let m2 = Market::new(Env::Testnet);
+        m2.note_failure(429, 0, "", Some(30));
+        assert!(m2.check_limit().is_err());
+        let first = m2.blocked_until.load(std::sync::atomic::Ordering::Relaxed);
+        m2.note_failure(429, 0, "", Some(10));
+        assert_eq!(m2.blocked_until.load(std::sync::atomic::Ordering::Relaxed), first);
     }
 }

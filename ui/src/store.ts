@@ -55,6 +55,8 @@ interface AppState {
 }
 
 let toastId = 1;
+/** when each warning was last shown (see `toast`) */
+const recentToasts = new Map<string, number>();
 
 export const useApp = create<AppState>((set) => ({
   env: 'testnet',
@@ -85,6 +87,10 @@ export const useApp = create<AppState>((set) => ({
   setScanner: (scanner) => set({ scanner }),
   setScannerConfig: (scannerConfig) => set({ scannerConfig }),
   toast: (text, tone = 'info') => {
+    // a failure that repeats on every poll (a rate limit, a lost connection) is shown once, not every few seconds
+    const nowMs = Date.now();
+    if (tone === 'warn' && recentToasts.get(text) && nowMs - (recentToasts.get(text) as number) < 30_000) return;
+    if (tone === 'warn') recentToasts.set(text, nowMs);
     const id = toastId++;
     set((s) => ({ toasts: [...s.toasts.slice(-3), { id, text, tone }] }));
     window.setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 6000);

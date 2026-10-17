@@ -17,7 +17,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::Sha256;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -263,7 +264,25 @@ pub struct Trading {
     max_notional: f64,
     /// the safety cap is switched off for this session (never remembered: every start has it on)
     cap_off: AtomicBool,
+    /// the latest account and open orders for a couple of seconds, so several screens (and the Telegram watcher) polling together cost Binance one read
+    cache: Mutex<Cache>,
 }
+
+#[derive(Default)]
+struct Cache {
+    account: Option<(Instant, Account)>,
+    orders: Option<(Instant, Vec<OpenOrder>)>,
+}
+
+impl Cache {
+    fn clear(&mut self) {
+        self.account = None;
+        self.orders = None;
+    }
+}
+
+/// How long the cached account / orders are good for.
+const CACHE_TTL: Duration = Duration::from_millis(2500);
 
 fn env_var(name: &str) -> Option<String> {
     std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
@@ -593,7 +612,7 @@ pub fn algo_params(req: &OrderRequest, qty: Decimal, price: Option<Decimal>, tri
 impl Trading {
     pub fn new(market: Arc<Market>) -> Trading {
         let max_notional = env_var("MAX_ORDER_NOTIONAL").and_then(|v| v.parse().ok()).unwrap_or(5000.0);
-        Trading { market, offset_ms: AtomicI64::new(0), synced: AtomicBool::new(false), max_notional, cap_off: AtomicBool::new(false) }
+        Trading { market, offset_ms: AtomicI64::new(0), synced: AtomicBool::new(false), max_notional, cap_off: AtomicBool::new(false), cache: Mutex::new(Cache::default()) }
     }
 
     pub fn status(&self) -> TradingStatus {
@@ -678,6 +697,7 @@ impl Trading {
     /// One signed request. Retries once after a time re-sync when Binance answers -1021.
     async fn signed(&self, method: reqwest::Method, path: &str, params: Vec<(String, String)>) -> Result<Value, String> {
         let (key, secret) = credentials(self.market.env()).ok_or_else(|| self.status().message)?;
+        self.market.check_limit()?;
         if !self.synced.swap(true, Ordering::Relaxed) {
             let _ = self.sync_time().await; // first signed call: align with the exchange clock
         }
@@ -689,11 +709,17 @@ impl Trading {
             let url = format!("{}{}?{}&signature={}", self.market.env().rest_base(), path, payload, sign(&secret, &payload));
             let resp = self.market.http().request(method.clone(), &url).header("X-MBX-APIKEY", &key).send().await.map_err(|e| format!("{path}: {e}"))?;
             let status = resp.status();
+            let retry_after = resp.headers().get("retry-after").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<u64>().ok());
             let body: Value = resp.json().await.map_err(|e| format!("{path}: bad response: {e}"))?;
             if status.is_success() {
+                // anything that changes the account makes the cached account and order lists stale
+                if method != reqwest::Method::GET {
+                    self.cache.lock().unwrap().clear();
+                }
                 return Ok(body);
             }
             let code = body["code"].as_i64().unwrap_or(0);
+            self.market.note_failure(status.as_u16(), code, body["msg"].as_str().unwrap_or(""), retry_after);
             if code == -1021 && attempt == 0 {
                 self.sync_time().await?;
                 continue;
@@ -704,6 +730,17 @@ impl Trading {
     }
 
     pub async fn account(&self) -> Result<Account, String> {
+        if let Some((at, a)) = &self.cache.lock().unwrap().account {
+            if at.elapsed() < CACHE_TTL {
+                return Ok(a.clone());
+            }
+        }
+        let fresh = self.account_uncached().await?;
+        self.cache.lock().unwrap().account = Some((Instant::now(), fresh.clone()));
+        Ok(fresh)
+    }
+
+    async fn account_uncached(&self) -> Result<Account, String> {
         let acc = self.signed(reqwest::Method::GET, "/fapi/v2/account", vec![]).await?;
         let risk = self.signed(reqwest::Method::GET, "/fapi/v2/positionRisk", vec![]).await?;
         let mut positions = parse_positions(&risk);
@@ -721,6 +758,21 @@ impl Trading {
     }
 
     pub async fn open_orders(&self, symbol: Option<&str>) -> Result<Vec<OpenOrder>, String> {
+        if symbol.is_none() {
+            if let Some((at, o)) = &self.cache.lock().unwrap().orders {
+                if at.elapsed() < CACHE_TTL {
+                    return Ok(o.clone());
+                }
+            }
+        }
+        let fresh = self.open_orders_uncached(symbol).await?;
+        if symbol.is_none() {
+            self.cache.lock().unwrap().orders = Some((Instant::now(), fresh.clone()));
+        }
+        Ok(fresh)
+    }
+
+    async fn open_orders_uncached(&self, symbol: Option<&str>) -> Result<Vec<OpenOrder>, String> {
         let params = || symbol.map(|s| vec![("symbol".to_string(), s.to_string())]).unwrap_or_default();
         let mut out = parse_open_orders(&self.signed(reqwest::Method::GET, "/fapi/v1/openOrders", params()).await?);
         // stops and take-profits live in the algo-order service; a failure there must not hide the plain orders
