@@ -27,17 +27,31 @@ export function usePullRefresh(el: HTMLElement | null, enabled: boolean, refresh
       return;
     }
     let startY: number | null = null;
+    let startX = 0;
+    // the direction of a touch is decided once it has moved a little: a sideways swipe (the filter buttons that scroll across) is never a pull
+    let decided = false;
     let pulling = false;
     let current = 0;
     let busy = false;
     const start = (e: TouchEvent) => {
       startY = !busy && e.touches.length === 1 && el.scrollTop <= 0 ? e.touches[0].clientY : null;
+      startX = e.touches[0].clientX;
+      decided = false;
       pulling = false;
       current = 0;
     };
     const move = (e: TouchEvent) => {
       if (startY == null) return;
       const dy = e.touches[0].clientY - startY;
+      if (!decided) {
+        const dx = Math.abs(e.touches[0].clientX - startX);
+        if (Math.max(dx, Math.abs(dy)) < 8) return; // not moved enough to tell
+        decided = true;
+        if (dx >= Math.abs(dy)) {
+          startY = null; // sideways: leave the touch to whatever scrolls sideways
+          return;
+        }
+      }
       if (dy <= 0 || el.scrollTop > 0) {
         if (pulling) setDist(0);
         pulling = false;
