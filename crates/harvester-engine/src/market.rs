@@ -24,7 +24,9 @@ impl Env {
     }
     pub fn rest_base(self) -> &'static str {
         match self {
-            Env::Testnet => "https://testnet.binancefuture.com",
+            // Binance's Demo Trading host (the same demo account and keys as testnet.binancefuture.com). The old testnet host sits behind CloudFront, where the
+            // rate limit is counted for the shared CloudFront address: other users' traffic got this server banned for hours while it sent ~12 requests a minute.
+            Env::Testnet => "https://demo-fapi.binance.com",
             Env::Live => "https://fapi.binance.com",
         }
     }
@@ -36,7 +38,7 @@ impl Env {
 
     pub fn ws_base(self) -> &'static str {
         match self {
-            Env::Testnet => "wss://stream.binancefuture.com",
+            Env::Testnet => "wss://demo-fstream.binance.com",
             Env::Live => "wss://fstream.binance.com",
         }
     }
