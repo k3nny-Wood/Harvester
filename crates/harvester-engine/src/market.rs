@@ -375,7 +375,8 @@ mod tests {
     fn env_names() {
         assert_eq!(Env::from_name("LIVE"), Env::Live);
         assert_eq!(Env::from_name("anything else"), Env::Testnet);
-        assert!(Env::Testnet.rest_base().contains("testnet"));
+        assert!(Env::Testnet.rest_base().contains("demo-fapi"));
+        assert!(!Env::Testnet.rest_base().contains("fapi.binance.com/") && Env::Live.rest_base() == "https://fapi.binance.com");
     }
 }
 
