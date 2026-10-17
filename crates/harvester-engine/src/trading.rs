@@ -698,6 +698,7 @@ impl Trading {
     async fn signed(&self, method: reqwest::Method, path: &str, params: Vec<(String, String)>) -> Result<Value, String> {
         let (key, secret) = credentials(self.market.env()).ok_or_else(|| self.status().message)?;
         self.market.check_limit()?;
+        crate::health::count_request(if self.market.env() == Env::Live { "real signed" } else { "test signed" }, path);
         if !self.synced.swap(true, Ordering::Relaxed) {
             let _ = self.sync_time().await; // first signed call: align with the exchange clock
         }

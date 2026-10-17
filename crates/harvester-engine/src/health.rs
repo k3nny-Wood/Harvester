@@ -106,3 +106,22 @@ mod tests {
         assert_eq!(stamp(1_791_993_600_000 + 3_723_000), "2026-10-14 17:02:03");
     }
 }
+
+/// Counts of the REST requests made, by exchange and path, logged once a minute (so a flood can be traced to what causes it).
+static REQUESTS: std::sync::Mutex<Option<(u64, std::collections::HashMap<String, u32>)>> = std::sync::Mutex::new(None);
+
+pub fn count_request(host: &str, path: &str) {
+    let now = now_ms();
+    let mut g = REQUESTS.lock().unwrap();
+    let (since, counts) = g.get_or_insert_with(|| (now, std::collections::HashMap::new()));
+    *counts.entry(format!("{host} {path}")).or_insert(0) += 1;
+    if now.saturating_sub(*since) >= 60_000 {
+        let mut v: Vec<(String, u32)> = counts.drain().collect();
+        *since = now;
+        drop(g);
+        v.sort_by(|a, b| b.1.cmp(&a.1));
+        let total: u32 = v.iter().map(|x| x.1).sum();
+        let top = v.iter().take(6).map(|(k, n)| format!("{k} x{n}")).collect::<Vec<_>>().join(", ");
+        log(&format!("[binance] requests in the last minute: {total} ({top})"));
+    }
+}

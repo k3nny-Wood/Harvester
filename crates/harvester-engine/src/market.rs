@@ -68,7 +68,8 @@ pub struct Market {
     env: RwLock<Env>,
     filters: RwLock<HashMap<String, SymbolFilters>>,
     /// while Binance is limiting this IP ("Way too many requests", HTTP 418 / 429): when it lets requests through again (epoch ms; 0 = no limit)
-    blocked_until: std::sync::atomic::AtomicU64,
+    /// one for each exchange: a ban on the testnet host says nothing about the real one
+    blocked_until: [std::sync::atomic::AtomicU64; 2],
 }
 
 /// The time (epoch ms) a "banned until 1792212599246" message names, if it has one.
@@ -102,7 +103,7 @@ pub fn parse_klines(rows: &Value) -> Vec<Kline> {
 impl Market {
     pub fn new(env: Env) -> Market {
         let http = reqwest::Client::builder().user_agent("harvester").timeout(std::time::Duration::from_secs(20)).build().expect("http client");
-        Market { http, env: RwLock::new(env), filters: RwLock::new(HashMap::new()), blocked_until: std::sync::atomic::AtomicU64::new(0) }
+        Market { http, env: RwLock::new(env), filters: RwLock::new(HashMap::new()), blocked_until: [std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0)] }
     }
 
     fn now_ms() -> u64 {
@@ -111,7 +112,19 @@ impl Market {
 
     /// Err while Binance is limiting this IP: nothing is sent, because every request during a ban makes it longer.
     pub fn check_limit(&self) -> Result<(), String> {
-        let until = self.blocked_until.load(std::sync::atomic::Ordering::Relaxed);
+        self.check_limit_for(self.env())
+    }
+
+    fn slot(env: Env) -> usize {
+        if env == Env::Live {
+            1
+        } else {
+            0
+        }
+    }
+
+    pub fn check_limit_for(&self, env: Env) -> Result<(), String> {
+        let until = self.blocked_until[Self::slot(env)].load(std::sync::atomic::Ordering::Relaxed);
         let now = Self::now_ms();
         if until > now {
             let secs = (until - now).div_ceil(1000);
@@ -123,13 +136,17 @@ impl Market {
 
     /// Look at a failed answer: a rate-limit answer starts a pause (until the time Binance names, else the Retry-After header, else a minute).
     pub fn note_failure(&self, http_status: u16, code: i64, msg: &str, retry_after_secs: Option<u64>) {
+        self.note_failure_for(self.env(), http_status, code, msg, retry_after_secs)
+    }
+
+    pub fn note_failure_for(&self, env: Env, http_status: u16, code: i64, msg: &str, retry_after_secs: Option<u64>) {
         if !(code == -1003 || http_status == 418 || http_status == 429) {
             return;
         }
         let now = Self::now_ms();
         let until = banned_until(msg).or_else(|| retry_after_secs.map(|s| now + s * 1000)).unwrap_or(now + 60_000).clamp(now + 5_000, now + 3 * 86_400_000);
-        self.blocked_until.fetch_max(until, std::sync::atomic::Ordering::Relaxed);
-        crate::health::log(&format!("[binance] rate limit: pausing requests until {until} ({msg})"));
+        self.blocked_until[Self::slot(env)].fetch_max(until, std::sync::atomic::Ordering::Relaxed);
+        crate::health::log(&format!("[binance] rate limit on the {} exchange: pausing requests until {until} ({msg})", if env == Env::Live { "real" } else { "test" }));
     }
 
     pub fn env(&self) -> Env {
@@ -143,6 +160,7 @@ impl Market {
 
     async fn get(&self, path: &str, query: &[(&str, String)]) -> Result<Value, String> {
         self.check_limit()?;
+        crate::health::count_request(if self.env() == Env::Live { "real" } else { "test" }, path);
         let url = format!("{}{}", self.env().rest_base(), path);
         let resp = self.http.get(&url).query(query).send().await.map_err(|e| format!("{path}: {e}"))?;
         let status = resp.status();
@@ -210,11 +228,15 @@ impl Market {
     /// Public market data from the REAL exchange, whatever environment trading is on. Research (the Lab) needs real prices:
     /// the testnet's candles differ from the live market and its server is slow.
     async fn mainnet_get(&self, path: &str, query: &[(&str, String)]) -> Result<Value, String> {
+        self.check_limit_for(Env::Live)?;
+        crate::health::count_request("real", path);
         let url = format!("{}{}", Env::Live.rest_base(), path);
         let resp = self.http.get(&url).query(query).send().await.map_err(|e| format!("{path}: {e}"))?;
         let status = resp.status();
+        let retry_after = resp.headers().get("retry-after").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<u64>().ok());
         let body: Value = resp.json().await.map_err(|e| format!("{path}: bad response: {e}"))?;
         if !status.is_success() {
+            self.note_failure_for(Env::Live, status.as_u16(), body["code"].as_i64().unwrap_or(0), body.get("msg").and_then(|m| m.as_str()).unwrap_or(""), retry_after);
             return Err(format!("{path}: HTTP {status}: {}", body.get("msg").and_then(|m| m.as_str()).unwrap_or("error")));
         }
         Ok(body)
@@ -306,8 +328,10 @@ mod rate_limit_tests {
         let m2 = Market::new(Env::Testnet);
         m2.note_failure(429, 0, "", Some(30));
         assert!(m2.check_limit().is_err());
-        let first = m2.blocked_until.load(std::sync::atomic::Ordering::Relaxed);
+        let first = m2.blocked_until[0].load(std::sync::atomic::Ordering::Relaxed);
         m2.note_failure(429, 0, "", Some(10));
-        assert_eq!(m2.blocked_until.load(std::sync::atomic::Ordering::Relaxed), first);
+        assert_eq!(m2.blocked_until[0].load(std::sync::atomic::Ordering::Relaxed), first);
+        // the other exchange is not paused by it
+        assert!(m2.check_limit_for(Env::Live).is_ok());
     }
 }
