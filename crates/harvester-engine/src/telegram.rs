@@ -573,7 +573,9 @@ pub fn start(trading: Arc<Trading>, market: Arc<Market>, signals: SignalReader, 
                 seeded = true;
             }
             // a cracked base that has won back 50 / 80 / 100 % of its fall, told once per level; what has already happened at start-up is not announced
-            for c in watcher.signals.cracks() {
+            // off unless TELEGRAM_CRACK_ALERTS=1: with 150 coins watched there are dozens of cracked bases at a time, and each reaching 50 / 80 / 100 % is a message
+            let crack_alerts = std::env::var("TELEGRAM_CRACK_ALERTS").map(|v| v.trim() == "1").unwrap_or(false);
+            for c in watcher.signals.cracks().into_iter().filter(|_| crack_alerts) {
                 for level in harvester_core::cracks::LEVELS {
                     if c.crack.reported < level || !told_levels.insert(format!("{}:{level}", c.crack.id)) || !cracks_seeded {
                         continue;
