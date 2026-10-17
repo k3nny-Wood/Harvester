@@ -272,17 +272,21 @@ pub struct Trading {
 struct Cache {
     account: Option<(Instant, Account)>,
     orders: Option<(Instant, Vec<OpenOrder>)>,
+    trades: std::collections::HashMap<(String, u32), (Instant, Vec<TradeRecord>)>,
 }
 
 impl Cache {
     fn clear(&mut self) {
         self.account = None;
         self.orders = None;
+        self.trades.clear();
     }
 }
 
 /// How long the cached account / orders are good for.
-const CACHE_TTL: Duration = Duration::from_millis(2500);
+const CACHE_TTL: Duration = Duration::from_millis(4000);
+/// The fills of a symbol change rarely: the cached list is good for this long (and is dropped when this server places or changes an order).
+const TRADES_TTL: Duration = Duration::from_secs(10);
 
 fn env_var(name: &str) -> Option<String> {
     std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
@@ -698,6 +702,10 @@ impl Trading {
     async fn signed(&self, method: reqwest::Method, path: &str, params: Vec<(String, String)>) -> Result<Value, String> {
         let (key, secret) = credentials(self.market.env()).ok_or_else(|| self.status().message)?;
         self.market.check_limit()?;
+        {
+            let pairs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+            self.market.spend(self.market.env(), crate::market::request_weight(path, &pairs), method != reqwest::Method::GET)?;
+        }
         crate::health::count_request(if self.market.env() == Env::Live { "real signed" } else { "test signed" }, path);
         if !self.synced.swap(true, Ordering::Relaxed) {
             let _ = self.sync_time().await; // first signed call: align with the exchange clock
@@ -796,6 +804,18 @@ impl Trading {
 
     /// Fills of one symbol (newest first).
     pub async fn trade_history(&self, symbol: &str, limit: u32) -> Result<Vec<TradeRecord>, String> {
+        let key = (symbol.to_string(), limit);
+        if let Some((at, t)) = self.cache.lock().unwrap().trades.get(&key) {
+            if at.elapsed() < TRADES_TTL {
+                return Ok(t.clone());
+            }
+        }
+        let fresh = self.trade_history_uncached(symbol, limit).await?;
+        self.cache.lock().unwrap().trades.insert(key, (Instant::now(), fresh.clone()));
+        Ok(fresh)
+    }
+
+    async fn trade_history_uncached(&self, symbol: &str, limit: u32) -> Result<Vec<TradeRecord>, String> {
         let v = self.signed(reqwest::Method::GET, "/fapi/v1/userTrades", vec![("symbol".to_string(), symbol.to_string()), ("limit".to_string(), limit.clamp(1, 1000).to_string())]).await?;
         let mut out = parse_trade_history(&v);
         out.sort_by(|a, b| b.time.cmp(&a.time).then(b.id.cmp(&a.id)));

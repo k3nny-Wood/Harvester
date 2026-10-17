@@ -70,6 +70,45 @@ pub struct Market {
     /// while Binance is limiting this IP ("Way too many requests", HTTP 418 / 429): when it lets requests through again (epoch ms; 0 = no limit)
     /// one for each exchange: a ban on the testnet host says nothing about the real one
     blocked_until: [std::sync::atomic::AtomicU64; 2],
+    /// the weight of the requests made in the last minute, per exchange (see `spend`)
+    spent: [std::sync::Mutex<std::collections::VecDeque<(u64, u32)>>; 2],
+    /// the symbol list (24 h tickers, weight 40) for a few seconds, so several screens share one read
+    symbols_cache: std::sync::Mutex<Option<(std::time::Instant, Vec<SymbolQuote>)>>,
+}
+
+/// What Harvester allows itself to use of Binance's weight limit per minute and exchange: under half of it (the testnet allows 6000, the real
+/// exchange 2400), so that the phone, the web page, the desktop app and the Telegram bot together cannot bring a ban on the IP.
+pub const BUDGET_PER_MINUTE: [u32; 2] = [2400, 1000];
+
+/// The weight Binance charges for a request (its documented values; a request that is not listed counts 1).
+pub fn request_weight(path: &str, params: &[(&str, &str)]) -> u32 {
+    let has = |k: &str| params.iter().any(|(n, _)| *n == k);
+    let value = |k: &str| params.iter().find(|(n, _)| *n == k).map(|(_, v)| *v);
+    match path {
+        "/fapi/v1/openOrders" => {
+            if has("symbol") {
+                1
+            } else {
+                40
+            }
+        }
+        "/fapi/v1/ticker/24hr" => {
+            if has("symbol") {
+                1
+            } else {
+                40
+            }
+        }
+        "/fapi/v1/klines" => match value("limit").and_then(|l| l.parse::<u32>().ok()).unwrap_or(500) {
+            0..=99 => 1,
+            100..=499 => 2,
+            500..=1000 => 5,
+            _ => 10,
+        },
+        "/fapi/v2/account" | "/fapi/v2/positionRisk" | "/fapi/v1/userTrades" | "/fapi/v1/allOrders" => 5,
+        "/fapi/v1/income" => 30,
+        _ => 1,
+    }
 }
 
 /// The time (epoch ms) a "banned until 1792212599246" message names, if it has one.
@@ -103,7 +142,7 @@ pub fn parse_klines(rows: &Value) -> Vec<Kline> {
 impl Market {
     pub fn new(env: Env) -> Market {
         let http = reqwest::Client::builder().user_agent("harvester").timeout(std::time::Duration::from_secs(20)).build().expect("http client");
-        Market { http, env: RwLock::new(env), filters: RwLock::new(HashMap::new()), blocked_until: [std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0)] }
+        Market { http, env: RwLock::new(env), filters: RwLock::new(HashMap::new()), blocked_until: [std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0)], spent: [std::sync::Mutex::new(std::collections::VecDeque::new()), std::sync::Mutex::new(std::collections::VecDeque::new())], symbols_cache: std::sync::Mutex::new(None) }
     }
 
     fn now_ms() -> u64 {
@@ -113,6 +152,25 @@ impl Market {
     /// Err while Binance is limiting this IP: nothing is sent, because every request during a ban makes it longer.
     pub fn check_limit(&self) -> Result<(), String> {
         self.check_limit_for(self.env())
+    }
+
+    /// Account for a request of `weight` on an exchange. Over the budget a request is refused (nothing is sent) with a message saying so; a request
+    /// that changes something (placing, moving or cancelling an order: `essential`) is always let through, it only counts.
+    pub fn spend(&self, env: Env, weight: u32, essential: bool) -> Result<(), String> {
+        let slot = Self::slot(env);
+        let now = Self::now_ms();
+        let mut q = self.spent[slot].lock().unwrap();
+        while q.front().map_or(false, |(t, _)| now.saturating_sub(*t) >= 60_000) {
+            q.pop_front();
+        }
+        let used: u32 = q.iter().map(|(_, w)| *w).sum();
+        let cap = BUDGET_PER_MINUTE[slot];
+        if !essential && used + weight > cap {
+            let wait = q.front().map_or(5, |(t, _)| (60_000u64.saturating_sub(now.saturating_sub(*t))).div_ceil(1000));
+            return Err(format!("Harvester is holding requests back to stay inside Binance's limit ({used} of {cap} used this minute); try again in about {wait} s"));
+        }
+        q.push_back((now, weight));
+        Ok(())
     }
 
     fn slot(env: Env) -> usize {
@@ -156,10 +214,13 @@ impl Market {
     pub fn set_env(&self, env: Env) {
         *self.env.write().unwrap() = env;
         self.filters.write().unwrap().clear();
+        *self.symbols_cache.lock().unwrap() = None;
     }
 
     async fn get(&self, path: &str, query: &[(&str, String)]) -> Result<Value, String> {
         self.check_limit()?;
+        let pairs: Vec<(&str, &str)> = query.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        self.spend(self.env(), request_weight(path, &pairs), false)?;
         crate::health::count_request(if self.env() == Env::Live { "real" } else { "test" }, path);
         let url = format!("{}{}", self.env().rest_base(), path);
         let resp = self.http.get(&url).query(query).send().await.map_err(|e| format!("{path}: {e}"))?;
@@ -198,6 +259,17 @@ impl Market {
 
     /// Every tradable perpetual with last price, 24h change and quote volume, busiest first.
     pub async fn symbols(&self) -> Result<Vec<SymbolQuote>, String> {
+        if let Some((at, v)) = &*self.symbols_cache.lock().unwrap() {
+            if at.elapsed() < std::time::Duration::from_secs(20) {
+                return Ok(v.clone());
+            }
+        }
+        let fresh = self.symbols_uncached().await?;
+        *self.symbols_cache.lock().unwrap() = Some((std::time::Instant::now(), fresh.clone()));
+        Ok(fresh)
+    }
+
+    async fn symbols_uncached(&self) -> Result<Vec<SymbolQuote>, String> {
         self.ensure_filters().await?;
         let tickers = self.get("/fapi/v1/ticker/24hr", &[]).await?;
         let known = self.filters.read().unwrap();
@@ -229,6 +301,8 @@ impl Market {
     /// the testnet's candles differ from the live market and its server is slow.
     async fn mainnet_get(&self, path: &str, query: &[(&str, String)]) -> Result<Value, String> {
         self.check_limit_for(Env::Live)?;
+        let pairs: Vec<(&str, &str)> = query.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        self.spend(Env::Live, request_weight(path, &pairs), false)?;
         crate::health::count_request("real", path);
         let url = format!("{}{}", Env::Live.rest_base(), path);
         let resp = self.http.get(&url).query(query).send().await.map_err(|e| format!("{path}: {e}"))?;
@@ -333,5 +407,35 @@ mod rate_limit_tests {
         assert_eq!(m2.blocked_until[0].load(std::sync::atomic::Ordering::Relaxed), first);
         // the other exchange is not paused by it
         assert!(m2.check_limit_for(Env::Live).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+
+    #[test]
+    fn knows_the_weight_of_the_heavy_requests() {
+        assert_eq!(request_weight("/fapi/v1/openOrders", &[]), 40);
+        assert_eq!(request_weight("/fapi/v1/openOrders", &[("symbol", "BTCUSDT")]), 1);
+        assert_eq!(request_weight("/fapi/v1/ticker/24hr", &[]), 40);
+        assert_eq!(request_weight("/fapi/v1/klines", &[("limit", "99")]), 1);
+        assert_eq!(request_weight("/fapi/v1/klines", &[("limit", "500")]), 5);
+        assert_eq!(request_weight("/fapi/v1/klines", &[("limit", "1500")]), 10);
+        assert_eq!(request_weight("/fapi/v2/account", &[]), 5);
+        assert_eq!(request_weight("/fapi/v1/whatever", &[]), 1);
+    }
+
+    #[test]
+    fn requests_over_the_budget_are_held_back_but_orders_always_go_through() {
+        let m = Market::new(Env::Testnet);
+        let cap = BUDGET_PER_MINUTE[0];
+        assert!(m.spend(Env::Testnet, cap - 10, false).is_ok());
+        assert!(m.spend(Env::Testnet, 10, false).is_ok()); // exactly the cap
+        let e = m.spend(Env::Testnet, 1, false).unwrap_err();
+        assert!(e.contains("holding requests back"), "{e}");
+        assert!(m.spend(Env::Testnet, 1, true).is_ok(), "an order is never held back");
+        // the other exchange has its own budget
+        assert!(m.spend(Env::Live, 1, false).is_ok());
     }
 }

@@ -698,7 +698,9 @@ export function ChartTab() {
         .then((f) => alive && setFills(fillMarkers(symbol, f)))
         .catch(() => undefined);
     void load();
-    const t = window.setInterval(load, 8000);
+    const t = window.setInterval(() => {
+      if (!document.hidden) load();
+    }, 30_000);
     return () => {
       alive = false;
       window.clearInterval(t);

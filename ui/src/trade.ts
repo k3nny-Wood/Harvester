@@ -95,10 +95,18 @@ export function startTradingPoll(): () => void {
   let debounce = 0;
   const arm = () => {
     window.clearInterval(timer);
-    timer = window.setInterval(() => void refreshTrading(), pollInterval(connected));
+    // a screen nobody is looking at (a backgrounded phone, a minimised window) does not poll: several devices polling at once is how Binance's limit gets hit
+    timer = window.setInterval(() => {
+      if (!document.hidden) void refreshTrading();
+    }, pollInterval(connected));
   };
   arm();
-  const offs: Array<() => void> = [];
+  // coming back to the screen reads once at once
+  const onVisible = () => {
+    if (!document.hidden) void refreshTrading();
+  };
+  document.addEventListener('visibilitychange', onVisible);
+  const offs: Array<() => void> = [() => document.removeEventListener('visibilitychange', onVisible)];
   let stopped = false;
   const keep = (p: Promise<() => void>) => void p.then((off) => (stopped ? off() : offs.push(off))).catch(() => undefined);
   keep(

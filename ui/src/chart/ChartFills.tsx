@@ -53,7 +53,9 @@ export function ChartFills({ chart }: { chart: Vela | null }) {
         .then((f) => alive && setFills(f))
         .catch(() => undefined);
     void load();
-    const t = window.setInterval(load, 8000);
+    const t = window.setInterval(() => {
+      if (!document.hidden) void load();
+    }, 30_000);
     return () => {
       alive = false;
       window.clearInterval(t);

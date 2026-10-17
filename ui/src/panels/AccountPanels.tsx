@@ -435,7 +435,9 @@ function useHistory<T extends { time: number }>(symbols: string[], key: string, 
   }, [key, trading?.hasCredentials]);
   useEffect(() => {
     void load();
-    const t = window.setInterval(() => void load(), 15_000);
+    const t = window.setInterval(() => {
+      if (!document.hidden) void load();
+    }, 30_000);
     return () => window.clearInterval(t);
   }, [load]);
   return { rows, loading, load };
