@@ -292,6 +292,15 @@ impl Market {
         Ok(out)
     }
 
+    /// False only when the list of the exchange trading is set to is known and does not contain the symbol (the demo exchange lists fewer coins
+    /// than the real one, and its chart says "Invalid symbol" for the rest). If the list cannot be read, the symbol is given the benefit of the doubt.
+    pub async fn is_listed(&self, symbol: &str) -> bool {
+        match self.symbols().await {
+            Ok(list) => list.iter().any(|q| q.symbol == symbol),
+            Err(_) => true,
+        }
+    }
+
     /// Current mark price of a perpetual.
     pub async fn mark_price(&self, symbol: &str) -> Result<f64, String> {
         let v = self.get("/fapi/v1/premiumIndex", &[("symbol", symbol.to_string())]).await?;

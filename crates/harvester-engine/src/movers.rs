@@ -44,6 +44,11 @@ pub fn start(app: Events, market: Arc<Market>, injector: Injector, detector: Sha
     let (worker_app, worker_inj, worker_market) = (app.clone(), injector.clone(), market.clone());
     crate::rt::spawn(async move {
         while let Some(spike) = rx.recv().await {
+            // The watcher sees the real market, but a click opens a chart on the exchange trading is set to: a coin that exchange does not list
+            // (the demo exchange has fewer) would open a blank chart with "Invalid symbol".
+            if !worker_market.is_listed(&spike.symbol).await {
+                continue;
+            }
             let candles: Vec<Candle> = worker_market.mainnet_klines(&spike.symbol, "1m", 70, None).await.map(|k| k.iter().map(|k| Candle::new(k.time, k.open, k.high, k.low, k.close, k.volume)).collect()).unwrap_or_default();
             worker_inj.add(&worker_app, spike_signal(&spike, &candles, 60));
             tokio::time::sleep(Duration::from_millis(300)).await;
