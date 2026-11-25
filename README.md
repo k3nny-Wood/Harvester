@@ -29,7 +29,7 @@ ladder made money. Using fewer indicators did not help either. The measurements 
 
 `HARVESTER_ENV=live` selects the live exchange (default: testnet). Market data needs no API key. To trade, copy `.env.example` to `.env`
 and fill in the testnet keys (`BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`). Live trading needs separate `BINANCE_LIVE_*` keys.
-A server-side cap (`MAX_ORDER_NOTIONAL`, default 5000 USDT) limits any single order.
+There is no per-order size cap by default; set `MAX_ORDER_NOTIONAL` (USDT) in `.env` to add one. Binance's own limits (each coin's maximum order size) always apply.
 
 ## The ladder tool
 

@@ -5,7 +5,7 @@
 //!    (`BINANCE_TESTNET_API_KEY/SECRET`, `BINANCE_LIVE_API_KEY/SECRET`; the legacy `BINANCE_API_KEY/SECRET` is accepted for
 //!    the testnet only), so switching to live without live keys simply refuses to trade;
 //!  * every order is rounded to the symbol's tick / step and validated by `harvester-core` before it is sent;
-//!  * a server-side cap on the notional of one order (`MAX_ORDER_NOTIONAL`, default 5000 USDT).
+//!  * an optional server-side cap on the notional of one order (`MAX_ORDER_NOTIONAL`; unset or 0 = no cap, which is the default).
 //! Positions are reduced with an exact-size reduce-only market order (the testnet rejects `closePosition` on MARKET orders).
 
 use crate::market::{Env, Market};
@@ -615,7 +615,7 @@ pub fn algo_params(req: &OrderRequest, qty: Decimal, price: Option<Decimal>, tri
 
 impl Trading {
     pub fn new(market: Arc<Market>) -> Trading {
-        let max_notional = env_var("MAX_ORDER_NOTIONAL").and_then(|v| v.parse().ok()).unwrap_or(5000.0);
+        let max_notional = env_var("MAX_ORDER_NOTIONAL").and_then(|v| v.parse().ok()).unwrap_or(0.0);
         Trading { market, offset_ms: AtomicI64::new(0), synced: AtomicBool::new(false), max_notional, cap_off: AtomicBool::new(false), cache: Mutex::new(Cache::default()) }
     }
 
@@ -631,7 +631,7 @@ impl Trading {
             }
         };
         // with the cap off the UI sees 0, which it treats as "no limit"
-        TradingStatus { env, has_credentials: has, max_order_notional: if self.cap_overridden() { 0.0 } else { self.max_notional }, configured_cap: self.max_notional, cap_override: self.cap_overridden(), message }
+        TradingStatus { env, has_credentials: has, max_order_notional: if self.cap_overridden() || self.max_notional <= 0.0 { 0.0 } else { self.max_notional }, configured_cap: self.max_notional, cap_override: self.cap_overridden(), message }
     }
 
     fn now_ms(&self) -> i64 {
@@ -666,9 +666,9 @@ impl Trading {
         self.cap_off.store(off, Ordering::Relaxed);
     }
 
-    /// The largest order value accepted right now: the configured cap, or no limit while it is overridden.
+    /// The largest order value accepted right now: the configured cap, or no limit when none is configured or while it is overridden.
     pub fn max_notional(&self) -> f64 {
-        if self.cap_overridden() {
+        if self.cap_overridden() || self.max_notional <= 0.0 {
             return f64::INFINITY;
         }
         self.max_notional

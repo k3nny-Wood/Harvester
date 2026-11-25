@@ -289,7 +289,7 @@ export function OrdersPanel() {
         </div>
         <div>
           <span>Max order</span>
-          <b>{trading ? (trading.capOverride ? 'no limit (cap off)' : `${trading.maxOrderNotional} USDT`) : '-'}</b>
+          <b>{trading ? (trading.capOverride ? 'no limit (cap off)' : trading.maxOrderNotional > 0 ? `${trading.maxOrderNotional} USDT` : 'no limit') : '-'}</b>
         </div>
       </div>
 

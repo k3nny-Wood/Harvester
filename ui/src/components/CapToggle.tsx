@@ -11,7 +11,7 @@ export function CapToggle() {
   const trading = useApp((s) => s.trading);
   const env = useApp((s) => s.env);
   const toast = useApp((s) => s.toast);
-  if (!trading?.hasCredentials) return null;
+  if (!trading?.hasCredentials || (trading.configuredCap <= 0 && !trading.capOverride)) return null; // no cap configured: nothing to switch
   const off = trading.capOverride;
 
   const flip = async () => {
