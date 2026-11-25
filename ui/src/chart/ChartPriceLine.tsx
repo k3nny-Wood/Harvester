@@ -25,11 +25,14 @@ export function ChartPriceLine({ chart }: { chart: Vela | null }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
 
+  useEffect(() => setTick((t) => t + 1), []); // the first render has no layer to measure yet: draw again as soon as it exists
+
   useEffect(() => {
     if (!chart) return;
     const bump = () => setTick((t) => t + 1);
     const offs = [chart.on('viewport:changed', bump), chart.on('pane:changed', bump)];
-    const timer = window.setInterval(bump, 1000); // also moves the countdown
+    // four times a second: keeps the line on the price when the chart rescales by itself, and moves the countdown
+    const timer = window.setInterval(bump, 250);
     return () => {
       offs.forEach((o) => typeof o === 'function' && o());
       window.clearInterval(timer);

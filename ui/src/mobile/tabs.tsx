@@ -642,6 +642,7 @@ export function ChartTab() {
     setError('');
     void api.klines(symbol, timeframe, 300).then((k) => alive && setCandles(k)).catch((e) => alive && setError(String(e)));
     void api.subscribeKlines(symbol, timeframe).catch(() => undefined);
+    const renew = window.setInterval(() => void api.subscribeKlines(symbol, timeframe).catch(() => undefined), 30_000); // the server's stream lives while it is renewed
     let off: (() => void) | null = null;
     void onKline((e) => {
       if (!alive || e.symbol !== symbol || e.interval !== timeframe) return;
@@ -654,6 +655,7 @@ export function ChartTab() {
     }).then((u) => (alive ? (off = u) : u()));
     return () => {
       alive = false;
+      window.clearInterval(renew);
       off?.();
       void api.unsubscribeKlines(symbol, timeframe).catch(() => undefined);
     };

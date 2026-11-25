@@ -38,8 +38,11 @@ export class HarvesterProvider implements DataProvider {
       else unlisten = u;
     });
     void api.subscribeKlines(ticker, interval);
+    // the server keeps a stream for as long as some screen renews it (see `Streams` in the engine): this also revives one that has ended
+    const renew = window.setInterval(() => void api.subscribeKlines(ticker, interval).catch(() => undefined), 30_000);
     return () => {
       stopped = true;
+      window.clearInterval(renew);
       unlisten?.();
       void api.unsubscribeKlines(ticker, interval);
     };

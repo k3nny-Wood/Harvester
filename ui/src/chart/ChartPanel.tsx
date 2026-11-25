@@ -222,14 +222,30 @@ function ChartBody() {
   useEffect(() => {
     let off: (() => void) | null = null;
     let stopped = false;
+    let lastEvent = 0;
     void onKline((e) => {
-      if (e.symbol === symbol) setMarkPrice(e.bar.close);
+      if (e.symbol !== symbol) return;
+      lastEvent = Date.now();
+      setMarkPrice(e.bar.close);
     }).then((u) => {
       if (stopped) u();
       else off = u;
     });
+    // While no candle update has arrived for a few seconds (the chart was just opened or switched, a quiet coin, a stream that is being
+    // revived) the price comes from the live mark-price feed instead, which costs no Binance request: the line is never missing or stuck.
+    const fallback = window.setInterval(() => {
+      if (Date.now() - lastEvent < 3000) return;
+      void api
+        .markPrices([symbol])
+        .then((m) => {
+          const p = m[symbol];
+          if (!stopped && p > 0 && Date.now() - lastEvent >= 3000) setMarkPrice(p);
+        })
+        .catch(() => undefined);
+    }, 1000);
     return () => {
       stopped = true;
+      window.clearInterval(fallback);
       off?.();
     };
   }, [symbol, setMarkPrice]);
