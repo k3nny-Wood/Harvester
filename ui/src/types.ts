@@ -32,6 +32,8 @@ export interface SymbolFilters {
   stepSize: string;
   minQty: string;
   maxQty: string;
+  /** the largest quantity of one MARKET order; "0" or missing = unknown */
+  marketMaxQty?: string;
   minNotional: string;
   minPrice: string;
   maxPrice: string;

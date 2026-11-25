@@ -7,7 +7,7 @@ import { formatPrice, snapToTick } from '../ladderMath';
 import { useApp } from '../store';
 import { priceBand } from '../priceBand';
 import { fitMenu, type MenuPlacement } from '../menuFit';
-import { closeOrder, maxPct, notionalOfForm, pctFromNotional, sizeFromPct } from '../sizing';
+import { closeOrder, coinLimitNotional, effectiveCap, maxPct, notionalOfForm, pctFromNotional, sizeFromPct } from '../sizing';
 import { useLiveMarks } from '../liveMarks';
 import { orderFromForm, refreshTrading, submitOrder } from '../trade';
 import { AddSizeModal, type AddSizeTarget } from '../components/AddSizeModal';
@@ -316,7 +316,8 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
   const cap = trading?.maxOrderNotional ?? 0;
   const notional = notionalOfForm(form.sizeMode, Number(form.size), menu?.price ?? mark, account?.availableBalance ?? 0, lev);
   const sizePct = pctFromNotional(notional, wallet, lev);
-  const sliderMax = maxPct(wallet, lev, cap);
+  const coinLimit = coinLimitNotional(filters, menu?.price ?? mark);
+  const sliderMax = maxPct(wallet, lev, effectiveCap(cap, coinLimit));
   const margin = notional / Math.max(1, lev);
   const overCap = cap > 0 && notional > cap;
   // leverage of this symbol: read when the menu first opens for it, set on the exchange when the slider is released (like the Orders panel)
@@ -565,6 +566,7 @@ export function ChartTrading({ chart, host }: { chart: Vela | null; host: RefObj
               onKeyUp={() => void commitLeverage()}
             />
             {overCap && <div className="warn">Above the safety cap of {cap.toFixed(0)} USDT per order.</div>}
+            {!overCap && coinLimit > 0 && sliderMax < 100 && (cap <= 0 || coinLimit < cap) && <div className="muted">{symbol} allows at most {Number(filters?.maxQty)} per order (about {coinLimit.toFixed(0)} USDT): the slider stops there.</div>}
           </div>
         </div>
       )}

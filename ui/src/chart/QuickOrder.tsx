@@ -5,7 +5,7 @@ import { useChart, useChartId } from '../chartStore';
 import { formatPrice, snapToTick } from '../ladderMath';
 import { floorQty } from '../addSize';
 import { estimateLiquidation } from '../liquidation';
-import { maxPct, sizeFromPct } from '../sizing';
+import { coinLimitNotional, effectiveCap, maxPct, sizeFromPct } from '../sizing';
 import { useApp } from '../store';
 import { refreshTrading } from '../trade';
 import type { LeverageBracket, OrderAck, OrderRequest, Side } from '../types';
@@ -201,7 +201,8 @@ export function QuickOrder({ chart, host }: { chart: Vela | null; host: RefObjec
   const waits = exitsMustWait(q, mark);
   const size = sizeFromPct(pct, wallet, lev);
   // the slider is always 0-100% of the account, so changing the leverage never moves it; the safety cap only limits what is actually ordered
-  const capPct = maxPct(wallet, lev, cap);
+  const coinLimit = coinLimitNotional(filters, q.entry, true);
+  const capPct = maxPct(wallet, lev, effectiveCap(cap, coinLimit));
   const usedPct = Math.min(pct, capPct);
   const capped = usedPct < pct - 0.05;
   const notional = sizeFromPct(usedPct, wallet, lev).notional;

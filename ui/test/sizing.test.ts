@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maxPct, notionalOfForm, pctFromNotional, sizeFromPct } from '../src/sizing';
+import { coinLimitNotional, effectiveCap, maxPct, notionalOfForm, pctFromNotional, sizeFromPct } from '../src/sizing';
 
 describe('order size from the menu slider', () => {
   it('a share of the account is margin, and the position is margin times leverage', () => {
@@ -60,5 +60,26 @@ describe('closing a share of the holdings', () => {
     expect(closeOrder(0, 50, 0.1)).toBeNull();
     expect(closeOrder(5, 0, 0.1)).toBeNull();
     expect(closeOrder(0.05, 10, 0.1)).toBeNull();
+  });
+});
+
+describe('the coin limit', () => {
+  it('is the largest quantity times the price, and the market lot size when it is smaller', () => {
+    expect(coinLimitNotional({ maxQty: '1000', marketMaxQty: '0' }, 50)).toBe(50000);
+    expect(coinLimitNotional({ maxQty: '1000', marketMaxQty: '200' }, 50)).toBe(50000);
+    expect(coinLimitNotional({ maxQty: '1000', marketMaxQty: '200' }, 50, true)).toBe(10000);
+    expect(coinLimitNotional({ maxQty: '1000' }, 50, true)).toBe(50000);
+    expect(coinLimitNotional(null, 50)).toBe(0);
+    expect(coinLimitNotional({ maxQty: '1000' }, 0)).toBe(0);
+  });
+  it('the tighter of the safety cap and the coin limit applies; zero means no limit from that source', () => {
+    expect(effectiveCap(5000, 3000)).toBe(3000);
+    expect(effectiveCap(5000, 9000)).toBe(5000);
+    expect(effectiveCap(0, 3000)).toBe(3000);
+    expect(effectiveCap(5000, 0)).toBe(5000);
+    expect(effectiveCap(0, 0)).toBe(0);
+  });
+  it('limits the slider', () => {
+    expect(maxPct(4000, 1, effectiveCap(0, 2000))).toBeCloseTo(50, 9);
   });
 });

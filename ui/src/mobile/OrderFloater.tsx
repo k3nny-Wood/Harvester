@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { floorQty } from '../addSize';
-import { maxPct, sizeFromPct } from '../sizing';
+import { coinLimitNotional, effectiveCap, maxPct, sizeFromPct } from '../sizing';
 import { entryKind, LIMIT_OFFSET } from '../quickMath';
 import { snapToTick } from '../ladderMath';
 import { useApp } from '../store';
@@ -72,7 +72,7 @@ export function OrderFloater({ symbol, mark, onClose }: { symbol: string; mark: 
   const kind = entryOk ? entryKind(side, entry, mark) : 'LIMIT';
   const wallet = account?.walletBalance ?? 0;
   const cap = trading?.maxOrderNotional ?? 0;
-  const usedPct = Math.min(pct, maxPct(wallet, lev, cap));
+  const usedPct = Math.min(pct, maxPct(wallet, lev, effectiveCap(cap, coinLimitNotional(filters, entryOk ? entry : mark, true))));
   const { notional } = sizeFromPct(usedPct, wallet, lev);
   const step = Number(filters?.stepSize) || 0;
   const qty = entryOk ? floorQty(notional / entry, step) : 0;

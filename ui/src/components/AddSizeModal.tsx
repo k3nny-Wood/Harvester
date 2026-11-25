@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { addQuantity, floorQty, maxAddPct } from '../addSize';
 import { formatPrice } from '../ladderMath';
+import { coinLimitNotional, effectiveCap } from '../sizing';
 import { CapToggle } from './CapToggle';
 import { useApp } from '../store';
 import { refreshTrading } from '../trade';
@@ -54,7 +55,8 @@ export function AddSizeModal({ target, onClose }: { target: AddSizeTarget; onClo
   const currentQty = target.kind === 'order' ? target.qty : Math.abs(target.amount);
   const currentNotional = currentQty * (target.kind === 'order' ? target.price : target.mark);
   // the safety cap limits ONE order: when growing an order its whole size counts, but a new order added to a position is only the new part
-  const sliderMax = maxAddPct(wallet, lev, cap, target.kind === 'order' ? currentNotional : 0);
+  const coinLimit = coinLimitNotional(filters, refPrice, mode === 'MARKET');
+  const sliderMax = maxAddPct(wallet, lev, effectiveCap(cap, coinLimit), target.kind === 'order' ? currentNotional : 0);
   const used = Math.min(pct, sliderMax);
   const addQty = floorQty(addQuantity(used, wallet, lev, refPrice), step);
   const newQty = currentQty + addQty;
@@ -145,12 +147,17 @@ export function AddSizeModal({ target, onClose }: { target: AddSizeTarget; onClo
                 new total <b>{newQty.toFixed(precision)} {unit}</b>
               </span>
             </div>
-            {cap > 0 && sliderMax > 0 && sliderMax < 100 && wallet > 0 && (
+            {coinLimit > 0 && (cap <= 0 || coinLimit < cap) && sliderMax < 100 && wallet > 0 && (
+              <div className="muted quick-note">
+                {symbol} allows at most {Number(filters?.maxQty)} {unit} per order (about {coinLimit.toFixed(0)} USDT): that is why the slider stops at {Math.max(0, sliderMax).toFixed(1)}%.
+              </div>
+            )}
+            {cap > 0 && (coinLimit <= 0 || cap <= coinLimit) && sliderMax > 0 && sliderMax < 100 && wallet > 0 && (
               <div className="muted quick-note">
                 One order is limited to {cap} USDT of position value (MAX_ORDER_NOTIONAL in the .env file): that is why the slider stops at {sliderMax.toFixed(1)}%. <CapToggle />
               </div>
             )}
-            {sliderMax <= 0 && cap > 0 && (
+            {sliderMax <= 0 && cap > 0 && (coinLimit <= 0 || cap <= coinLimit) && (
               <div className="warn quick-note">
                 This order is already at the safety cap of {cap} USDT (MAX_ORDER_NOTIONAL). <CapToggle />
               </div>

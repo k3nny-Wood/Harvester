@@ -36,6 +36,24 @@ export function maxPct(wallet: number, leverage: number, cap: number): number {
   return Math.min(100, cap > 0 ? (cap / lev / wallet) * 100 : 100);
 }
 
+/**
+ * The most one order of this coin may be worth, in USDT, from Binance's own maximum quantity (a market order has a smaller one, when known). Unlike
+ * the safety cap this cannot be switched off: the exchange refuses the order. 0 = unknown.
+ */
+export function coinLimitNotional(filters: { maxQty?: string; marketMaxQty?: string } | null | undefined, price: number, market = false): number {
+  if (!filters || !(price > 0)) return 0;
+  const lot = Number(filters.maxQty) || 0;
+  const mkt = Number(filters.marketMaxQty) || 0;
+  const qty = market ? (mkt > 0 ? (lot > 0 ? Math.min(lot, mkt) : mkt) : lot) : lot;
+  return qty > 0 ? qty * price : 0;
+}
+
+/** The tighter of the safety cap and the coin's own limit (0 = no limit from that source). */
+export function effectiveCap(cap: number, coinLimit: number): number {
+  if (cap > 0 && coinLimit > 0) return Math.min(cap, coinLimit);
+  return cap > 0 ? cap : coinLimit > 0 ? coinLimit : 0;
+}
+
 /** Round a quantity DOWN to the exchange's step. A reduce-only order may not exceed the position, so closing never rounds up. */
 export function floorToStep(qty: number, step: number): number {
   if (!(step > 0)) return qty;
