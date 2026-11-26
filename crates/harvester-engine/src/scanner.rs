@@ -57,7 +57,9 @@ fn yes() -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScannerConfig {
-    pub timeframe: String,
+    /// every timeframe followed at the same time (one kline socket each); each signal carries the timeframe it was found on
+    #[serde(default = "default_timeframes")]
+    pub timeframes: Vec<String>,
     /// how many of the busiest symbols to follow
     pub universe: usize,
     pub params: SignalParams,
@@ -69,9 +71,25 @@ fn default_sources() -> Sources {
     Sources { qfl: true, movers: true }
 }
 
+fn default_timeframes() -> Vec<String> {
+    vec!["1m".into(), "5m".into(), "15m".into()]
+}
+
+/// The long history the QFL bases need is only loaded for timeframes of 5 minutes and up (a 1-minute chart gets drops and nothing heavier).
+fn wants_history(tf: &str) -> bool {
+    timeframe_ms(tf) >= 300_000
+}
+
+/// One candle buffer per (symbol, timeframe).
+type Key = (String, String);
+
+fn key(symbol: &str, tf: &str) -> Key {
+    (symbol.to_string(), tf.to_string())
+}
+
 impl Default for ScannerConfig {
     fn default() -> Self {
-        ScannerConfig { timeframe: "15m".into(), universe: 150, params: SignalParams { fresh_bars: 8, ..Default::default() }, sources: default_sources() }
+        ScannerConfig { timeframes: default_timeframes(), universe: 150, params: SignalParams { fresh_bars: 8, ..Default::default() }, sources: default_sources() }
     }
 }
 
@@ -98,10 +116,10 @@ pub struct ScannerStatus {
 #[derive(Default)]
 struct Inner {
     config: ScannerConfig,
-    buffers: HashMap<String, Vec<Candle>>,
-    /// symbols whose long history has arrived (the QFL analysis needs it)
-    full: HashSet<String>,
-    last_run: HashMap<String, Instant>,
+    buffers: HashMap<Key, Vec<Candle>>,
+    /// (symbol, timeframe) pairs whose long history has arrived (the QFL analysis needs it)
+    full: HashSet<Key>,
+    last_run: HashMap<Key, Instant>,
     signals: HashMap<String, Signal>,
     announced: HashSet<String>,
     status: ScannerStatus,
@@ -208,17 +226,17 @@ fn emit_signals(app: &Events, inner: &mut Inner, force: bool) {
 }
 
 /// Run the engine for one symbol and fold the result into the signal map.
-fn analyse_symbol(app: &Events, inner: &mut Inner, symbol: &str) {
-    let Some(candles) = inner.buffers.get(symbol) else { return };
+fn analyse_symbol(app: &Events, inner: &mut Inner, symbol: &str, tf: &str) {
+    let Some(candles) = inner.buffers.get(&key(symbol, tf)) else { return };
     let cfg = inner.config.clone();
     let now = now_ms();
     let candles = candles.clone();
 
     // QFL / drop / watch signals
     if cfg.sources.qfl {
-        let fresh = analyse(symbol, &cfg.timeframe, &candles, &cfg.params);
-        // watches always reflect the present: drop this symbol's old ones first (cracks are kept for KEEP_MS even after they stop being "fresh")
-        inner.signals.retain(|_, s| !(s.symbol == symbol && s.kind == SignalKind::Near));
+        let fresh = analyse(symbol, tf, &candles, &cfg.params);
+        // watches always reflect the present: drop this symbol's old ones (on this timeframe) first (cracks are kept for KEEP_MS even after they stop being "fresh")
+        inner.signals.retain(|_, s| !(s.symbol == symbol && s.timeframe == tf && s.kind == SignalKind::Near));
         // drops are checked on every live update by `analyse_drops`, not here
         for s in fresh.into_iter().filter(|s| s.kind != SignalKind::Drop) {
             if s.kind == SignalKind::Crack {
@@ -235,8 +253,7 @@ fn analyse_symbol(app: &Events, inner: &mut Inner, symbol: &str) {
             inner.signals.insert(s.id.clone(), s);
         }
     }
-    let tf = timeframe_ms(&inner.config.timeframe);
-    prune_signals(&mut inner.signals, now, tf);
+    prune_signals(&mut inner.signals, now);
 }
 
 /// Length of a candle of a timeframe such as "5m", "1h", "1d" in milliseconds.
@@ -253,10 +270,10 @@ fn timeframe_ms(tf: &str) -> u64 {
 }
 
 /// Remove what has expired: a crack after `KEEP_MS`, a pump / dump after `SPIKE_KEEP_MS`, and a drop or watch that has not been refreshed for a few
-/// candles (they are re-made on every live update, so one that is old means the feed behind it stopped).
-fn prune_signals(signals: &mut HashMap<String, Signal>, now: u64, candle_ms: u64) {
-    let stale = (candle_ms * 3).max(20 * 60_000);
+/// candles of ITS timeframe (they are re-made on every live update, so one that is old means the feed behind it stopped).
+fn prune_signals(signals: &mut HashMap<String, Signal>, now: u64) {
     signals.retain(|_, s| {
+        let stale = (timeframe_ms(&s.timeframe) * 3).max(20 * 60_000);
         let age = now.saturating_sub(s.time_ms);
         match s.kind {
             SignalKind::Crack => age <= KEEP_MS,
@@ -268,12 +285,14 @@ fn prune_signals(signals: &mut HashMap<String, Signal>, now: u64, candle_ms: u64
 
 /// The drop check of one symbol: cheap (only the latest candles), so it runs on every live update. A drop that is no longer a drop disappears.
 /// The price of a symbol against the cracked bases being followed: the lowest price since the crack, how far back it is, and the reports at 50 / 80 / 100 %.
-fn follow_cracks(app: &Events, inner: &mut Inner, symbol: &str) {
-    let tf = inner.config.timeframe.clone();
-    let Some(buf) = inner.buffers.get(symbol) else { return };
+fn follow_cracks(app: &Events, inner: &mut Inner, symbol: &str, tf: &str) {
+    if !wants_history(tf) {
+        return; // cracks are found (and followed) on the timeframes that load the long history
+    }
+    let Some(buf) = inner.buffers.get(&key(symbol, tf)) else { return };
     let mut t = inner.tracker.lock().unwrap();
     let before: Vec<_> = t.items().iter().filter(|c| c.symbol == symbol).map(|c| (c.status, c.reported)).collect();
-    let progress = t.update(symbol, &tf, buf, now_ms());
+    let progress = t.update(symbol, tf, buf, now_ms());
     let after: Vec<_> = t.items().iter().filter(|c| c.symbol == symbol).map(|c| (c.status, c.reported)).collect();
     for p in progress {
         let _ = app.emit("crack-progress", serde_json::json!({ "id": p.id, "symbol": p.symbol, "level": p.level, "recoveryPct": p.recovery_pct, "depthPct": p.depth_pct }));
@@ -283,19 +302,19 @@ fn follow_cracks(app: &Events, inner: &mut Inner, symbol: &str) {
     }
 }
 
-fn analyse_drops(inner: &mut Inner, symbol: &str) {
+fn analyse_drops(inner: &mut Inner, symbol: &str, tf: &str) {
     if !inner.config.sources.qfl {
         return;
     }
     let fresh = {
-        let Some(buf) = inner.buffers.get(symbol) else { return };
-        analyse_drop(symbol, &inner.config.timeframe, &buf[buf.len().saturating_sub(DROP_TAIL)..], &inner.config.params)
+        let Some(buf) = inner.buffers.get(&key(symbol, tf)) else { return };
+        analyse_drop(symbol, tf, &buf[buf.len().saturating_sub(DROP_TAIL)..], &inner.config.params)
     };
     match fresh {
         Some(s) => {
             inner.signals.insert(s.id.clone(), s);
         }
-        None => inner.signals.retain(|_, s| !(s.symbol == symbol && s.kind == SignalKind::Drop)),
+        None => inner.signals.retain(|_, s| !(s.symbol == symbol && s.timeframe == tf && s.kind == SignalKind::Drop)),
     }
 }
 
@@ -366,11 +385,11 @@ impl Scanner {
     pub fn set_params(&self, app: &Events, params: SignalParams) {
         let mut g = self.inner.lock().unwrap();
         g.config.params = params;
-        let symbols: Vec<String> = g.buffers.keys().cloned().collect();
-        for s in &symbols {
-            analyse_drops(&mut g, s);
-            if g.full.contains(s) {
-                analyse_symbol(app, &mut g, s);
+        let keys: Vec<Key> = g.buffers.keys().cloned().collect();
+        for (s, tf) in &keys {
+            analyse_drops(&mut g, s, tf);
+            if g.full.contains(&(s.clone(), tf.clone())) {
+                analyse_symbol(app, &mut g, s, tf);
             }
         }
         emit_signals(app, &mut g, true);
@@ -395,8 +414,14 @@ impl Scanner {
     }
 
     /// (Re)start with a configuration. Existing signals are cleared because they belong to the old timeframe.
-    pub fn start(&self, app: Events, market: Arc<Market>, config: ScannerConfig) {
+    pub fn start(&self, app: Events, market: Arc<Market>, mut config: ScannerConfig) {
         self.stop();
+        // each timeframe once, none empty
+        let mut seen = HashSet::new();
+        config.timeframes.retain(|t| !t.is_empty() && seen.insert(t.clone()));
+        if config.timeframes.is_empty() {
+            config.timeframes = default_timeframes();
+        }
         {
             let mut g = self.inner.lock().unwrap();
             // a restart (another timeframe or universe) keeps the sudden moves already seen
@@ -414,7 +439,7 @@ impl Scanner {
                 g.announced.insert(k.clone());
                 g.signals.insert(k, s);
             }
-            g.status = ScannerStatus { running: true, phase: "loading symbols".into(), timeframe: config.timeframe.clone(), mover_state, ..Default::default() };
+            g.status = ScannerStatus { running: true, phase: "loading symbols".into(), timeframe: config.timeframes.join(" · "), mover_state, ..Default::default() };
             emit_status(&app, &g);
         }
         let inner = self.inner.clone();
@@ -482,8 +507,8 @@ async fn fast_seed(app: &Events, market: &Arc<Market>, inner: &Arc<Mutex<Inner>>
         match r {
             Ok(rows) => {
                 let candles: Vec<Candle> = rows.iter().map(|k| Candle::new(k.time, k.open, k.high, k.low, k.close, k.volume)).collect();
-                g.buffers.insert(sym.clone(), candles);
-                analyse_drops(&mut g, &sym);
+                g.buffers.insert(key(&sym, timeframe), candles);
+                analyse_drops(&mut g, &sym, timeframe);
             }
             Err(e) => g.status.error = Some(format!("{sym}: {e}")),
         }
@@ -515,14 +540,14 @@ async fn full_seed(app: &Events, market: &Arc<Market>, inner: &Arc<Mutex<Inner>>
         match r {
             Ok(rows) => {
                 let candles: Vec<Candle> = rows.iter().map(|k| Candle::new(k.time, k.open, k.high, k.low, k.close, k.volume)).collect();
-                let live = g.buffers.remove(&sym).unwrap_or_default();
-                g.buffers.insert(sym.clone(), merge_seed(candles, &live));
-                g.full.insert(sym.clone());
-                analyse_symbol(app, &mut g, &sym);
+                let live = g.buffers.remove(&key(&sym, timeframe)).unwrap_or_default();
+                g.buffers.insert(key(&sym, timeframe), merge_seed(candles, &live));
+                g.full.insert(key(&sym, timeframe));
+                analyse_symbol(app, &mut g, &sym, timeframe);
             }
             Err(e) => g.status.error = Some(format!("{sym}: {e}")),
         }
-        g.status.phase = if done == total { "scanning live".into() } else { format!("scanning live · QFL history {done}/{total}") };
+        g.status.phase = if done == total { "scanning live".into() } else { format!("scanning live · QFL history {timeframe} {done}/{total}") };
         if done % 5 == 0 || done == total {
             emit_signals(app, &mut g, true);
         }
@@ -554,9 +579,8 @@ async fn live_session(app: &Events, market: &Arc<Market>, inner: &Arc<Mutex<Inne
                         save_cracks(&t);
                     }
                 }
-                let tf = timeframe_ms(&g.config.timeframe);
                 let before = g.signals.len();
-                prune_signals(&mut g.signals, now_ms(), tf);
+                prune_signals(&mut g.signals, now_ms());
                 if g.signals.len() != before {
                     refresh_counts(&mut g);
                     emit_signals(app, &mut g, true);
@@ -574,18 +598,19 @@ async fn live_session(app: &Events, market: &Arc<Market>, inner: &Arc<Mutex<Inne
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
         let Some(ev) = parse_kline_value(v.get("data").unwrap_or(&v)) else { continue };
         let c = Candle::new(ev.bar.time, ev.bar.open, ev.bar.high, ev.bar.low, ev.bar.close, ev.bar.volume);
+        let k = key(&ev.symbol, &ev.interval);
         let mut g = inner.lock().unwrap();
-        apply_bar(g.buffers.entry(ev.symbol.clone()).or_default(), c);
+        apply_bar(g.buffers.entry(k.clone()).or_default(), c);
         g.status.updates += 1;
         g.status.last_update_ms = now_ms();
         // a drop is looked for on EVERY update: it is cheap and is exactly what must not wait
-        analyse_drops(&mut g, &ev.symbol);
-        follow_cracks(app, &mut g, &ev.symbol);
+        analyse_drops(&mut g, &ev.symbol, &ev.interval);
+        follow_cracks(app, &mut g, &ev.symbol, &ev.interval);
         // the heavy QFL analysis only once the long history is there, and not on every tick
-        let due = g.full.contains(&ev.symbol) && (ev.closed || g.last_run.get(&ev.symbol).map_or(true, |t| t.elapsed() >= Duration::from_secs(FULL_REFRESH_SECS)));
+        let due = g.full.contains(&k) && (ev.closed || g.last_run.get(&k).map_or(true, |t| t.elapsed() >= Duration::from_secs(FULL_REFRESH_SECS)));
         if due {
-            g.last_run.insert(ev.symbol.clone(), Instant::now());
-            analyse_symbol(app, &mut g, &ev.symbol);
+            g.last_run.insert(k, Instant::now());
+            analyse_symbol(app, &mut g, &ev.symbol, &ev.interval);
         }
         emit_signals(app, &mut g, false);
     }
@@ -614,16 +639,27 @@ async fn run(app: Events, market: Arc<Market>, inner: Arc<Mutex<Inner>>, cfg: Sc
             emit_status(&app, &g);
         }
 
-        // 2. recent candles of every symbol, in parallel: drops are live after this
-        fast_seed(&app, &market, &inner, &symbols, &cfg.timeframe).await;
+        // 2. recent candles of every symbol on every timeframe, in parallel: drops are live after this
+        for tf in &cfg.timeframes {
+            fast_seed(&app, &market, &inner, &symbols, tf).await;
+        }
         {
             let mut g = inner.lock().unwrap();
             g.status.phase = "scanning live".into();
             emit_signals(&app, &mut g, true);
         }
 
-        // 3. the live feed and the long history (for the QFL bases) at the same time
-        let (live, _) = tokio::join!(live_session(&app, &market, &inner, &symbols, &cfg.timeframe), full_seed(&app, &market, &inner, &symbols, &cfg.timeframe));
+        // 3. the live feeds (one socket per timeframe; the first to end restarts them all) and the long history (for the QFL bases) at the same time
+        let live_all = async {
+            let sessions: Vec<_> = cfg.timeframes.iter().map(|tf| Box::pin(live_session(&app, &market, &inner, &symbols, tf))).collect();
+            futures_util::future::select_all(sessions).await.0
+        };
+        let history_all = async {
+            for tf in cfg.timeframes.iter().filter(|t| wants_history(t)) {
+                full_seed(&app, &market, &inner, &symbols, tf).await;
+            }
+        };
+        let (live, _) = tokio::join!(live_all, history_all);
         match live {
             Ok(()) => {
                 backoff = 2;
@@ -718,10 +754,29 @@ mod tests {
         ] {
             m.insert(id.into(), signal(id, kind, now - age));
         }
-        prune_signals(&mut m, now, 300_000); // 5-minute candles: a drop or watch older than 20 minutes is stale
+        prune_signals(&mut m, now); // 5-minute candles: a drop or watch older than 20 minutes is stale
         let mut left: Vec<&str> = m.keys().map(|k| k.as_str()).collect();
         left.sort();
         assert_eq!(left, vec!["crack-fresh", "drop-fresh", "pump-fresh"]);
+    }
+
+    #[test]
+    fn a_drop_goes_stale_by_its_own_timeframe() {
+        let now = 100 * 3_600_000u64;
+        let mut m: HashMap<String, Signal> = HashMap::new();
+        for (id, tf) in [("a-1m", "1m"), ("b-15m", "15m")] {
+            let mut s = signal(id, SignalKind::Drop, now - 30 * 60_000); // 30 minutes old
+            s.timeframe = tf.into();
+            m.insert(id.into(), s);
+        }
+        prune_signals(&mut m, now); // 1m: stale after 20 min, 15m: after 45 min
+        assert_eq!(m.keys().cloned().collect::<Vec<_>>(), vec!["b-15m".to_string()]);
+    }
+
+    #[test]
+    fn history_is_only_loaded_from_five_minutes_up() {
+        assert!(!wants_history("1m") && !wants_history("3m"));
+        assert!(wants_history("5m") && wants_history("15m") && wants_history("1h"));
     }
 
     #[test]

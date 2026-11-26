@@ -8,12 +8,14 @@ import { insightBadges } from '../insight';
 import { CrackBar } from '../components/CrackBar';
 import { Thumb } from '../components/Thumb';
 import { openChart } from '../dock';
-import { TIMEFRAMES } from '../intervals';
 import { useApp } from '../store';
 import type { Signal, SignalKind } from '../types';
 
 const KIND_LABEL: Record<SignalKind, string> = { pump: 'PUMP', dump: 'DUMP', crack: 'CRACK', near: 'WATCH', drop: 'DROP' };
 const UNIVERSES = [20, 40, 80, 150];
+/** the timeframes the scanner can follow (all at once), and what it starts with */
+const SCAN_CHOICES = ['1m', '5m', '15m', '30m', '1h', '4h'];
+const SCAN_DEFAULT = ['1m', '5m', '15m'];
 
 function ago(ms: number, now: number): string {
   const s = Math.max(0, Math.round((now - ms) / 1000));
@@ -64,13 +66,21 @@ export function SignalsPanel() {
     return () => window.clearInterval(t);
   }, []);
 
-  const rows = useMemo(() => signals.filter((s) => kinds[s.kind] && s.score >= minScore), [signals, kinds, minScore]);
+  const [view, setView] = useState('all');
+  // pumps and dumps come from the price stream, not a candle timeframe: they show in every view
+  const rows = useMemo(() => signals.filter((s) => kinds[s.kind] && s.score >= minScore && (view === 'all' || s.kind === 'pump' || s.kind === 'dump' || s.timeframe === view)), [signals, kinds, minScore, view]);
   const fresh = status && status.lastUpdateMs > 0 && now - status.lastUpdateMs < 30_000;
   const sources = config?.sources ?? { qfl: true, movers: true };
 
-  const restart = (patch: Partial<{ timeframe: string; universe: number }>) => {
+  const restart = (patch: Partial<{ timeframes: string[]; universe: number }>) => {
     if (!config) return;
     void api.scannerConfigure({ ...config, params: useScannerParams.getState().params, ...patch });
+  };
+  const scanned = config?.timeframes ?? SCAN_DEFAULT;
+  // switching a timeframe on or off reloads the scanner; at least one stays on
+  const toggleScanned = (tf: string) => {
+    const next = scanned.includes(tf) ? scanned.filter((t) => t !== tf) : SCAN_CHOICES.filter((t) => t === tf || scanned.includes(t));
+    if (next.length > 0) restart({ timeframes: next });
   };
 
   const toggleSource = (key: 'qfl' | 'movers') => {
@@ -124,10 +134,16 @@ export function SignalsPanel() {
         </div>
 
         <div className="sig-controls">
-          <select value={config?.timeframe ?? '15m'} onChange={(e) => restart({ timeframe: e.target.value })} title="Timeframe the scanner watches">
-            {TIMEFRAMES.filter((t) => ['5m', '15m', '30m', '1h', '4h'].includes(t.interval)).map((t) => (
-              <option key={t.interval} value={t.interval}>
-                {t.label}
+          {SCAN_CHOICES.map((tf) => (
+            <button key={tf} className={`chip${scanned.includes(tf) ? ' on' : ''}`} onClick={() => toggleScanned(tf)} title={`Scan ${tf} candles as well (switching one reloads the scanner)`}>
+              {tf}
+            </button>
+          ))}
+          <select value={view} onChange={(e) => setView(e.target.value)} title="Which timeframe's entries to list">
+            <option value="all">All timeframes</option>
+            {scanned.map((tf) => (
+              <option key={tf} value={tf}>
+                {tf} only
               </option>
             ))}
           </select>

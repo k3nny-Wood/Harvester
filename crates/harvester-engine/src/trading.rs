@@ -504,12 +504,43 @@ pub fn parse_trade_history(v: &Value) -> Vec<TradeRecord> {
 
 /// The reduce-only stop-loss / take-profit orders (by algo id) whose size differs from the position's.
 pub fn exits_to_resize(orders: &[OpenOrder], position_size: f64) -> Vec<i64> {
-    orders
-        .iter()
-        .filter(|o| o.conditional && o.reduce_only && (o.order_type.starts_with("STOP") || o.order_type.starts_with("TAKE_PROFIT")))
-        .filter(|o| (o.orig_qty - position_size).abs() > position_size * 1e-9)
-        .map(|o| o.order_id)
-        .collect()
+    // orders at the same level (same kind, side and trigger) are one exit split into pieces: judged and resized together, one id per exit
+    let exits: Vec<&OpenOrder> = orders.iter().filter(|o| o.conditional && o.reduce_only && (o.order_type.starts_with("STOP") || o.order_type.starts_with("TAKE_PROFIT"))).collect();
+    let same = |a: &OpenOrder, b: &OpenOrder| a.order_type == b.order_type && a.side == b.side && a.stop_price == b.stop_price;
+    let mut out = Vec::new();
+    for (i, o) in exits.iter().enumerate() {
+        if exits[..i].iter().any(|p| same(p, o)) {
+            continue; // already judged with its first piece
+        }
+        let sum: f64 = exits.iter().filter(|p| same(p, o)).map(|p| p.orig_qty).sum();
+        if (sum - position_size).abs() > position_size * 1e-9 {
+            out.push(o.order_id);
+        }
+    }
+    out
+}
+
+/// Cut a quantity into orders of at most `max` (0 = no limit). A last piece below the minimum lot takes the difference from the one before.
+pub fn split_quantity(total: Decimal, max: Decimal, min_qty: Decimal) -> Vec<Decimal> {
+    if max <= Decimal::ZERO || total <= max {
+        return vec![total];
+    }
+    let mut out = Vec::new();
+    let mut left = total;
+    while left > max {
+        out.push(max);
+        left -= max;
+    }
+    if left > Decimal::ZERO {
+        if left < min_qty {
+            if let Some(last) = out.last_mut() {
+                *last -= min_qty - left;
+            }
+            left = min_qty;
+        }
+        out.push(left);
+    }
+    out
 }
 
 /// The query parameters of a margin-mode change (Binance names cross margin "CROSSED").
@@ -559,6 +590,11 @@ pub fn prepare(req: &OrderRequest, filters: &SymbolFilters, reference_price: f64
     let v = validate_order(&check, filters, reference_price);
     if !v.ok {
         return Err(v.errors.join(" "));
+    }
+    // an order with no limit price (market, stop-market, take-profit-market) is held to the MARKET_LOT_SIZE maximum, which is often smaller
+    // than the limit-order maximum; the exchange refuses it, so say so here with the number
+    if !t.has_price() && filters.market_max_qty > Decimal::ZERO && qty > filters.market_max_qty {
+        return Err(format!("Quantity {qty} is above the largest market / stop-market order this coin allows ({}). Use a stop-limit order, or split the stop.", filters.market_max_qty));
     }
     let notional = to_f64(qty) * price.or(trigger).map(to_f64).unwrap_or(reference_price);
     if notional > max_notional {
@@ -853,6 +889,28 @@ impl Trading {
     pub async fn place(&self, req: OrderRequest) -> Result<OrderAck, String> {
         let filters = self.market.symbol_filters(&req.symbol).await?;
         let reference = self.reference_price(&req.symbol).await?;
+        if req.order_type.is_conditional() && !req.order_type.has_price() && filters.market_max_qty > Decimal::ZERO {
+            let pieces = split_quantity(filters.round_quantity(req.quantity), filters.market_max_qty, filters.min_qty);
+            if pieces.len() > 1 {
+                // too big for one stop-market: several at the same level (validated all before any is sent)
+                let mut prepared = Vec::new();
+                for p in &pieces {
+                    let r = OrderRequest { quantity: to_f64(*p), ..req.clone() };
+                    let (q, price, trigger) = prepare(&r, &filters, reference, self.max_notional())?;
+                    prepared.push((r, q, price, trigger.ok_or("a stop needs a trigger price")?));
+                }
+                let mut first: Option<(i64, String)> = None;
+                for (i, (r, q, price, trigger)) in prepared.iter().enumerate() {
+                    let v = self.signed(reqwest::Method::POST, "/fapi/v1/algoOrder", algo_params(r, *q, *price, *trigger)).await.map_err(|e| format!("{e} (piece {} of {} was refused; {} placed)", i + 1, prepared.len(), i))?;
+                    if first.is_none() {
+                        first = Some((v["algoId"].as_i64().unwrap_or(0), text(&v["clientAlgoId"])));
+                    }
+                }
+                let (id, client_id) = first.ok_or("nothing was placed")?;
+                let trigger = prepared[0].3;
+                return Ok(OrderAck { order_id: id, symbol: req.symbol, status: "NEW".to_string(), client_id, quantity: pieces.iter().map(|p| to_f64(*p)).sum(), price: Some(to_f64(trigger)), conditional: true });
+            }
+        }
         let (qty, price, trigger) = prepare(&req, &filters, reference, self.max_notional())?;
         if let Some(trigger) = trigger {
             let v = self.signed(reqwest::Method::POST, "/fapi/v1/algoOrder", algo_params(&req, qty, price, trigger)).await?;
@@ -927,6 +985,10 @@ impl Trading {
         };
         let filters = self.market.symbol_filters(symbol).await?;
         let reference = self.reference_price(symbol).await?;
+        if conditional && !t.has_price() && filters.market_max_qty > Decimal::ZERO {
+            // a stop-market is held to the market-order maximum: it may be several orders at one level, moved and resized together
+            return self.modify_stop_group(symbol, &open, &o, &req, &filters, reference, new_quantity).await;
+        }
         let (qty, price, trigger) = prepare(&req, &filters, reference, self.max_notional())?;
         let ack = |id: i64, status: String, client_id: String, px: Option<Decimal>| OrderAck { order_id: id, symbol: symbol.to_string(), status, client_id, quantity: to_f64(qty), price: px.map(to_f64), conditional };
         if !conditional {
@@ -953,6 +1015,71 @@ impl Trading {
                 Err(format!("{e} ({})", if restored { "the original order was put back" } else { "the original order was cancelled and could NOT be restored" }))
             }
         }
+    }
+
+    /// Move / resize a stop-market (or take-profit-market) that may be split into several orders at the same level because the exchange limits
+    /// one market-type order to `market_max_qty`. All orders at that level are replaced together by as many pieces as the new size needs; if
+    /// anything is refused, the new pieces are cancelled and the old orders put back.
+    #[allow(clippy::too_many_arguments)]
+    async fn modify_stop_group(&self, symbol: &str, open: &[OpenOrder], o: &OpenOrder, req: &OrderRequest, filters: &SymbolFilters, reference: f64, new_quantity: Option<f64>) -> Result<OrderAck, String> {
+        let group: Vec<OpenOrder> = open.iter().filter(|g| g.conditional && g.reduce_only == o.reduce_only && g.order_type == o.order_type && g.side == o.side && g.stop_price == o.stop_price).cloned().collect();
+        let total = new_quantity.filter(|q| *q > 0.0).unwrap_or_else(|| group.iter().map(|g| g.orig_qty).sum());
+        let pieces = split_quantity(filters.round_quantity(total), filters.market_max_qty, filters.min_qty);
+        let mut new_orders = Vec::new();
+        for p in &pieces {
+            let r = OrderRequest { quantity: to_f64(*p), ..req.clone() };
+            let (q, price, trigger) = prepare(&r, filters, reference, self.max_notional())?;
+            new_orders.push((r, q, price, trigger.ok_or("a stop needs a trigger price")?));
+        }
+        let mut cancelled: Vec<&OpenOrder> = Vec::new();
+        let mut placed: Vec<i64> = Vec::new();
+        let mut first: Option<(i64, String)> = None;
+        let mut failure: Option<String> = None;
+        for g in &group {
+            match self.cancel(symbol, g.order_id, true).await {
+                Ok(()) => cancelled.push(g),
+                Err(e) => {
+                    failure = Some(e);
+                    break;
+                }
+            }
+        }
+        if failure.is_none() {
+            for (r, q, price, trigger) in &new_orders {
+                match self.signed(reqwest::Method::POST, "/fapi/v1/algoOrder", algo_params(r, *q, *price, *trigger)).await {
+                    Ok(v) => {
+                        let id = v["algoId"].as_i64().unwrap_or(0);
+                        placed.push(id);
+                        if first.is_none() {
+                            first = Some((id, text(&v["clientAlgoId"])));
+                        }
+                    }
+                    Err(e) => {
+                        failure = Some(e);
+                        break;
+                    }
+                }
+            }
+        }
+        if let Some(e) = failure {
+            if cancelled.is_empty() {
+                return Err(e);
+            }
+            for id in &placed {
+                let _ = self.cancel(symbol, *id, true).await;
+            }
+            let mut all_back = true;
+            for g in &cancelled {
+                let old = OrderRequest { price: None, stop_price: Some(g.stop_price), quantity: g.orig_qty, ..req.clone() };
+                let ok = self.signed(reqwest::Method::POST, "/fapi/v1/algoOrder", algo_params(&old, filters.round_quantity(g.orig_qty), None, filters.round_price(g.stop_price))).await.is_ok();
+                all_back &= ok;
+            }
+            return Err(format!("{e} ({})", if all_back { "the original order was put back" } else { "the original order was cancelled and could NOT be fully restored" }));
+        }
+        let (id, client_id) = first.ok_or("nothing was placed")?;
+        let trigger = new_orders.first().map(|n| n.3).unwrap_or(Decimal::ZERO);
+        let qty: f64 = pieces.iter().map(|p| to_f64(*p)).sum();
+        Ok(OrderAck { order_id: id, symbol: symbol.to_string(), status: "NEW".to_string(), client_id, quantity: qty, price: Some(to_f64(trigger)), conditional: true })
     }
 
     /// After a position grew (or shrank): make its stop-loss and take-profit orders cover the whole position again. `expected` is the size the
@@ -1182,7 +1309,7 @@ mod tests {
 
     #[test]
     fn only_reduce_only_exits_of_another_size_are_resized() {
-        let mk = |id: i64, t: &str, qty: f64, reduce: bool, conditional: bool| OpenOrder { order_id: id, symbol: "ETHUSDT".into(), side: "SELL".into(), order_type: t.into(), price: 0.0, stop_price: 1.0, orig_qty: qty, executed_qty: 0.0, status: "NEW".into(), reduce_only: reduce, client_id: String::new(), time: 0, conditional };
+        let mk = |id: i64, t: &str, qty: f64, reduce: bool, conditional: bool| OpenOrder { order_id: id, symbol: "ETHUSDT".into(), side: "SELL".into(), order_type: t.into(), price: 0.0, stop_price: id as f64, orig_qty: qty, executed_qty: 0.0, status: "NEW".into(), reduce_only: reduce, client_id: String::new(), time: 0, conditional };
         let orders = vec![
             mk(1, "STOP_MARKET", 2.0, true, true),
             mk(2, "TAKE_PROFIT_MARKET", 3.0, true, true),
@@ -1192,6 +1319,27 @@ mod tests {
         ];
         assert_eq!(exits_to_resize(&orders, 3.0), vec![1]);
         assert_eq!(exits_to_resize(&orders, 2.0), vec![2, 3]);
+    }
+
+    #[test]
+    fn a_big_quantity_is_cut_into_orders_that_each_fit() {
+        let d = |s: &str| s.parse::<Decimal>().unwrap();
+        assert_eq!(split_quantity(d("5"), d("10"), d("0.001")), vec![d("5")]);
+        assert_eq!(split_quantity(d("25"), d("10"), d("0.001")), vec![d("10"), d("10"), d("5")]);
+        assert_eq!(split_quantity(d("20"), d("10"), d("0.001")), vec![d("10"), d("10")]);
+        // a tiny remainder (below the minimum lot) is taken from the piece before it
+        assert_eq!(split_quantity(d("10.0005"), d("10"), d("0.001")), vec![d("9.9995"), d("0.001")]);
+        assert_eq!(split_quantity(d("7"), d("0"), d("0.001")), vec![d("7")]);
+        let sum: Decimal = split_quantity(d("123.456"), d("10"), d("0.001")).iter().sum();
+        assert_eq!(sum, d("123.456"));
+    }
+
+    #[test]
+    fn stops_split_at_one_level_are_one_exit() {
+        let mk = |id: i64, stop: f64, qty: f64| OpenOrder { order_id: id, symbol: "ETHUSDT".into(), side: "SELL".into(), order_type: "STOP_MARKET".into(), price: 0.0, stop_price: stop, orig_qty: qty, executed_qty: 0.0, status: "NEW".into(), reduce_only: true, client_id: String::new(), time: 0, conditional: true };
+        let two_pieces = vec![mk(1, 90.0, 10.0), mk(2, 90.0, 5.0)];
+        assert!(exits_to_resize(&two_pieces, 15.0).is_empty()); // together they cover the position
+        assert_eq!(exits_to_resize(&two_pieces, 25.0), vec![1]); // one id for the whole exit
     }
 
     #[test]

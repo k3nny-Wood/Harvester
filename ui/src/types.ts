@@ -200,7 +200,8 @@ export interface MoverParams {
 }
 
 export interface ScannerConfig {
-  timeframe: string;
+  /** every timeframe the scanner follows at the same time */
+  timeframes: string[];
   universe: number;
   params: SignalParams;
   sources: Sources;
